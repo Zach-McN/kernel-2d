@@ -93,6 +93,12 @@ Tests check behavior, data formats, and schemas — never internal structure. An
 - End any session that hit a snag with: what did we learn that isn't yet in a skill? Draft the additions.
 - A second model (ChatGPT) reviews diffs at end-of-feature. Prepare diffs cleanly for handoff when asked.
 
-## Skills
+## Skills — the engine behind this codebase
 
-The skill library lives in the linked `gamedev-skills` folder and loads into every session. It is the real engine; this codebase is its currently-cached output. Treat skill updates with the same rigor as code. Keep three registers distinct: **decisions** (with reasons), **gotchas**, and **contracts** (schemas/APIs referenced as file paths, not paraphrased prose).
+The skill library lives in `gamedev-skills`, linked into this project and loaded into every session. **The skills are the real engine; this codebase is their currently-cached output.** The paradigm only works if the library grows alongside the kernel — a skill set that can't regenerate the code is stale, and periodic parity drills (regenerate from skills alone, run the real test suite against it) exist to prove it hasn't gone stale.
+
+**Edit skills freely and directly.** The link points at the real library, not a copy. Updating it is the point of the work, not a side effect of it — never treat the skills as another repo's business, and never defer a skill update for time.
+
+**What earns a skill entry:** knowledge that would be needed to rebuild the kernel from nothing. A **decision** with its reason ("document-level undo via immer patches, because per-tool undo is where editor jank comes from"). A **gotcha** with its fix. A **contract**, referenced as a file path rather than paraphrased as prose. Not a log of what was built this session — that's what commit messages are for. The test: if an entry wouldn't help a fresh session working on an empty machine, it doesn't belong in a skill.
+
+Keep the three registers distinct within each skill, and record dates on entries so version-dependent knowledge can be aged out later.
