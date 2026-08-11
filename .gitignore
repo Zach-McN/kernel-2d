@@ -1,0 +1,7 @@
+.claude/settings.local.json
+
+# Junction/symlink to the sibling gamedev-skills repo — lives in its own repo
+.claude/skills
+
+node_modules/
+dist/
