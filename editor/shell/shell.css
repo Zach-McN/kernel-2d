@@ -108,6 +108,89 @@ body {
   height: 100%;
 }
 
+/* --- the assets tree ---------------------------------------------------- */
+
+.assets {
+  height: 100%;
+  overflow: auto;
+  padding: 4px 0 12px;
+}
+
+.assets__tree {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.assets__message {
+  margin: 0;
+  padding: 12px 16px;
+  color: var(--shell-text-dim);
+}
+
+.assets__message--bad {
+  color: var(--shell-bad);
+}
+
+.assets__stale {
+  margin: 0 0 4px;
+  padding: 6px 12px;
+  background: rgba(229, 113, 95, 0.12);
+  border-bottom: 1px solid rgba(229, 113, 95, 0.35);
+  color: var(--shell-bad);
+}
+
+.asset-row__button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 2px 8px;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: default;
+  line-height: 20px;
+}
+
+.asset-row__button:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.asset-row__button[data-selected='true'] {
+  background: rgba(96, 150, 230, 0.28);
+}
+
+.asset-row__button[data-kind='directory'] .asset-row__name {
+  font-weight: 600;
+}
+
+.asset-row__chevron {
+  flex: none;
+  width: 12px;
+  color: var(--shell-text-dim);
+  font-size: 12px;
+  line-height: 1;
+  text-align: center;
+}
+
+.asset-row__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.asset-row__size {
+  margin-left: auto;
+  padding-left: 12px;
+  flex: none;
+  color: var(--shell-text-dim);
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+}
+
 /* --- empty panels ------------------------------------------------------- */
 
 .panel-placeholder {

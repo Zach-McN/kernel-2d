@@ -1,4 +1,5 @@
 import type { SidecarConfig } from './config.js'
+import { createEventFeed } from './feed.js'
 import { formatBanner, formatEvent, formatTimestamp } from './log.js'
 import { scanProject } from './scan.js'
 import { startServer } from './server.js'
@@ -29,9 +30,14 @@ export async function startSidecar(
   config: SidecarConfig,
   options: StartSidecarOptions = {},
 ): Promise<SidecarHandle> {
+  // One feed, two audiences: the terminal the human is looking at, and every
+  // editor window listening on the change stream.
+  const feed = createEventFeed()
+
   const watcher = startWatcher(config.projectPath, {
     onEvent: (event) => {
       console.log(`${formatTimestamp(event.at)} ${formatEvent(event)}`)
+      feed.publish(event)
     },
     onError: (error) => {
       console.error(`${formatTimestamp(Date.now())} ! watcher  ${error.message}`)
@@ -40,7 +46,12 @@ export async function startSidecar(
 
   let server
   try {
-    server = await startServer({ projectPath: config.projectPath, host: config.host, port: config.port })
+    server = await startServer({
+      projectPath: config.projectPath,
+      host: config.host,
+      port: config.port,
+      feed,
+    })
   } catch (error) {
     // The watcher is already running by this point; leaving it behind would
     // hold the folder open for a process that is about to give up.

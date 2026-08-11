@@ -2,10 +2,11 @@ import type { Stats } from 'node:fs'
 
 import { watch } from 'chokidar'
 
+import type { FileEventKind } from './event-schema.js'
 import { isIgnoredPath } from './ignore.js'
 import { relativePosixPath } from './paths.js'
 
-export type FileEventKind = 'added' | 'changed' | 'removed'
+export type { FileEventKind }
 
 export interface FileEvent {
   kind: FileEventKind

@@ -14,9 +14,12 @@ test.describe('the editor shell', () => {
       await expect(page.getByRole('tab', { name: title, exact: true })).toBeVisible()
     }
 
-    // Each panel shows what it is for while it is still empty.
+    // A panel that has not been built yet says what will live in it.
     await expect(page.locator('[data-panel="viewport"]')).toContainText('The game itself')
-    await expect(page.locator('[data-panel="assets"]')).toContainText('Your project folder')
+    await expect(page.locator('[data-panel="inspector"]')).toContainText('ready to tune')
+
+    // A panel that has been built shows itself instead.
+    await expect(page.getByTestId('assets-panel')).toBeVisible()
   })
 
   test('says which project folder it is connected to', async ({ page }) => {

@@ -23,6 +23,8 @@ export interface SidecarStatus {
   endpoints: {
     /** Path to the file tree, relative to this server's root. */
     tree: string
+    /** Path to the change feed, which is a server-sent event stream. */
+    events: string
   }
 }
 
@@ -33,5 +35,6 @@ export const SidecarStatusSchema: z.ZodType<SidecarStatus> = z.object({
   projectName: z.string().min(1),
   endpoints: z.object({
     tree: z.string().min(1),
+    events: z.string().min(1),
   }),
 })

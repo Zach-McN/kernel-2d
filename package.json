@@ -10,6 +10,7 @@
   "scripts": {
     "editor": "tsx scripts/editor.ts",
     "sidecar": "tsx sidecar/main.ts",
+    "sample-project": "tsx scripts/sample-project.ts",
     "dev": "vite",
     "build:editor": "vite build",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.editor.json",

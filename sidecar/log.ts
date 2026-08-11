@@ -1,6 +1,10 @@
+import { formatBytes } from './bytes.js'
 import type { SidecarConfig } from './config.js'
+import type { FileEventKind } from './event-schema.js'
 import type { ProjectTree } from './tree-schema.js'
-import type { FileEvent, FileEventKind } from './watcher.js'
+import type { FileEvent } from './watcher.js'
+
+export { formatBytes }
 
 /**
  * Terminal output, as pure functions. The formatting is the human-facing
@@ -15,13 +19,6 @@ const SYMBOLS: Record<FileEventKind, string> = {
 }
 
 const KIND_WIDTH = 7
-
-export function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
-  return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`
-}
 
 /** e.g. `+ added   assets/textures/knight.png (12.4 KB)` */
 export function formatEvent(event: FileEvent): string {

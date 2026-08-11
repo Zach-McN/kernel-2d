@@ -1,6 +1,8 @@
 import type { DockviewApi, IDockviewPanelProps } from 'dockview-react'
 import type { FunctionComponent, ReactElement } from 'react'
 
+import { AssetsPanel } from '../panels/AssetsPanel'
+
 /**
  * Every panel the editor has, declared once.
  *
@@ -17,33 +19,44 @@ export interface PanelDefinition {
   title: string
   /** One line telling the human what will live here. */
   blurb: string
+  /** The panel itself. Panels not built yet show their blurb instead. */
+  render?: FunctionComponent
+}
+
+const VIEWPORT: PanelDefinition = {
+  id: 'viewport',
+  title: 'Viewport',
+  blurb: 'The game itself, drawn by the real runtime. Scenes open here, and play mode runs here.',
+}
+
+const HIERARCHY: PanelDefinition = {
+  id: 'hierarchy',
+  title: 'Hierarchy',
+  blurb: 'Everything in the open scene, as a tree you can select, reorder, and nest.',
+}
+
+const INSPECTOR: PanelDefinition = {
+  id: 'inspector',
+  title: 'Inspector',
+  blurb: 'The properties of whatever is selected, ready to tune.',
+}
+
+const ASSETS: PanelDefinition = {
+  id: 'assets',
+  title: 'Assets',
+  blurb: 'Your project folder, mirrored exactly — textures, models, audio, and their import settings.',
+  render: AssetsPanel,
 }
 
 export const PANELS = {
-  viewport: {
-    id: 'viewport',
-    title: 'Viewport',
-    blurb: 'The game itself, drawn by the real runtime. Scenes open here, and play mode runs here.',
-  },
-  hierarchy: {
-    id: 'hierarchy',
-    title: 'Hierarchy',
-    blurb: 'Everything in the open scene, as a tree you can select, reorder, and nest.',
-  },
-  inspector: {
-    id: 'inspector',
-    title: 'Inspector',
-    blurb: 'The properties of whatever is selected, ready to tune.',
-  },
-  assets: {
-    id: 'assets',
-    title: 'Assets',
-    blurb: 'Your project folder, mirrored exactly — textures, models, audio, and their import settings.',
-  },
-} as const satisfies Record<string, PanelDefinition>
+  viewport: VIEWPORT,
+  hierarchy: HIERARCHY,
+  inspector: INSPECTOR,
+  assets: ASSETS,
+} as const
 
 export const PANEL_COMPONENTS: Record<string, FunctionComponent<IDockviewPanelProps>> = Object.fromEntries(
-  Object.values(PANELS).map((panel) => [panel.id, () => <PanelPlaceholder panel={panel} />]),
+  Object.values(PANELS).map((panel) => [panel.id, panel.render ?? (() => <PanelPlaceholder panel={panel} />)]),
 )
 
 /**

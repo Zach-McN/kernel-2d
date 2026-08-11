@@ -2,6 +2,8 @@ import http from 'node:http'
 import type { AddressInfo } from 'node:net'
 import path from 'node:path'
 
+import { toFileEventMessage } from './event-schema.js'
+import { createEventFeed, type EventFeed } from './feed.js'
 import { scanProject } from './scan.js'
 import { toPosixPath } from './paths.js'
 import { SIDECAR_STATUS_FORMAT, SIDECAR_STATUS_VERSION, type SidecarStatus } from './status-schema.js'
@@ -11,6 +13,8 @@ export interface ServerOptions {
   host: string
   /** 0 asks the operating system for any free port — used by the tests. */
   port: number
+  /** Where change events arrive from. Defaults to a feed nobody publishes to. */
+  feed?: EventFeed
 }
 
 export interface ServerHandle {
@@ -20,9 +24,29 @@ export interface ServerHandle {
   close: () => Promise<void>
 }
 
+/**
+ * How often a comment is written down an idle change stream. Nothing reads it;
+ * it exists so a proxy or a sleeping network stack does not decide a quiet
+ * connection is a dead one.
+ */
+const HEARTBEAT_MS = 15_000
+
+interface ServerContext {
+  options: ServerOptions
+  feed: EventFeed
+  /** Every open change stream, so the server can end them when it shuts down. */
+  streams: Set<() => void>
+}
+
 export function startServer(options: ServerOptions): Promise<ServerHandle> {
+  const context: ServerContext = {
+    options,
+    feed: options.feed ?? createEventFeed(),
+    streams: new Set(),
+  }
+
   const server = http.createServer((request, response) => {
-    void handleRequest(options, request, response)
+    void handleRequest(context, request, response)
   })
 
   return new Promise<ServerHandle>((resolve, reject) => {
@@ -35,11 +59,23 @@ export function startServer(options: ServerOptions): Promise<ServerHandle> {
       server.removeListener('error', onStartupError)
       const address = server.address() as AddressInfo
       const url = `http://${options.host}:${address.port}`
+      let closed = false
+
       resolve({
         port: address.port,
         url,
         close: () =>
           new Promise<void>((done, fail) => {
+            // Shutting down twice is a normal race between a signal handler and
+            // whatever else decided to stop, not a fault worth reporting.
+            if (closed) {
+              done()
+              return
+            }
+            closed = true
+            // A change stream is a response that never ends on its own, so
+            // closing the server without ending them first waits forever.
+            for (const endStream of [...context.streams]) endStream()
             server.close((error) => (error ? fail(error) : done()))
           }),
       })
@@ -62,7 +98,7 @@ function startupError(options: ServerOptions, error: NodeJS.ErrnoException): Err
 }
 
 async function handleRequest(
-  options: ServerOptions,
+  context: ServerContext,
   request: http.IncomingMessage,
   response: http.ServerResponse,
 ): Promise<void> {
@@ -71,16 +107,16 @@ async function handleRequest(
     return
   }
 
-  const pathname = new URL(request.url ?? '/', `http://${options.host}`).pathname
+  const pathname = new URL(request.url ?? '/', `http://${context.options.host}`).pathname
 
   if (pathname === '/') {
-    sendJson(response, 200, statusOf(options))
+    sendJson(response, 200, statusOf(context.options))
     return
   }
 
   if (pathname === '/tree') {
     try {
-      sendJson(response, 200, await scanProject(options.projectPath))
+      sendJson(response, 200, await scanProject(context.options.projectPath))
     } catch (error) {
       sendJson(response, 500, {
         error: 'Could not read the project folder',
@@ -90,7 +126,56 @@ async function handleRequest(
     return
   }
 
+  if (pathname === '/events') {
+    streamEvents(context, request, response)
+    return
+  }
+
   sendJson(response, 404, { error: 'Not found', path: pathname })
+}
+
+/**
+ * The change feed, as server-sent events.
+ *
+ * One direction only — the sidecar tells the editor what moved — which is
+ * exactly the shape of the problem, and it costs no dependency and no
+ * reconnect logic: the browser's own EventSource retries by itself.
+ */
+function streamEvents(
+  context: ServerContext,
+  request: http.IncomingMessage,
+  response: http.ServerResponse,
+): void {
+  response.writeHead(200, {
+    'Content-Type': 'text/event-stream; charset=utf-8',
+    'Cache-Control': 'no-store',
+    Connection: 'keep-alive',
+    // Dev proxies buffer responses by default, which would hold every change
+    // back until enough bytes had piled up to be worth forwarding.
+    'X-Accel-Buffering': 'no',
+  })
+
+  // Flushes the headers straight away, so a listener knows it is connected now
+  // rather than when the folder first changes.
+  response.write(': connected\n\n')
+
+  const unsubscribe = context.feed.subscribe((event) => {
+    response.write(`data: ${JSON.stringify(toFileEventMessage(event))}\n\n`)
+  })
+
+  const heartbeat = setInterval(() => response.write(': keep-alive\n\n'), HEARTBEAT_MS)
+  // Never a reason for a heartbeat to hold the process open.
+  heartbeat.unref()
+
+  const endStream = (): void => {
+    if (!context.streams.delete(endStream)) return
+    clearInterval(heartbeat)
+    unsubscribe()
+    response.end()
+  }
+
+  context.streams.add(endStream)
+  request.on('close', endStream)
 }
 
 /** Who this sidecar is and which folder it is holding open. */
@@ -100,7 +185,7 @@ function statusOf(options: ServerOptions): SidecarStatus {
     version: SIDECAR_STATUS_VERSION,
     projectPath: toPosixPath(options.projectPath),
     projectName: path.basename(options.projectPath),
-    endpoints: { tree: '/tree' },
+    endpoints: { tree: '/tree', events: '/events' },
   }
 }
 
