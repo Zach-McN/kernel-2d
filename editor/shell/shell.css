@@ -1,0 +1,136 @@
+/*
+ * The shell's own styling — the frame around the docking layout. Panel
+ * contents style themselves; the docking chrome comes from dockview's theme.
+ */
+
+:root {
+  color-scheme: dark;
+
+  --shell-background: #171a1f;
+  --shell-line: #2a2f38;
+  --shell-text: #d7dce3;
+  --shell-text-dim: #8b95a3;
+  --shell-good: #4ec98a;
+  --shell-bad: #e5715f;
+  --shell-waiting: #d9b34a;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--shell-background);
+  color: var(--shell-text);
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  font-size: 13px;
+  overflow: hidden;
+}
+
+.editor-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+/* --- status strip ------------------------------------------------------- */
+
+.status-strip {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  flex: none;
+  height: 32px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--shell-line);
+  font-size: 12px;
+  line-height: 32px;
+  white-space: nowrap;
+}
+
+.status-strip__brand {
+  color: var(--shell-text-dim);
+  letter-spacing: 0.04em;
+}
+
+.status-strip__project {
+  font-weight: 600;
+}
+
+.status-strip__path {
+  color: var(--shell-text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  direction: rtl; /* keeps the tail of a long path visible, which is the useful end */
+  text-align: left;
+}
+
+.status-strip__connection {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  padding-left: 12px;
+  color: var(--shell-text-dim);
+}
+
+.status-strip__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--shell-waiting);
+}
+
+.status-strip[data-connection='connected'] .status-strip__dot {
+  background: var(--shell-good);
+}
+
+.status-strip[data-connection='unavailable'] .status-strip__dot {
+  background: var(--shell-bad);
+}
+
+.status-strip[data-connection='unavailable'] .status-strip__connection {
+  color: var(--shell-bad);
+}
+
+/* --- docking layout ----------------------------------------------------- */
+
+.editor-shell__panels {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+}
+
+.editor-shell__panels > .dv-dockview {
+  height: 100%;
+}
+
+/* --- empty panels ------------------------------------------------------- */
+
+.panel-placeholder {
+  padding: 14px 16px;
+  max-width: 46ch;
+}
+
+.panel-placeholder__title {
+  margin: 0 0 6px;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.panel-placeholder__blurb {
+  margin: 0 0 10px;
+  color: var(--shell-text-dim);
+  line-height: 1.5;
+}
+
+.panel-placeholder__note {
+  margin: 0;
+  color: var(--shell-text-dim);
+  opacity: 0.6;
+  font-style: italic;
+}

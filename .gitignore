@@ -5,3 +5,8 @@
 
 node_modules/
 dist/
+
+# Browser-test output and the throwaway project the browser tests build
+test-results/
+playwright-report/
+tests/.tmp/

@@ -103,6 +103,20 @@ describe('the banner printed at startup', () => {
     expect(banner).toContain('a rename shows as one removal and one addition')
   })
 
+  it('names the editor window too, when the sidecar is running behind one', () => {
+    const banner = formatBanner(config, tree(1, 1), 'http://127.0.0.1:7331', 'http://127.0.0.1:5173/').join('\n')
+
+    expect(banner).toContain('kernel-2d editor')
+    expect(banner).toContain('http://127.0.0.1:5173/')
+  })
+
+  it('calls itself the sidecar when it is running on its own', () => {
+    const banner = formatBanner(config, tree(1, 1), 'http://127.0.0.1:7331').join('\n')
+
+    expect(banner).toContain('kernel-2d sidecar')
+    expect(banner).not.toContain('editor')
+  })
+
   it('counts one thing as one thing', () => {
     const banner = formatBanner(config, tree(1, 1), 'http://127.0.0.1:7331').join('\n')
 

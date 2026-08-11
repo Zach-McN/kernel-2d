@@ -43,11 +43,22 @@ export function formatTimestamp(at: number): string {
   return `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
 }
 
-export function formatBanner(config: SidecarConfig, tree: ProjectTree, url: string): string[] {
+/**
+ * `editorUrl` is present when the sidecar is running behind an editor window,
+ * absent when it was started on its own. One banner either way, so there is a
+ * single place that answers "what is running and which folder is it holding".
+ */
+export function formatBanner(
+  config: SidecarConfig,
+  tree: ProjectTree,
+  url: string,
+  editorUrl?: string,
+): string[] {
   return [
-    'kernel-2d sidecar',
+    editorUrl === undefined ? 'kernel-2d sidecar' : 'kernel-2d editor',
     `  project    ${config.displayPath}`,
     `  contents   ${plural(tree.fileCount, 'file')} in ${plural(tree.directoryCount, 'folder')}`,
+    ...(editorUrl === undefined ? [] : [`  editor     ${editorUrl}`]),
     `  tree URL   ${url}/tree`,
     '  watching   changes appear below — a rename shows as one removal and one addition',
     '',

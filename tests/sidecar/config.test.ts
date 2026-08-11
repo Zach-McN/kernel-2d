@@ -2,7 +2,13 @@ import path from 'node:path'
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
-import { DEFAULT_PORT, PORT_ENV_VAR, SIDECAR_HOST, resolveConfig } from '../../sidecar/config.js'
+import {
+  DEFAULT_PORT,
+  PORT_ENV_VAR,
+  PROJECT_ENV_VAR,
+  SIDECAR_HOST,
+  resolveConfig,
+} from '../../sidecar/config.js'
 import { makeTempProject, type TempProject } from '../fixtures/project-fixture.js'
 
 describe('starting the sidecar against a project folder', () => {
@@ -52,6 +58,36 @@ describe('starting the sidecar against a project folder', () => {
     if (result.ok) return
     expect(result.message).toContain('No project folder given')
     expect(result.message).toContain('Usage')
+  })
+
+  it('takes the folder from the environment when the command line does not say', () => {
+    const result = resolveConfig([], { [PROJECT_ENV_VAR]: project.root }, process.cwd())
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.config.projectPath).toBe(project.root)
+  })
+
+  it('lets the command line override the environment', async () => {
+    const other = await makeTempProject()
+
+    try {
+      const result = resolveConfig([project.root], { [PROJECT_ENV_VAR]: other.root }, process.cwd())
+
+      expect(result.ok).toBe(true)
+      if (!result.ok) return
+      expect(result.config.projectPath).toBe(project.root)
+    } finally {
+      await other.cleanup()
+    }
+  })
+
+  it('treats an empty environment variable as not set, rather than as the current folder', () => {
+    const result = resolveConfig([], { [PROJECT_ENV_VAR]: '   ' }, process.cwd())
+
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.message).toContain('No project folder given')
   })
 
   it('refuses to start when the folder does not exist, and names the path it looked for', () => {

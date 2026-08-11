@@ -7,8 +7,11 @@ import { toPosixPath } from './paths.js'
 export const SIDECAR_HOST = '127.0.0.1'
 export const DEFAULT_PORT = 7331
 export const PORT_ENV_VAR = 'KERNEL_SIDECAR_PORT'
+export const PROJECT_ENV_VAR = 'KERNEL_PROJECT'
 
-export const USAGE = 'Usage: npm run sidecar -- <path-to-project-folder> [--port <number>]'
+export const USAGE =
+  'Usage: npm run editor -- <path-to-project-folder> [--port <number>]\n' +
+  `Or name the folder once in ${PROJECT_ENV_VAR} and leave it off the command.`
 
 export interface SidecarConfig {
   /** Absolute, real (symlinks resolved), OS-native path to the watched project folder. */
@@ -62,7 +65,11 @@ export function resolveConfig(
     projectArg = token
   }
 
-  if (projectArg === undefined || projectArg.trim() === '') {
+  // Command line beats environment, the same way the port does. The
+  // environment is what lets a test harness or a shell profile point the
+  // sidecar at a folder without putting it on every command.
+  const project = firstFilled(projectArg, env[PROJECT_ENV_VAR])
+  if (project === undefined) {
     return { ok: false, message: `No project folder given.\n${USAGE}` }
   }
 
@@ -72,7 +79,7 @@ export function resolveConfig(
     return { ok: false, message: `Port must be a whole number between 0 and 65535, not "${raw}".` }
   }
 
-  const absolute = path.resolve(cwd, projectArg)
+  const absolute = path.resolve(cwd, project)
 
   let realPath: string
   try {
@@ -95,6 +102,14 @@ export function resolveConfig(
       port,
     },
   }
+}
+
+/** The first value that is present and not just whitespace. */
+function firstFilled(...values: readonly (string | undefined)[]): string | undefined {
+  for (const value of values) {
+    if (value !== undefined && value.trim() !== '') return value
+  }
+  return undefined
 }
 
 /** Command line beats environment beats default. `null` means the value given was not a usable port. */

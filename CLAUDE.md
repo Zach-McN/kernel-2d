@@ -45,6 +45,7 @@ Two distinct structures are in play. **This repo** is the editor software. A **g
 | `runtime/` | The engine: Phaser 4 setup, render loop, entity/component layer, input, and the loaders that turn project JSON into a running game. **The only part that ships inside an exported game.** Contains zero editor code — that separation is what keeps exports clean. |
 | `editor/` | The editor web app: React panels, docking layout, asset browser, inspector, viewport wrapper, gizmos, transaction/undo system. Imports `runtime/` as a library and embeds it as the viewport, so the editor preview is the actual game. Never ships. |
 | `sidecar/` | The Node background process that owns the disk: chokidar file watching, `.meta` generation, JSON read/write API, static asset serving. Development-only, never ships. |
+| `scripts/` | Development entry points and their settings — `npm run editor` lives here, along with the editor window's host/port knobs. Never ships. |
 | `tests/` | Vitest unit tests and Playwright browser tests. Sample data lives in `tests/fixtures/` — never in a real content folder. |
 | `docs/` | The feasibility report; genre specs as they're written. |
 

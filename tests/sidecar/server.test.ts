@@ -1,8 +1,12 @@
+import path from 'node:path'
+
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import { SIDECAR_HOST } from '../../sidecar/config.js'
+import { toPosixPath } from '../../sidecar/paths.js'
 import { scanProject } from '../../sidecar/scan.js'
 import { startServer, type ServerHandle } from '../../sidecar/server.js'
+import { SidecarStatusSchema } from '../../sidecar/status-schema.js'
 import { ProjectTreeSchema } from '../../sidecar/tree-schema.js'
 import { makeTempProject, type TempProject } from '../fixtures/project-fixture.js'
 
@@ -56,11 +60,15 @@ describe('looking at the project through a browser', () => {
     expect(after.fileCount).toBe(4)
   })
 
-  it('points a visitor at the tree from the front page', async () => {
+  it('says which project it is holding open, and points at the tree', async () => {
     const response = await fetch(`${server.url}/`)
 
     expect(response.status).toBe(200)
-    expect(await response.json()).toMatchObject({ endpoints: { tree: '/tree' } })
+
+    const status = SidecarStatusSchema.parse(await response.json())
+    expect(status.projectPath).toBe(toPosixPath(project.root))
+    expect(status.projectName).toBe(path.basename(project.root))
+    expect(status.endpoints.tree).toBe('/tree')
   })
 
   it('answers plainly when asked for something that is not there', async () => {

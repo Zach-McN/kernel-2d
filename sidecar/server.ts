@@ -1,8 +1,10 @@
 import http from 'node:http'
 import type { AddressInfo } from 'node:net'
+import path from 'node:path'
 
 import { scanProject } from './scan.js'
 import { toPosixPath } from './paths.js'
+import { SIDECAR_STATUS_FORMAT, SIDECAR_STATUS_VERSION, type SidecarStatus } from './status-schema.js'
 
 export interface ServerOptions {
   projectPath: string
@@ -72,11 +74,7 @@ async function handleRequest(
   const pathname = new URL(request.url ?? '/', `http://${options.host}`).pathname
 
   if (pathname === '/') {
-    sendJson(response, 200, {
-      name: 'kernel-2d sidecar',
-      project: toPosixPath(options.projectPath),
-      endpoints: { tree: '/tree' },
-    })
+    sendJson(response, 200, statusOf(options))
     return
   }
 
@@ -93,6 +91,17 @@ async function handleRequest(
   }
 
   sendJson(response, 404, { error: 'Not found', path: pathname })
+}
+
+/** Who this sidecar is and which folder it is holding open. */
+function statusOf(options: ServerOptions): SidecarStatus {
+  return {
+    format: SIDECAR_STATUS_FORMAT,
+    version: SIDECAR_STATUS_VERSION,
+    projectPath: toPosixPath(options.projectPath),
+    projectName: path.basename(options.projectPath),
+    endpoints: { tree: '/tree' },
+  }
 }
 
 /** Pretty-printed so the tree URL is readable straight in a browser window. */
