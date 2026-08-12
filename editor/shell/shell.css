@@ -522,6 +522,40 @@ body {
 }
 
 /*
+ * Play and Stop. Held to the same one-line rule as everything else in this bar:
+ * the canvas's height is what framing is computed against, so a control that
+ * wrapped onto a second line would change the answer (see the note above).
+ */
+.scene .viewport__play {
+  flex-shrink: 0;
+}
+
+/*
+ * A panel that stops accepting input while a level is running.
+ *
+ * `display: contents` on purpose: the wrapper exists only to carry `inert`, and
+ * a box here would put a second element between dockview's panel container and
+ * a panel that expects to be its child — which is exactly the sort of layout
+ * change that turns up later as a list that will not scroll.
+ */
+.panel-host {
+  display: contents;
+}
+
+/*
+ * Dimmed while a level is running, because `inert` is invisible.
+ *
+ * Without it the Hierarchy and the Inspector look exactly as they do when they
+ * work, and a human presses Delete twice before reading the caption under the
+ * canvas. The rule is on the attribute rather than a class of our own, so
+ * whatever is out of reach and the thing that looks out of reach are the same
+ * set by construction.
+ */
+.panel-host[inert] > * {
+  opacity: 0.45;
+}
+
+/*
  * The camera's two cursors. `ready` is space held down — the offer of a drag,
  * before one has started — and `holding` is the drag itself. Without the first
  * one, space-and-drag is a gesture with nothing on screen to suggest it exists.

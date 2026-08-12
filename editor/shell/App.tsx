@@ -7,6 +7,7 @@ import { AssetMetaProvider } from './asset-meta-context'
 import { LayoutProvider, useLayout } from './layout-context'
 import { OpenSceneProvider } from './open-scene'
 import { PANEL_COMPONENTS, layOutPanels } from './panels'
+import { PlayModeProvider } from './play-mode'
 import { ProjectProvider } from './project-context'
 import { SceneAssetsProvider } from './scene-assets'
 import { ScenePrefabsProvider } from './scene-prefabs'
@@ -30,8 +31,13 @@ import { ViewportProvider } from './viewport-context'
  * The order is the dependency order: the folder, then what is selected in it,
  * then that file's settings and the scene it may have opened, then what that
  * scene's instances inherit, then the textures all of that turns out to need,
- * then the two renderers, then the layout handle that lets a selection bring a
- * tab forward.
+ * then the two renderers, then play mode, then the layout handle that lets a
+ * selection bring a tab forward.
+ *
+ * Play mode is below the scene renderer because starting a level needs the
+ * picture the editing view is showing at that instant — that report is what the
+ * running level gets checked against — and above the layout because a running
+ * level puts every other panel out of reach.
  *
  * Prefabs sit *above* textures deliberately: an instance's picture is named by
  * its prefab, so which textures a level needs cannot be known until every prefab
@@ -60,9 +66,11 @@ export function App(): ReactElement {
               <SceneAssetsProvider>
                 <ViewportProvider>
                   <SceneViewProvider>
-                    <LayoutProvider>
-                      <Shell connection={connection} />
-                    </LayoutProvider>
+                    <PlayModeProvider>
+                      <LayoutProvider>
+                        <Shell connection={connection} />
+                      </LayoutProvider>
+                    </PlayModeProvider>
                   </SceneViewProvider>
                 </ViewportProvider>
               </SceneAssetsProvider>

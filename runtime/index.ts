@@ -96,6 +96,14 @@ export {
 export type { DrawnEntity } from './scene/entity-layer'
 
 export {
+  describeLoadProblem,
+  loadScene,
+  type LoadProblem,
+  type ProjectReader,
+  type SceneLoadResult,
+} from './scene/load-scene'
+
+export {
   createSceneView,
   type SceneRequest,
   type SceneTexture,

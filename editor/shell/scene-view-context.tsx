@@ -63,6 +63,23 @@ export type SceneViewState =
       canvas: HTMLCanvasElement
       /** What is on screen, or null when nothing is. */
       shown: ShownScene | null
+      /**
+       * Which request produced `shown`, compared by identity.
+       *
+       * Two requests can describe the same level and be different pictures of
+       * it — the editor's resolution of a level and the runtime's own, most
+       * obviously, which is the pair play mode exists to compare. The path
+       * cannot tell them apart and neither can the report, so the question is
+       * answered here, where the association is actually known.
+       */
+      shownFor: SceneRequest | null
+      /**
+       * The key of the request `shown` is a picture of — what `useDrawScene`
+       * hands in, so a caller can tell whether the picture on screen is of the
+       * thing it is currently asking for, without holding an object identity
+       * across a render that rebuilds it.
+       */
+      shownKey: string
       /** Why the scene could not be drawn, if it could not. */
       problem: string | null
       /** Told by the panel that hosts the canvas, in CSS pixels. */
@@ -80,8 +97,20 @@ export type SceneViewState =
       frameEntity: (entityId: string) => void
     }
 
+/**
+ * A request, paired with the key that decides when it counts as a different
+ * one.
+ *
+ * The two travel together rather than in two pieces of state, so a report can
+ * never be recorded against a key from a different render.
+ */
+interface Subject {
+  request: SceneRequest
+  key: string
+}
+
 interface SceneSubjectApi {
-  setSubject: (subject: SceneRequest | null) => void
+  setSubject: (subject: SceneRequest | null, key: string) => void
   /** False while any of this scene's textures is still in the air. */
   setComplete: (complete: boolean) => void
 }
@@ -102,9 +131,9 @@ export function SceneViewProvider({ children }: { children: ReactNode }): ReactE
    * ask is a real report of that same scene with a sprite missing from it.
    * Compared by identity, which is exactly the question being asked.
    */
-  const [shownFor, setShownFor] = useState<SceneRequest | null>(null)
+  const [shownFor, setShownFor] = useState<Subject | null>(null)
   const [problem, setProblem] = useState<string | null>(null)
-  const [subject, setSubject] = useState<SceneRequest | null>(null)
+  const [subject, setSubject] = useState<Subject | null>(null)
   const [complete, setComplete] = useState(false)
   const [panel, setPanel] = useState<Size>({ width: 0, height: 0 })
   /**
@@ -118,7 +147,7 @@ export function SceneViewProvider({ children }: { children: ReactNode }): ReactE
    */
   const [cameras, setCameras] = useState<Readonly<Record<string, Camera>>>({})
 
-  const scenePath = subject?.path ?? null
+  const scenePath = subject?.request.path ?? null
 
   // Mirrors of state, read inside callbacks that must stay stable. Read during
   // render rather than in an effect, so nothing ever sees a value from the
@@ -170,14 +199,14 @@ export function SceneViewProvider({ children }: { children: ReactNode }): ReactE
     // *before* it is drawn, rather than drawn at the last scene's camera and
     // corrected a frame later. Read from a ref on purpose: this effect must not
     // re-run when a camera changes, or every frame of a drag would be a reload.
-    const remembered = camerasRef.current[subject.path]
+    const remembered = camerasRef.current[subject.request.path]
     if (remembered !== undefined) view.restage(remembered)
 
     let live = true
     setProblem(null)
 
     void view
-      .show(subject)
+      .show(subject.request)
       .then((result) => {
         // A null result means a later request overtook this one, and the newer
         // request's own handler is the one that should be setting state.
@@ -327,10 +356,28 @@ export function SceneViewProvider({ children }: { children: ReactNode }): ReactE
     if (bootProblem !== null) return { state: 'unavailable', problem: bootProblem }
     if (view === null) return { state: 'booting' }
 
-    return { state: 'ready', canvas: view.canvas, shown, problem, measure, pan, zoom, frameAll, frameEntity }
-  }, [bootProblem, view, shown, problem, measure, pan, zoom, frameAll, frameEntity])
+    return {
+      state: 'ready',
+      canvas: view.canvas,
+      shown,
+      shownFor: shownFor?.request ?? null,
+      shownKey: shown === null ? '' : (shownFor?.key ?? ''),
+      problem,
+      measure,
+      pan,
+      zoom,
+      frameAll,
+      frameEntity,
+    }
+  }, [bootProblem, view, shown, shownFor, problem, measure, pan, zoom, frameAll, frameEntity])
 
-  const subjectApi = useMemo<SceneSubjectApi>(() => ({ setSubject, setComplete }), [])
+  const subjectApi = useMemo<SceneSubjectApi>(
+    () => ({
+      setSubject: (request, key) => setSubject(request === null ? null : { request, key }),
+      setComplete,
+    }),
+    [],
+  )
 
   return (
     <SceneViewContext.Provider value={value}>
@@ -377,28 +424,54 @@ export function useSceneView(): SceneViewState {
  * comparing by identity would redraw this scene because a neighbouring file
  * changed.
  *
+ * **`source` is part of that value, and it is load-bearing.** Two halves of the
+ * editor now produce requests for the same level — the editor's own resolution
+ * of it, and the runtime's, when Play is pressed — and if they agree, which is
+ * the whole intention, the two requests stringify the same. Without something to
+ * tell them apart, pressing Play would compare by value, find no change, and
+ * quietly never draw the runtime's picture at all: the editing view would stay
+ * on screen wearing play mode's caption. That is the most misleading failure
+ * this feature could have, and it is invisible precisely when everything else is
+ * working.
+ *
  * `complete` says whether every texture this scene refers to has been resolved
  * one way or the other — arrived, or known to be unusable. It travels
  * separately from the subject, and on its own effect, so that the last texture
  * turning out to be *missing* tells the viewport the scene has settled without
  * also asking it to draw again.
+ *
+ * **It answers whether the picture on screen is of exactly this request**, which
+ * is not the same question as "is there a picture". A level's textures arrive one
+ * at a time, so the report in hand is regularly a real report of this same level
+ * with half of it still missing — and there is a render between the last texture
+ * arriving and the redraw being asked for, during which everything looks ready
+ * and the picture is of the request before last. Anything acting on a *finished*
+ * picture has to wait for this: framing does, and so does Play, which would
+ * otherwise start against a baseline the human never saw.
  */
-export function useDrawScene(subject: SceneRequest | null, complete: boolean): void {
+export function useDrawScene(
+  subject: SceneRequest | null,
+  complete: boolean,
+  source: 'editing' | 'playing',
+): boolean {
   const api = useContext(SceneSubjectContext)
-  if (api === null) throw new Error('useDrawScene was called outside the editor shell')
+  const view = useContext(SceneViewContext)
+  if (api === null || view === null) throw new Error('useDrawScene was called outside the editor shell')
 
   const latest = useRef(subject)
   latest.current = subject
 
-  const key = subject === null ? '' : JSON.stringify(subject)
+  const key = subject === null ? '' : `${source}\n${JSON.stringify(subject)}`
 
   useEffect(() => {
-    api.setSubject(latest.current)
+    api.setSubject(latest.current, key)
   }, [key, api])
 
   useEffect(() => {
     api.setComplete(complete)
   }, [complete, api])
+
+  return key !== '' && view.state === 'ready' && view.shownKey === key
 }
 
 function messageOf(error: unknown): string {

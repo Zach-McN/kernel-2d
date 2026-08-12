@@ -6,6 +6,7 @@ import { HierarchyPanel } from '../panels/HierarchyPanel'
 import { InspectorPanel } from '../panels/InspectorPanel'
 import { TexturePanel } from '../panels/TexturePanel'
 import { ViewportPanel } from '../panels/ViewportPanel'
+import { usePlayMode } from './play-mode'
 
 /**
  * Every panel the editor has, declared once.
@@ -80,8 +81,42 @@ export const PANELS = {
 } as const
 
 export const PANEL_COMPONENTS: Record<string, FunctionComponent<IDockviewPanelProps>> = Object.fromEntries(
-  Object.values(PANELS).map((panel) => [panel.id, panel.render ?? (() => <PanelPlaceholder panel={panel} />)]),
+  Object.values(PANELS).map((panel) => {
+    const body = panel.render ?? ((): ReactElement => <PanelPlaceholder panel={panel} />)
+    return [panel.id, panel.id === VIEWPORT.id ? body : quietWhilePlaying(body)]
+  }),
 )
+
+/**
+ * A panel that stops accepting input while a level is running.
+ *
+ * Everything except the Viewport, because everything except the Viewport is a
+ * way to change a level — and a level that is running was read off disk, so a
+ * change made now would go to the file, move nothing on screen, and leave the
+ * human unable to tell which half was broken.
+ *
+ * `inert` rather than a `disabled` on each control: it covers the whole subtree
+ * including anything a later session adds, and it takes the panel out of the
+ * keyboard order too, which a pile of `disabled` attributes would each have to
+ * remember. The wrapper is `display: contents`, so no box is added and nothing
+ * about the docking layout changes.
+ *
+ * The store refuses an edit as well (`editor/store/open-documents.ts`). Two
+ * mechanisms on purpose: this one is what the human *sees*, and that one is what
+ * makes the guarantee hold whichever control anybody finds a way to reach. The
+ * sentence explaining it is shown once, in the viewport, rather than four times
+ * over.
+ */
+function quietWhilePlaying(Body: FunctionComponent): FunctionComponent {
+  return function QuietWhilePlaying(): ReactElement {
+    const { active } = usePlayMode()
+    return (
+      <div className="panel-host" inert={active} data-testid="panel-host">
+        <Body />
+      </div>
+    )
+  }
+}
 
 /**
  * The layout the editor opens in. The human can drag it into any other shape

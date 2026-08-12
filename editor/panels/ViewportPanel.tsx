@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useRef, type ReactElement, type ReactNode, type RefObject } from 'react'
 
-import type { SceneRequest, ShownScene } from '../../runtime'
+import { describeLoadProblem, type SceneRequest, type ShownScene } from '../../runtime'
 import { SCENE_FORMAT, type Entity } from '../../runtime/formats/scene-schema'
 import { basename } from '../shell/asset-kinds'
 import { entityAt, onScreen } from '../shell/drawn-entities'
 import { useOpenScene, type OpenSceneState } from '../shell/open-scene'
+import { comparePictures, describeComparison, type PlayComparison } from '../shell/play-comparison'
+import { usePlayMode, type PlayState } from '../shell/play-mode'
 import { describeProblem, problemsIn, useSceneAssets } from '../shell/scene-assets'
 import { describePrefabProblem, prefabProblemsIn, useResolvedScene } from '../shell/scene-prefabs'
 import { useDrawScene, useSceneView, type SceneViewState } from '../shell/scene-view-context'
@@ -15,7 +17,8 @@ import { editDocument, sealEdits } from '../store/open-documents'
 import { SceneOverlay, describeScene } from './SceneOverlay'
 
 /**
- * The open scene, drawn by the real runtime.
+ * The open scene, drawn by the real runtime — and, when Play is pressed, the
+ * same level as the runtime reads it off disk for itself.
  *
  * The panel's own job is small: host the canvas, measure itself, mark what is
  * selected, carry the gestures that drive the camera, and say what is going on
@@ -32,6 +35,16 @@ import { SceneOverlay, describeScene } from './SceneOverlay'
  * Where the human is looking is not in the level. It lives for as long as the
  * window does, never reaches the document, and never reaches the scene file —
  * so Ctrl-Z after a pan reverses the last thing that was *changed*.
+ *
+ * **Play mode is a change of subject and nothing else.** The renderer, the
+ * canvas and the camera are all the same objects; the only difference is that
+ * the request comes from `runtime/scene/load-scene.ts` — which opened the file
+ * itself — instead of from the editor's own resolution of it. That is what makes
+ * Stop free: there is nothing to tear down, because nothing was built. Three
+ * things follow, and each is one line below: the gestures go off, so the camera
+ * cannot move and the two pictures stay comparable; the framing effect is told
+ * the picture is incomplete, so a running level can never re-frame the editing
+ * view; and the selection outline is not drawn over a running game.
  */
 export function ViewportPanel(): ReactElement {
   const selection = useSelection()
@@ -39,14 +52,17 @@ export function ViewportPanel(): ReactElement {
   const view = useSceneView()
   const assets = useSceneAssets()
   const resolved = useResolvedScene()
+  const mode = usePlayMode()
   const host = useRef<HTMLDivElement>(null)
+
+  const running = mode.play.state === 'running' ? mode.play : null
 
   // The **resolved** entities, not the file's own: an instance's picture is
   // named by the prefab it points at, so drawing the scene as written would show
   // every placed prefab as nothing. This copy is handed to the renderer and
   // nowhere else — every edit below writes through the transaction API, which
   // re-finds its entity in the document (`editor/shell/scene-prefabs.tsx`).
-  const subject: SceneRequest | null =
+  const editing: SceneRequest | null =
     open.state === 'open'
       ? {
           path: open.path,
@@ -54,15 +70,33 @@ export function ViewportPanel(): ReactElement {
           textures: assets.textures,
         }
       : null
+
+  // While a level runs, the picture is the runtime's own reading of the file.
+  // The editor's resolution of the same level carries on being kept up to date
+  // behind it, which is why Stop needs to do nothing but change this back.
+  const subject = running?.request ?? editing
+
   // The second argument is what stops a level being framed against half of
   // itself: until every prefab and every texture has resolved, entities whose
   // sprite has not arrived count as points rather than as the area they cover.
-  useDrawScene(subject, subject !== null && !assets.loading && !resolved.loading)
+  // Never true while a level is running — framing off a play report would move
+  // the camera the human left, and Stop is meant to put them back exactly.
+  const settled = useDrawScene(
+    subject,
+    !mode.active && subject !== null && !assets.loading && !resolved.loading,
+    running === null ? 'editing' : 'playing',
+  )
 
   const shown = view.state === 'ready' ? view.shown : null
   // Only the scene that is open, in case a report from the previous one is
   // still the last thing the renderer answered with.
   const current = shown !== null && subject !== null && shown.path === subject.path ? shown : null
+
+  // The running level and the editing view are two pictures of one path, so the
+  // path cannot tell them apart. Identity can.
+  const playing =
+    running !== null && view.state === 'ready' && view.shownFor === running.request ? current : null
+  const comparison = usePlayComparison(running, playing, open)
 
   const selected = selection.selected.kind === 'entity' ? selection.selected.entity : null
   const ready = view.state === 'ready' ? view : null
@@ -70,7 +104,7 @@ export function ViewportPanel(): ReactElement {
   const placement = usePlacement(open, current)
   const gestures = useSceneGestures({
     host,
-    enabled: current !== null,
+    enabled: current !== null && !mode.active,
     pan: ready?.pan ?? noPan,
     zoom: ready?.zoom ?? noZoom,
     frameAll: ready?.frameAll ?? noop,
@@ -101,22 +135,68 @@ export function ViewportPanel(): ReactElement {
       data-scene-onscreen={visible === null ? '' : String(visible.count)}
       data-scene-picked={gestures.picked ?? ''}
       data-scene-dragging={gestures.dragging ?? ''}
+      data-play-state={mode.play.state}
+      data-play-scene={mode.play.state === 'stopped' ? '' : mode.play.path}
+      data-play-match={comparison?.kind ?? ''}
+      data-play-differences={comparison?.kind === 'different' ? String(comparison.differences.length) : ''}
+      data-play-problems={running === null ? '' : String(running.problems.length)}
     >
       <Stage host={host} view={view} grab={grabOf(gestures)}>
-        {current !== null && <SceneOverlay shown={current} selected={selected} />}
+        {/* No editor marks over a running game. */}
+        {current !== null && !mode.active && <SceneOverlay shown={current} selected={selected} />}
       </Stage>
 
-      <Caption
-        open={open}
-        view={view}
-        problems={problemsIn(assets)}
-        prefabProblems={prefabProblemsIn(resolved)}
-        selected={selected}
-        offScreen={offScreenIn(open, current, selected)}
-        moving={beingMoved}
-      />
+      {mode.play.state !== 'stopped' ? (
+        <PlayCaption
+          play={mode.play}
+          onStop={mode.stop}
+          comparison={comparison}
+          undrawable={playing?.undrawable ?? []}
+        />
+      ) : (
+        <Caption
+          open={open}
+          view={view}
+          problems={problemsIn(assets)}
+          prefabProblems={prefabProblemsIn(resolved)}
+          selected={selected}
+          offScreen={offScreenIn(open, current, selected)}
+          moving={beingMoved}
+          onPlay={mode.start}
+          // Not merely "there is a picture": a level's textures arrive one at a
+          // time, so a report can be a real report of this level with half of it
+          // missing. Play would then run against a baseline the human never
+          // actually saw, and the comparison would be checking the running level
+          // against a half-drawn one.
+          canPlay={current !== null && settled && !assets.loading && !resolved.loading}
+        />
+      )}
     </div>
   )
+}
+
+/**
+ * How the running level compares with the editing view it replaced.
+ *
+ * Only ever computed from a report that is definitely of the *running* level:
+ * for the render or two between Play being pressed and the runtime's picture
+ * arriving, the report on screen is still the editing view's, and comparing that
+ * with itself would announce a match nobody had checked.
+ */
+function usePlayComparison(
+  running: Extract<PlayState, { state: 'running' }> | null,
+  playing: ShownScene | null,
+  open: OpenSceneState,
+): PlayComparison | null {
+  const entities = open.state === 'open' ? open.scene.entities : null
+
+  return useMemo(() => {
+    if (running === null || playing === null) return null
+    // Names come from the level being edited, so a difference reads "Knight is
+    // drawn 4px left" rather than naming an id at somebody.
+    const names = new Map((entities ?? []).map((entity) => [entity.id, entity.name]))
+    return comparePictures(running.baseline, playing, names)
+  }, [running, playing, entities])
 }
 
 const noop = (): void => {}
@@ -325,6 +405,9 @@ interface CaptionProps {
   offScreen: OffScreen
   /** The entity being dragged right now, or null. */
   moving: Entity | null
+  onPlay: () => void
+  /** False until there is a settled picture of this level to run — and to check against. */
+  canPlay: boolean
 }
 
 /**
@@ -342,6 +425,8 @@ function Caption({
   selected,
   offScreen,
   moving,
+  onPlay,
+  canPlay,
 }: CaptionProps): ReactElement {
   if (view.state === 'unavailable') {
     return (
@@ -467,7 +552,128 @@ function Caption({
         </Note>
       ))}
 
+      <span className="viewport__play">
+        <button
+          type="button"
+          className="control control--action"
+          data-testid="play-start"
+          disabled={!canPlay}
+          title={
+            canPlay
+              ? 'Run this level from the file, drawn by the game runtime'
+              : 'Waiting for the level to finish opening'
+          }
+          onClick={onPlay}
+        >
+          ▶ Play
+        </button>
+      </span>
+
       <CameraControls view={view} selected={selected} />
+    </Bar>
+  )
+}
+
+/**
+ * What the bar says while a level is running.
+ *
+ * It replaces the editing caption outright rather than adding to it. Everything
+ * the editing caption says — how many entities are drawn, what is off screen,
+ * which texture is missing — is about the level *as the editor resolves it*, and
+ * repeating it under a picture that came from somewhere else would be the one
+ * genuinely misleading thing this panel could do.
+ *
+ * Three sentences, in the order somebody would want them: what is running and
+ * where it was read from, whether it matches what they were just looking at, and
+ * anything the runtime could not resolve.
+ */
+function PlayCaption({
+  play,
+  onStop,
+  comparison,
+  undrawable,
+}: {
+  play: Exclude<PlayState, { state: 'stopped' }>
+  onStop: () => void
+  comparison: PlayComparison | null
+  /**
+   * Textures the loader resolved and the renderer could not fetch — a file
+   * deleted since its `.meta` was written, most often. The loader cannot know
+   * about these: it reads settings, not pixels.
+   */
+  undrawable: readonly string[]
+}): ReactElement {
+  const stop = (
+    <span className="viewport__play">
+      <button
+        type="button"
+        className="control control--action"
+        data-testid="play-stop"
+        title="Back to editing, exactly where you left off"
+        onClick={onStop}
+      >
+        ■ Stop
+      </button>
+    </span>
+  )
+
+  if (play.state === 'starting') {
+    return (
+      <Bar>
+        <Note testId="play-starting">Saving and opening {basename(play.path)}…</Note>
+        {stop}
+      </Bar>
+    )
+  }
+
+  if (play.state === 'failed') {
+    return (
+      <Bar>
+        <Note bad testId="play-problem" title={play.problem}>
+          {play.problem}
+        </Note>
+        {stop}
+      </Bar>
+    )
+  }
+
+  return (
+    <Bar>
+      <Note
+        testId="play-running"
+        title={`Running ${play.path}, opened from the project folder by the game runtime. Editing is off until you press Stop.`}
+      >
+        Running <strong>{basename(play.path)}</strong> from the file. Editing is off until Stop.
+      </Note>
+
+      {comparison !== null && (
+        <Note
+          bad={comparison.kind !== 'same'}
+          testId="play-comparison"
+          title={describeComparison(comparison)}
+        >
+          {describeComparison(comparison)}
+        </Note>
+      )}
+
+      {play.problems.map((problem) => (
+        <Note
+          key={`${problem.kind}:${problem.path}`}
+          bad
+          testId="play-problem"
+          title={describeLoadProblem(problem)}
+        >
+          {describeLoadProblem(problem)}
+        </Note>
+      ))}
+
+      {undrawable.map((path) => (
+        <Note key={path} bad testId="play-problem" title={`${path} could not be loaded`}>
+          {basename(path)} is referenced and its picture could not be loaded, so nothing is drawn for it.
+        </Note>
+      ))}
+
+      {stop}
     </Bar>
   )
 }

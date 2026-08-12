@@ -4,7 +4,7 @@ import { ASSET_META_FORMAT, type AssetMeta } from '../../runtime/formats/meta-sc
 import { PREFAB_FORMAT, type Prefab } from '../../runtime/formats/prefab-schema'
 import { SCENE_FORMAT, type Scene } from '../../runtime/formats/scene-schema'
 import { writeDocumentToDisk } from './document-disk'
-import { createDocumentStore, type Document, type DocumentState } from './documents'
+import { createDocumentStore, type Document, type DocumentState, type DocumentStore } from './documents'
 import { writeMetaToDisk } from './meta-disk'
 
 /**
@@ -42,8 +42,51 @@ function saveToDisk(path: string, document: Document): Promise<unknown> {
 
 const store = createDocumentStore({ writeToDisk: saveToDisk })
 
-export const { edit, editDocument, sealEdits, undo, redo, peekUndo, peekRedo, beginRead, adoptFromDisk } =
-  store
+/**
+ * Editing, suspended — the whole of "nothing writes to my level while it is
+ * running".
+ *
+ * Play mode shows a level the runtime read off disk, so an edit made while it is
+ * running would change the file, change nothing on screen, and leave the human
+ * unable to tell whether the editor or the game was at fault. The panels are put
+ * out of reach as well (`editor/shell/panels.tsx`), and that is what the human
+ * sees; this is what makes the guarantee hold whichever control anybody finds a
+ * way to reach.
+ *
+ * It gates this module rather than the transaction API itself, and the boundary
+ * is deliberate: play mode is a fact about *this editor window*, not about the
+ * document model, and `documents.ts` is a file that ought to be readable without
+ * knowing that play mode exists.
+ *
+ * **Undo is gated with the edits.** Ctrl-Z is a change to a document like any
+ * other and would be written to disk like any other. `adoptFromDisk` is left
+ * open on purpose — a file changing underneath the editor is a read, and taking
+ * it writes nothing.
+ */
+let editingSuspended = false
+
+export function suspendEditing(): void {
+  editingSuspended = true
+}
+
+export function resumeEditing(): void {
+  editingSuspended = false
+}
+
+export const edit: DocumentStore['edit'] = (intent, recipe) => {
+  if (editingSuspended) return
+  store.edit(intent, recipe)
+}
+
+export const editDocument: DocumentStore['editDocument'] = (path, intent, recipe) => {
+  if (editingSuspended) return
+  store.editDocument(path, intent, recipe)
+}
+
+export const undo: DocumentStore['undo'] = () => (editingSuspended ? false : store.undo())
+export const redo: DocumentStore['redo'] = () => (editingSuspended ? false : store.redo())
+
+export const { sealEdits, peekUndo, peekRedo, beginRead, adoptFromDisk, flushSaves } = store
 
 export type { Document }
 
@@ -92,6 +135,18 @@ export function usePrefabDocument(path: string | null): Prefab | null {
     const document = path === null ? undefined : state.docs[path]
     return document !== undefined && document.format === PREFAB_FORMAT ? document : null
   })
+}
+
+/**
+ * Every file the editor is holding a change the folder never accepted for, as
+ * things stand right now.
+ *
+ * Not a hook, because its one caller is a button handler rather than a render:
+ * Play has to know, at the moment it is pressed, whether the file it is about to
+ * hand the runtime is really what is on screen.
+ */
+export function currentSaveFailures(): Readonly<Record<string, string>> {
+  return store.reader.getState().saveFailures
 }
 
 /** Why the document for one path could not be saved, if it could not. */
