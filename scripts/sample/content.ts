@@ -3,7 +3,7 @@ import {
   type ImportSettings,
   type Slice,
   type TextureImportSettings,
-} from '../../sidecar/meta-schema.js'
+} from '../../runtime/formats/meta-schema.js'
 import { PixelCanvas, drawSprite, type Colour } from './png.js'
 import { decay, encodeWav, sine } from './wav.js'
 

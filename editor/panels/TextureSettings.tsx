@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactElement, type ReactNode } from 'react'
 
-import type { TextureFilter, TextureImportSettings } from '../../sidecar/meta-schema'
+import type { TextureFilter, TextureImportSettings } from '../../runtime/formats/meta-schema'
 import { editDocument, sealEdits } from '../store/open-documents'
 
 /**

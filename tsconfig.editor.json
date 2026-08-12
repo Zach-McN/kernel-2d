@@ -7,9 +7,22 @@
     "types": ["vite/client"],
     "jsx": "react-jsx"
   },
-  // `tests/store` holds the unit tests for browser-side code, which have to be
-  // checked with the editor's module resolution rather than the sidecar's.
-  // They live outside `tests/editor` because Playwright claims everything in
-  // there, and these are Vitest tests.
-  "include": ["editor/**/*.ts", "editor/**/*.tsx", "tests/store/**/*.ts"]
+  // `runtime/` is browser code too — it ships inside the game, which is a web
+  // page — so it is checked here rather than with the sidecar's config. The
+  // import direction is the other half of the boundary and is asserted by
+  // `tests/runtime/boundaries.test.ts`, not by this file.
+  //
+  // Vitest tests of browser-side code are checked here rather than with the
+  // sidecar's config, because the Node project's resolution cannot follow the
+  // extensionless relative imports this side uses. They live outside
+  // `tests/editor` because Playwright claims everything in there, and these are
+  // not Playwright tests. One folder per layer they cover.
+  "include": [
+    "editor/**/*.ts",
+    "editor/**/*.tsx",
+    "runtime/**/*.ts",
+    "tests/store/**/*.ts",
+    "tests/runtime/**/*.ts",
+    "tests/shell/**/*.ts"
+  ]
 }

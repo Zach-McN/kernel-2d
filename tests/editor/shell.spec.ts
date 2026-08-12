@@ -15,12 +15,12 @@ test.describe('the editor shell', () => {
     }
 
     // A panel that has not been built yet says what will live in it.
-    await expect(page.locator('[data-panel="viewport"]')).toContainText('The game itself')
     await expect(page.locator('[data-panel="hierarchy"]')).toContainText('the open scene')
 
     // A panel that has been built shows itself instead.
     await expect(page.getByTestId('assets-panel')).toBeVisible()
     await expect(page.getByTestId('inspector-panel')).toBeVisible()
+    await expect(page.getByTestId('viewport-panel')).toBeVisible()
   })
 
   test('says which project folder it is connected to', async ({ page }) => {

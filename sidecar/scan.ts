@@ -61,6 +61,7 @@ async function scanDirectory(projectPath: string, directory: string, counts: Cou
         path: relativePosixPath(projectPath, absolute),
         ext: path.extname(entry.name).toLowerCase(),
         size: stats.size,
+        mtimeMs: stats.mtimeMs,
       })
     }
   }

@@ -10,7 +10,7 @@ import {
   metaPathFor,
   serializeMeta,
   type AssetMeta,
-} from '../../sidecar/meta-schema.js'
+} from '../../runtime/formats/meta-schema.js'
 
 /**
  * The round-trip tripwire (editor-kernel G1, editor-verification V7) for the

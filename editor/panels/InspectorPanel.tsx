@@ -1,20 +1,20 @@
 import type { ReactElement, ReactNode } from 'react'
 
-import { formatBytes } from '../../sidecar/bytes'
 import {
-  annotatedPathFor,
   assetTypeForName,
   isMetaFileName,
   type AssetMeta,
-  type AssetType,
   type ImportSettings,
-} from '../../sidecar/meta-schema'
+} from '../../runtime/formats/meta-schema'
+import { formatBytes } from '../../sidecar/bytes'
 import type { MetaView } from '../../sidecar/meta-view-schema'
-import type { DirectoryNode, ProjectTree, TreeNode } from '../../sidecar/tree-schema'
+import type { DirectoryNode, TreeNode } from '../../sidecar/tree-schema'
+import { TYPE_NAMES, basename, describeKind, findNode } from '../shell/asset-kinds'
+import { useSelectedAssetMeta } from '../shell/asset-meta-context'
 import { assetRowsFor } from '../shell/asset-rows'
 import { useProject } from '../shell/project-context'
 import { useSelection } from '../shell/selection'
-import { useAssetMeta } from '../shell/useAssetMeta'
+import type { AssetMetaState } from '../shell/useAssetMeta'
 import { useDocument, useSaveFailure } from '../store/open-documents'
 import { SaveFailure, TextureSettings } from './TextureSettings'
 
@@ -37,7 +37,10 @@ export function InspectorPanel(): ReactElement {
   const project = useProject()
   const selection = useSelection()
   const tree = project.state === 'ready' ? project.tree : null
-  const meta = useAssetMeta(selection.path, tree)
+  // Read from the window rather than fetched here: the Viewport needs the same
+  // answer, and two panels each asking would be two answers on two timers
+  // (`editor-ui` U9).
+  const meta = useSelectedAssetMeta()
 
   if (selection.path === null) {
     return <Empty>Select a file or folder in the Assets panel to see what it holds.</Empty>
@@ -90,7 +93,7 @@ function FolderBody({ node }: { node: DirectoryNode }): ReactElement {
 
 interface FileBodyProps {
   node: Extract<TreeNode, { kind: 'file' }>
-  meta: ReturnType<typeof useAssetMeta>
+  meta: AssetMetaState
 }
 
 function FileBody({ node, meta }: FileBodyProps): ReactElement {
@@ -98,7 +101,7 @@ function FileBody({ node, meta }: FileBodyProps): ReactElement {
   // The document if this window has taken it into the store, falling back to
   // the served answer for the moment in between.
   const document = useDocument(node.path)
-  const settings = document ?? (view !== null && view.status === 'ok' ? view.meta : null)
+  const settings: AssetMeta | null = document ?? (view !== null && view.status === 'ok' ? view.meta : null)
 
   return (
     <>
@@ -213,13 +216,6 @@ function SettingFields({ path, settings }: { path: string; settings: ImportSetti
 
 // --- saying what a file is -------------------------------------------------
 
-const TYPE_NAMES: Record<AssetType, string> = {
-  texture: 'Texture',
-  audio: 'Audio',
-  font: 'Font',
-  other: 'Not something the editor imports',
-}
-
 /**
  * The folder a document sits in is what names it. These are the folders in the
  * project layout, and each one's inspector arrives with the format it holds —
@@ -229,12 +225,6 @@ const DOCUMENT_FOLDERS: Record<string, string> = {
   scenes: 'A scene. Scenes get their own inspector when the scene format lands.',
   prefabs: 'A prefab. Prefabs get their own inspector when the prefab format lands.',
   data: 'A data table. These get the tool that writes them, when the genre needs one.',
-}
-
-function describeKind(name: string): string {
-  if (isMetaFileName(name)) return `Import settings for ${basename(annotatedPathFor(name) ?? name)}`
-  const type = assetTypeForName(name)
-  return type === null ? 'File' : TYPE_NAMES[type]
 }
 
 function describeMissingMeta(path: string): string {
@@ -302,22 +292,4 @@ function Empty({ children }: { children: ReactNode }): ReactElement {
 
 function count(n: number, noun: string): string {
   return `${n} ${noun}${n === 1 ? '' : 's'}`
-}
-
-function basename(path: string): string {
-  return path.split('/').at(-1) ?? path
-}
-
-function findNode(tree: ProjectTree, path: string): TreeNode | null {
-  const walk = (node: TreeNode): TreeNode | null => {
-    if (node.path === path) return node
-    if (node.kind !== 'directory') return null
-    for (const child of node.children) {
-      const found = walk(child)
-      if (found !== null) return found
-    }
-    return null
-  }
-
-  return walk(tree.tree)
 }

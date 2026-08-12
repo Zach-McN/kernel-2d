@@ -1,7 +1,10 @@
+import { createReadStream } from 'node:fs'
 import http from 'node:http'
 import type { AddressInfo } from 'node:net'
 import path from 'node:path'
+import { pipeline } from 'node:stream/promises'
 
+import { NotFoundError, resolveAssetBytes } from './asset-files.js'
 import { toFileEventMessage } from './event-schema.js'
 import { createEventFeed, type EventFeed } from './feed.js'
 import { RefusedError, readMetaView, writeMetaFor } from './meta-files.js'
@@ -161,12 +164,72 @@ async function handleRequest(
     return
   }
 
+  if (pathname === '/asset') {
+    await handleAssetRead(context, response, url)
+    return
+  }
+
   if (pathname === '/events') {
     streamEvents(context, request, response)
     return
   }
 
   sendJson(response, 404, { error: 'Not found', path: pathname })
+}
+
+/**
+ * The editor asking for the bytes of one asset, so the runtime can draw it.
+ *
+ * Streamed rather than read into memory: a 4K texture is tens of megabytes, and
+ * this service should not grow a heap the size of somebody's art folder. The
+ * rule about which files this will and will not hand over is stated in full at
+ * the top of `asset-files.ts` — it is not restated here, because two copies of
+ * a privilege is how one of them quietly gets wider than the other.
+ *
+ * Never cached. The file on disk is the record, and the editor is expected to
+ * show a re-saved texture within the second.
+ */
+async function handleAssetRead(
+  context: ServerContext,
+  response: http.ServerResponse,
+  url: URL,
+): Promise<void> {
+  const requested = url.searchParams.get('path') ?? ''
+
+  let asset
+  try {
+    asset = await resolveAssetBytes(context.options.projectPath, requested)
+  } catch (error) {
+    if (error instanceof NotFoundError) {
+      sendJson(response, 404, { error: error.message, path: requested })
+      return
+    }
+    if (error instanceof RefusedError) {
+      sendJson(response, 400, { error: error.message, path: requested })
+      return
+    }
+    sendJson(response, 500, {
+      error: 'Could not read that file',
+      detail: error instanceof Error ? error.message : String(error),
+    })
+    return
+  }
+
+  response.writeHead(200, {
+    'Content-Type': asset.contentType,
+    'Content-Length': String(asset.size),
+    'Cache-Control': 'no-store',
+  })
+
+  try {
+    await pipeline(createReadStream(asset.absolutePath), response)
+  } catch {
+    // The headers are already out, so there is no status left to change: the
+    // browser sees a short body and reports a failed load, which is the truth.
+    // The common cause is the reader hanging up mid-download, which is not a
+    // fault worth logging.
+    response.destroy()
+  }
 }
 
 /**
@@ -283,7 +346,7 @@ function statusOf(options: ServerOptions): SidecarStatus {
     version: SIDECAR_STATUS_VERSION,
     projectPath: toPosixPath(options.projectPath),
     projectName: path.basename(options.projectPath),
-    endpoints: { tree: '/tree', events: '/events', meta: '/meta' },
+    endpoints: { tree: '/tree', events: '/events', meta: '/meta', asset: '/asset' },
   }
 }
 

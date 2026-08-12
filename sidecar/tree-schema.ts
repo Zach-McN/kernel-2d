@@ -22,6 +22,15 @@ export interface FileNode {
   ext: string
   /** Size on disk in bytes. */
   size: number
+  /**
+   * When the file was last written, in milliseconds since the epoch.
+   *
+   * This is what lets a reader tell "the same file" from "the same file, saved
+   * again" — a re-export from Photoshop very often lands on the identical byte
+   * count, so size alone cannot answer it. Anything caching an asset by URL
+   * keys on this, so only the file that actually changed is fetched again.
+   */
+  mtimeMs: number
 }
 
 export interface DirectoryNode {
@@ -53,6 +62,10 @@ export const FileNodeSchema: z.ZodType<FileNode> = z.object({
   path: z.string().min(1),
   ext: z.string(),
   size: z.number().int().nonnegative(),
+  // Not required to be an integer: some filesystems report sub-millisecond
+  // precision, and rounding it here would be this schema quietly disagreeing
+  // with the number `stat` gave.
+  mtimeMs: z.number().nonnegative(),
 })
 
 export const DirectoryNodeSchema: z.ZodType<DirectoryNode> = z.object({

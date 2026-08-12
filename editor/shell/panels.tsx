@@ -3,6 +3,7 @@ import type { FunctionComponent, ReactElement } from 'react'
 
 import { AssetsPanel } from '../panels/AssetsPanel'
 import { InspectorPanel } from '../panels/InspectorPanel'
+import { ViewportPanel } from '../panels/ViewportPanel'
 
 /**
  * Every panel the editor has, declared once.
@@ -28,6 +29,7 @@ const VIEWPORT: PanelDefinition = {
   id: 'viewport',
   title: 'Viewport',
   blurb: 'The game itself, drawn by the real runtime. Scenes open here, and play mode runs here.',
+  render: ViewportPanel,
 }
 
 const HIERARCHY: PanelDefinition = {

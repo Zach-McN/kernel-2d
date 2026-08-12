@@ -1,6 +1,6 @@
 import { z } from 'zod'
 
-import { AssetMetaSchema, type AssetMeta } from './meta-schema.js'
+import { AssetMetaSchema, type AssetMeta } from '../runtime/formats/meta-schema.js'
 
 /**
  * What `GET /meta?path=…` answers with.

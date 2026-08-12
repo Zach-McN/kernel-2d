@@ -1,7 +1,7 @@
 import { applyPatches, enablePatches, freeze, produceWithPatches, type Draft, type Patch } from 'immer'
 import { createStore } from 'zustand/vanilla'
 
-import type { AssetMeta } from '../../sidecar/meta-schema'
+import type { AssetMeta } from '../../runtime/formats/meta-schema'
 
 /**
  * The transaction API: the one door every change to a document goes through,

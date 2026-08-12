@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest'
 
 import { SIDECAR_HOST } from '../../sidecar/config.js'
 import { sweepProjectMetas } from '../../sidecar/meta-files.js'
-import { AssetMetaSchema, type AssetMeta } from '../../sidecar/meta-schema.js'
+import { AssetMetaSchema, type AssetMeta } from '../../runtime/formats/meta-schema.js'
 import { MetaViewSchema, type MetaView } from '../../sidecar/meta-view-schema.js'
 import { startServer, type ServerHandle } from '../../sidecar/server.js'
 import { makeTempProject, type TempProject } from '../fixtures/project-fixture.js'

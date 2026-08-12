@@ -27,6 +27,8 @@ export interface SidecarStatus {
     events: string
     /** Path to one file's import settings; takes a `path` query parameter. */
     meta: string
+    /** Path to one asset's bytes; takes a `path` query parameter. */
+    asset: string
   }
 }
 
@@ -39,5 +41,6 @@ export const SidecarStatusSchema: z.ZodType<SidecarStatus> = z.object({
     tree: z.string().min(1),
     events: z.string().min(1),
     meta: z.string().min(1),
+    asset: z.string().min(1),
   }),
 })

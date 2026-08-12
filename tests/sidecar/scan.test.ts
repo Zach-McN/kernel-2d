@@ -1,10 +1,11 @@
+import fs from 'node:fs/promises'
 import path from 'node:path'
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import { scanProject } from '../../sidecar/scan.js'
 import type { ProjectTree, TreeNode } from '../../sidecar/tree-schema.js'
-import { makeTempProject, type TempProject } from '../fixtures/project-fixture.js'
+import { delay, makeTempProject, type TempProject } from '../fixtures/project-fixture.js'
 
 const SAMPLE_PROJECT: Record<string, string> = {
   'README.md': '# sample',
@@ -73,6 +74,31 @@ describe('reading a project folder into the file tree', () => {
     expect(knight.path).toBe('assets/textures/knight.png')
     expect(knight.ext).toBe('.png')
     expect(knight.size).toBe(SAMPLE_PROJECT['assets/textures/knight.png']?.length)
+  })
+
+  it('tells a file re-saved with the same number of bytes from the one it replaced', async () => {
+    // This is the whole reason the tree carries a time as well as a size: an
+    // export from Photoshop very often lands on the identical byte count, and
+    // anything caching the file by size alone would keep showing the old
+    // pixels with nothing on screen explaining why.
+    const timeOf = (tree: ProjectTree): number => {
+      const knight = flatten(tree.tree).find((node) => node.name === 'knight.png')
+      return knight?.kind === 'file' ? knight.mtimeMs : 0
+    }
+
+    const before = timeOf(await scanProject(project.root))
+    expect(before).toBeGreaterThan(0)
+
+    const original = SAMPLE_PROJECT['assets/textures/knight.png'] ?? ''
+    const repainted = original.replace(/./, 'P')
+    expect(repainted).toHaveLength(original.length)
+    expect(repainted).not.toBe(original)
+
+    await delay(10)
+    await fs.writeFile(path.join(project.root, 'assets/textures/knight.png'), repainted, 'utf8')
+
+    const after = timeOf(await scanProject(project.root))
+    expect(after).toBeGreaterThan(before)
   })
 
   it('uses forward slashes everywhere, whatever the operating system uses', async () => {

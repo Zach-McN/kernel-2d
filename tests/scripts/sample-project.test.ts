@@ -3,7 +3,7 @@ import path from 'node:path'
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
-import { AssetMetaSchema } from '../../sidecar/meta-schema.js'
+import { AssetMetaSchema } from '../../runtime/formats/meta-schema.js'
 import { writeSampleProject } from '../../scripts/sample/write.js'
 import { makeTempProject, type TempProject } from '../fixtures/project-fixture.js'
 

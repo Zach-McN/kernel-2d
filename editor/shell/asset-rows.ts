@@ -1,4 +1,4 @@
-import { annotatedPathFor, isMetaFileName } from '../../sidecar/meta-schema'
+import { annotatedPathFor, isMetaFileName } from '../../runtime/formats/meta-schema'
 import type { TreeNode } from '../../sidecar/tree-schema'
 
 /**

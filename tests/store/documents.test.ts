@@ -6,7 +6,7 @@ import {
   type Document,
   type DocumentStore,
 } from '../../editor/store/documents'
-import { defaultMeta, type AssetMeta, type TextureImportSettings } from '../../sidecar/meta-schema'
+import { defaultMeta, type AssetMeta, type TextureImportSettings } from '../../runtime/formats/meta-schema'
 
 /**
  * The transaction API, on its own.

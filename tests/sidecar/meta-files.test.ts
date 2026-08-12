@@ -11,7 +11,7 @@ import {
   resolveInsideProject,
   sweepProjectMetas,
 } from '../../sidecar/meta-files.js'
-import { AssetMetaSchema, type AssetMeta } from '../../sidecar/meta-schema.js'
+import { AssetMetaSchema, type AssetMeta } from '../../runtime/formats/meta-schema.js'
 import { makeTempProject, type TempProject } from '../fixtures/project-fixture.js'
 
 /**

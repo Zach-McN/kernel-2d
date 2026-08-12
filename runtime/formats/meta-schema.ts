@@ -12,6 +12,18 @@ import { z } from 'zod'
  * This file is the single source of truth for the shape (editor-kernel D6) and
  * is compiled into the browser as well as the sidecar, so it must never reach
  * for anything Node-only (editor-kernel D16).
+ *
+ * It lives in `runtime/` rather than beside the service that writes it because
+ * the runtime is the layer that *ships*: a game loading a texture has to know
+ * what filtering and slicing that texture was given, and it cannot import that
+ * knowledge from a development-only service (editor-kernel D1). D16 already
+ * fixes the direction — the shared module owns the vocabulary and the Node
+ * module imports it — so the sidecar and the editor both reach in here.
+ *
+ * One consequence worth keeping: this file has no relative imports of its own,
+ * and must not gain any. It is compiled by two TypeScript projects with
+ * different resolution rules (editor-ui U4), and a relative import would have
+ * to carry a `.js` extension for one of them and no extension for the other.
  */
 
 export const ASSET_META_FORMAT = 'kernel2d.asset-meta'

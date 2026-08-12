@@ -11,7 +11,7 @@ import {
   isMetaFileName,
   metaPathFor,
   serializeMeta,
-} from './meta-schema.js'
+} from '../runtime/formats/meta-schema.js'
 import {
   MAX_SHOWN_TEXT_BYTES,
   META_VIEW_FORMAT,

@@ -3,7 +3,7 @@ import path from 'node:path'
 
 import { expect, test, type Page } from '@playwright/test'
 
-import type { AssetMeta, TextureImportSettings } from '../../sidecar/meta-schema.js'
+import type { AssetMeta, TextureImportSettings } from '../../runtime/formats/meta-schema.js'
 
 import { assetRow, selectAsset } from './select-asset.js'
 import { editorTestProjectPath } from './test-project.js'

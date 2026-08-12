@@ -58,7 +58,16 @@ describe('the file-tree format rejects what it should', () => {
           kind: 'directory',
           name: 'scenes',
           path: 'scenes',
-          children: [{ kind: 'file', name: 'level-01.json', path: 'scenes/level-01.json', ext: '.json', size: 2 }],
+          children: [
+            {
+              kind: 'file',
+              name: 'level-01.json',
+              path: 'scenes/level-01.json',
+              ext: '.json',
+              size: 2,
+              mtimeMs: 1_754_870_000_000,
+            },
+          ],
         },
       ],
     },

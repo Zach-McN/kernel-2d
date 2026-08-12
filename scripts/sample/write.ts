@@ -8,7 +8,7 @@ import {
   defaultMeta,
   metaPathFor as appendMetaSuffix,
   serializeMeta,
-} from '../../sidecar/meta-schema.js'
+} from '../../runtime/formats/meta-schema.js'
 import { GENERATED_BY, sampleFiles, type SampleFile } from './content.js'
 
 /**

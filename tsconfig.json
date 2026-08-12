@@ -15,7 +15,7 @@
     "playwright.config.ts"
   ],
   // Tests of browser-side code belong to the browser project: this one resolves
-  // modules the Node way, and the editor's own imports carry no `.js`
-  // extensions for it to follow.
-  "exclude": ["tests/store/**/*.ts"]
+  // modules the Node way, and the editor's and runtime's own imports carry no
+  // `.js` extensions for it to follow.
+  "exclude": ["tests/store/**/*.ts", "tests/runtime/**/*.ts", "tests/shell/**/*.ts"]
 }

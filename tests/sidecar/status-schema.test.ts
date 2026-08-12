@@ -15,7 +15,7 @@ describe('the sidecar status format survives a round trip', () => {
     version: 1,
     projectPath: 'C:/games/my-game',
     projectName: 'my-game',
-    endpoints: { tree: '/tree', events: '/events', meta: '/meta' },
+    endpoints: { tree: '/tree', events: '/events', meta: '/meta', asset: '/asset' },
   }
 
   it('reads back identical to what was written', () => {
@@ -47,7 +47,7 @@ describe('the sidecar status format rejects what it should', () => {
     version: 1,
     projectPath: 'C:/games/my-game',
     projectName: 'my-game',
-    endpoints: { tree: '/tree', events: '/events', meta: '/meta' },
+    endpoints: { tree: '/tree', events: '/events', meta: '/meta', asset: '/asset' },
   }
 
   it('accepts a well-formed status written by hand', () => {
