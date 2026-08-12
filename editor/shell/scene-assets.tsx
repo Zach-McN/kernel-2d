@@ -2,14 +2,14 @@ import { createContext, useContext, useEffect, useMemo, useState, type ReactElem
 
 import type { AssetMeta, TextureImportSettings } from '../../runtime/formats/meta-schema'
 import { metaPathFor } from '../../runtime/formats/meta-schema'
-import { spriteOf, type Scene } from '../../runtime/formats/scene-schema'
+import { spriteOf, type Entity } from '../../runtime/formats/scene-schema'
 import type { SceneTexture } from '../../runtime'
 import { MetaViewSchema } from '../../sidecar/meta-view-schema'
 import type { ProjectTree } from '../../sidecar/tree-schema'
 import { adoptFromDisk, beginRead, useAllDocuments } from '../store/open-documents'
 import { findNode } from './asset-kinds'
-import { useOpenScene } from './open-scene'
 import { useProject } from './project-context'
+import { useResolvedScene } from './scene-prefabs'
 
 /**
  * Turning the texture references in a scene into something the renderer can
@@ -73,11 +73,9 @@ interface Wanted {
   settingsVersion: number
 }
 
-function wantedIn(scene: Scene | null, tree: ProjectTree | null): Wanted[] {
-  if (scene === null) return []
-
+function wantedIn(entities: readonly Entity[], tree: ProjectTree | null): Wanted[] {
   const byPath = new Map<string, string>()
-  for (const entity of scene.entities) {
+  for (const entity of entities) {
     const sprite = spriteOf(entity)
     if (sprite !== null && !byPath.has(sprite.texture.path)) {
       byPath.set(sprite.texture.path, sprite.texture.id)
@@ -112,11 +110,14 @@ function wantedIn(scene: Scene | null, tree: ProjectTree | null): Wanted[] {
 const SceneAssetsContext = createContext<SceneAssets | null>(null)
 
 export function SceneAssetsProvider({ children }: { children: ReactNode }): ReactElement {
-  const open = useOpenScene()
+  const resolved = useResolvedScene()
   const project = useProject()
 
+  // The *resolved* entities, not the scene's own: an instance's picture is named
+  // by the prefab it points at, so a level's textures cannot be known from the
+  // file alone.
   const assets = useResolvedSceneAssets(
-    open.state === 'open' ? open.scene : null,
+    resolved.entities,
     project.state === 'ready' ? project.tree : null,
   )
 
@@ -129,8 +130,8 @@ export function useSceneAssets(): SceneAssets {
   return assets
 }
 
-function useResolvedSceneAssets(scene: Scene | null, tree: ProjectTree | null): SceneAssets {
-  const wanted = wantedIn(scene, tree)
+function useResolvedSceneAssets(entities: readonly Entity[], tree: ProjectTree | null): SceneAssets {
+  const wanted = wantedIn(entities, tree)
   const fetchKey = wanted.map((one) => `${one.path}@${one.settingsVersion}`).join('\n')
 
   /**

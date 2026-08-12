@@ -6,6 +6,7 @@ import { basename } from '../shell/asset-kinds'
 import { entityAt, onScreen } from '../shell/drawn-entities'
 import { useOpenScene, type OpenSceneState } from '../shell/open-scene'
 import { describeProblem, problemsIn, useSceneAssets } from '../shell/scene-assets'
+import { describePrefabProblem, prefabProblemsIn, useResolvedScene } from '../shell/scene-prefabs'
 import { useDrawScene, useSceneView, type SceneViewState } from '../shell/scene-view-context'
 import { useSceneGestures, type ScenePlacement } from '../shell/useSceneGestures'
 import { useSelection } from '../shell/selection'
@@ -33,14 +34,26 @@ export function ViewportPanel(): ReactElement {
   const open = useOpenScene()
   const view = useSceneView()
   const assets = useSceneAssets()
+  const resolved = useResolvedScene()
   const host = useRef<HTMLDivElement>(null)
 
+  // The **resolved** entities, not the file's own: an instance's picture is
+  // named by the prefab it points at, so drawing the scene as written would show
+  // every placed prefab as nothing. This copy is handed to the renderer and
+  // nowhere else — every edit below writes through the transaction API, which
+  // re-finds its entity in the document (`editor/shell/scene-prefabs.tsx`).
   const subject: SceneRequest | null =
-    open.state === 'open' ? { path: open.path, scene: open.scene, textures: assets.textures } : null
+    open.state === 'open'
+      ? {
+          path: open.path,
+          scene: { ...open.scene, entities: [...resolved.entities] },
+          textures: assets.textures,
+        }
+      : null
   // The second argument is what stops a level being framed against half of
-  // itself: until every texture has resolved, entities whose sprite has not
-  // arrived count as points rather than as the area they cover.
-  useDrawScene(subject, subject !== null && !assets.loading)
+  // itself: until every prefab and every texture has resolved, entities whose
+  // sprite has not arrived count as points rather than as the area they cover.
+  useDrawScene(subject, subject !== null && !assets.loading && !resolved.loading)
 
   const shown = view.state === 'ready' ? view.shown : null
   // Only the scene that is open, in case a report from the previous one is
@@ -93,6 +106,7 @@ export function ViewportPanel(): ReactElement {
         open={open}
         view={view}
         problems={problemsIn(assets)}
+        prefabProblems={prefabProblemsIn(resolved)}
         selected={selected}
         offScreen={offScreenIn(open, current, selected)}
         moving={beingMoved}
@@ -300,6 +314,9 @@ interface CaptionProps {
   open: OpenSceneState
   view: SceneViewState
   problems: ReturnType<typeof problemsIn>
+  /** Prefabs this level points at that could not be used. Said before textures:
+   *  a prefab that is missing is why its texture is missing too. */
+  prefabProblems: ReturnType<typeof prefabProblemsIn>
   selected: string | null
   offScreen: OffScreen
   /** The entity being dragged right now, or null. */
@@ -313,7 +330,15 @@ interface CaptionProps {
  * arrived, and collapsing it into either of the others would leave the human
  * looking at an empty panel with no idea which of the three they were in.
  */
-function Caption({ open, view, problems, selected, offScreen, moving }: CaptionProps): ReactElement {
+function Caption({
+  open,
+  view,
+  problems,
+  prefabProblems,
+  selected,
+  offScreen,
+  moving,
+}: CaptionProps): ReactElement {
   if (view.state === 'unavailable') {
     return (
       <Bar>
@@ -426,6 +451,12 @@ function Caption({ open, view, problems, selected, offScreen, moving }: CaptionP
        * has to debug by counting, and the answer — which file, under which name
        * — is right here.
        */}
+      {prefabProblems.map((problem) => (
+        <Note key={problem.path} bad testId="viewport-problem" title={describePrefabProblem(problem)}>
+          {describePrefabProblem(problem)}
+        </Note>
+      ))}
+
       {problems.map((problem) => (
         <Note key={problem.path} bad testId="viewport-problem" title={describeProblem(problem)}>
           {describeProblem(problem)}

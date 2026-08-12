@@ -1,6 +1,6 @@
 import { z } from 'zod'
 
-import { SCENE_FORMAT, SceneSchema } from '../runtime/formats/scene-schema.js'
+import { PREFAB_FORMAT, PrefabSchema, SCENE_FORMAT, SceneSchema } from '../runtime/formats/scene-schema.js'
 
 /**
  * The documents this service will read and write, and the answer it gives about
@@ -27,9 +27,15 @@ export const DOCUMENT_VIEW_VERSION = 1
  * rather than on the path is what T1's format literal was always for: where a
  * file happens to sit in the folder tree is a convention, and what it says it is
  * is a fact.
+ *
+ * The prefab was the first test of that. Teaching this service a second document
+ * format was one line here and nothing anywhere else: reading, creating and
+ * replacing all look the answer up in this object, so the write privilege at the
+ * top of `document-files.ts` is the same four lines it was with one format in it.
  */
 export const DOCUMENT_SCHEMAS = {
   [SCENE_FORMAT]: SceneSchema,
+  [PREFAB_FORMAT]: PrefabSchema,
 } as const
 
 export type EditorDocument = z.infer<(typeof DOCUMENT_SCHEMAS)[keyof typeof DOCUMENT_SCHEMAS]>

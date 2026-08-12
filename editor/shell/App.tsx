@@ -9,6 +9,7 @@ import { OpenSceneProvider } from './open-scene'
 import { PANEL_COMPONENTS, layOutPanels } from './panels'
 import { ProjectProvider } from './project-context'
 import { SceneAssetsProvider } from './scene-assets'
+import { ScenePrefabsProvider } from './scene-prefabs'
 import { SceneViewProvider } from './scene-view-context'
 import { SelectionProvider } from './selection'
 import { useSidecarStatus, type SidecarConnection } from './useSidecarStatus'
@@ -27,8 +28,14 @@ import { ViewportProvider } from './viewport-context'
  * WebGL context each time.
  *
  * The order is the dependency order: the folder, then what is selected in it,
- * then that file's settings and the scene it may have opened, then the two
- * renderers, then the layout handle that lets a selection bring a tab forward.
+ * then that file's settings and the scene it may have opened, then what that
+ * scene's instances inherit, then the textures all of that turns out to need,
+ * then the two renderers, then the layout handle that lets a selection bring a
+ * tab forward.
+ *
+ * Prefabs sit *above* textures deliberately: an instance's picture is named by
+ * its prefab, so which textures a level needs cannot be known until every prefab
+ * it points at has been read.
  */
 export function App(): ReactElement {
   const connection = useSidecarStatus()
@@ -49,15 +56,17 @@ export function App(): ReactElement {
       <SelectionProvider>
         <AssetMetaProvider>
           <OpenSceneProvider>
-            <SceneAssetsProvider>
-              <ViewportProvider>
-                <SceneViewProvider>
-                  <LayoutProvider>
-                    <Shell connection={connection} />
-                  </LayoutProvider>
-                </SceneViewProvider>
-              </ViewportProvider>
-            </SceneAssetsProvider>
+            <ScenePrefabsProvider>
+              <SceneAssetsProvider>
+                <ViewportProvider>
+                  <SceneViewProvider>
+                    <LayoutProvider>
+                      <Shell connection={connection} />
+                    </LayoutProvider>
+                  </SceneViewProvider>
+                </ViewportProvider>
+              </SceneAssetsProvider>
+            </ScenePrefabsProvider>
           </OpenSceneProvider>
         </AssetMetaProvider>
       </SelectionProvider>

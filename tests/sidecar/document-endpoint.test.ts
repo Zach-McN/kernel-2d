@@ -41,6 +41,11 @@ const KNIGHT = {
 const LEVEL: Scene = { format: 'kernel2d.scene', version: 1, entities: [KNIGHT] }
 
 const SAMPLE: Record<string, string> = {
+  // An empty folder, so a prefab can be made in one. The service never creates a
+  // folder on the way to a file, which is a guard with its own test below — so
+  // without this the prefab tests would fail for the right reason in the wrong
+  // place.
+  'prefabs/': '',
   'scenes/level-01.json': serializeScene(LEVEL),
   'scenes/broken.json': '{ half a file',
   'scenes/from-the-future.json': '{ "format": "kernel2d.starfield", "version": 9 }\n',
@@ -351,6 +356,105 @@ describe('making a document is refused, and leaves the folder exactly as it was'
 
       expect(response.status).toBe(400)
       expect(body.error ?? '').toMatch(/^[A-Z].*\.$/)
+    })
+  })
+})
+
+/**
+ * A second document format, over the same wire.
+ *
+ * The point of these is not that prefabs work — that is the format's own tests'
+ * job. It is that teaching this service a second format cost one line in the
+ * registry and widened nothing: the same create, the same replace, the same
+ * refusals, and in particular the same guard against turning one kind of
+ * document into another at a path that already holds something.
+ */
+describe('the service knows more than one kind of document', () => {
+  const PREFAB = {
+    format: 'kernel2d.prefab',
+    version: 1,
+    id: 'aabbccddeeff0011',
+    name: 'Slime',
+    components: {
+      sprite: { texture: { id: 'a3f90011deadbeef', path: 'assets/textures/knight.png' } },
+    },
+  }
+
+  it('makes a prefab, and what is on disk is what was asked for', async () => {
+    await withServer(async ({ create, onDisk }) => {
+      const response = await create('prefabs/enemy-slime.json', PREFAB)
+
+      expect(response.status).toBe(201)
+      expect(await onDisk('prefabs/enemy-slime.json')).toEqual(PREFAB)
+    })
+  })
+
+  it('opens one it made, and puts it back changed', async () => {
+    await withServer(async ({ create, read, write, onDisk }) => {
+      await create('prefabs/enemy-slime.json', PREFAB)
+      expect((await read('prefabs/enemy-slime.json')).status).toBe('ok')
+
+      const response = await write('prefabs/enemy-slime.json', { ...PREFAB, name: 'Cave slime' })
+
+      expect(response.status).toBe(200)
+      expect((await onDisk('prefabs/enemy-slime.json'))['name']).toBe('Cave slime')
+    })
+  })
+
+  it('refuses a prefab that is an instance of another prefab', async () => {
+    await withServer(async ({ project, create }) => {
+      const response = await create('prefabs/enemy-slime.json', {
+        ...PREFAB,
+        components: { prefab: { source: { id: 'aabb', path: 'prefabs/other.json' } } },
+      })
+
+      expect(response.status).toBe(400)
+      await expect(fs.access(project.file('prefabs/enemy-slime.json'))).rejects.toThrow()
+    })
+  })
+
+  /**
+   * The guard that matters once there is more than one format: a document is
+   * only ever replaced by one of the format already at that path. A prefab
+   * written over a level would be a valid document, at a path inside the
+   * project, passing every other check — and somebody's level would be gone.
+   */
+  it('never turns a level into a prefab, however valid the prefab is', async () => {
+    await withServer(async ({ project, write }) => {
+      const before = await fingerprint(project.file('scenes/level-01.json'))
+
+      const response = await write('scenes/level-01.json', PREFAB)
+      const body = (await response.json()) as { error?: string }
+
+      expect(response.status).toBe(400)
+      expect(body.error ?? '').toMatch(/^[A-Z].*\.$/)
+      expect(await fingerprint(project.file('scenes/level-01.json'))).toEqual(before)
+    })
+  })
+
+  it('never turns a prefab into a level either, which is the same rule the other way', async () => {
+    await withServer(async ({ project, create, write }) => {
+      await create('prefabs/enemy-slime.json', PREFAB)
+      const before = await fingerprint(project.file('prefabs/enemy-slime.json'))
+
+      const response = await write('prefabs/enemy-slime.json', {
+        format: 'kernel2d.scene',
+        version: 1,
+        entities: [],
+      })
+
+      expect(response.status).toBe(400)
+      expect(await fingerprint(project.file('prefabs/enemy-slime.json'))).toEqual(before)
+    })
+  })
+
+  it('names both formats when refusing something it has never heard of', async () => {
+    await withServer(async ({ create }) => {
+      const response = await create('prefabs/x.json', { format: 'kernel2d.starfield', version: 1 })
+      const body = (await response.json()) as { error?: string }
+
+      expect(body.error ?? '').toContain('kernel2d.scene')
+      expect(body.error ?? '').toContain('kernel2d.prefab')
     })
   })
 })

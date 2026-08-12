@@ -6,6 +6,7 @@ import {
   type AssetMeta,
   type ImportSettings,
 } from '../../runtime/formats/meta-schema'
+import { PREFAB_FORMAT, prefabRefOf } from '../../runtime/formats/scene-schema'
 import { formatBytes } from '../../sidecar/bytes'
 import type { MetaView } from '../../sidecar/meta-view-schema'
 import type { DirectoryNode, TreeNode } from '../../sidecar/tree-schema'
@@ -15,10 +16,12 @@ import { assetRowsFor } from '../shell/asset-rows'
 import { useDocumentAnswer, useOpenScene } from '../shell/open-scene'
 import { useProject } from '../shell/project-context'
 import { useSceneAssets } from '../shell/scene-assets'
+import { useResolvedScene } from '../shell/scene-prefabs'
 import { useSelection } from '../shell/selection'
 import type { AssetMetaState } from '../shell/useAssetMeta'
-import { useMetaDocument, useSaveFailure } from '../store/open-documents'
+import { useMetaDocument, usePrefabDocument, useSaveFailure } from '../store/open-documents'
 import { EntityInspector } from './EntityInspector'
+import { PrefabInspector } from './PrefabInspector'
 import { SaveFailure, TextureSettings } from './TextureSettings'
 
 /**
@@ -59,6 +62,7 @@ function EntityBody({ scene, entity }: { scene: string; entity: string }): React
   const open = useOpenScene()
   const project = useProject()
   const assets = useSceneAssets()
+  const resolved = useResolvedScene()
 
   if (open.state !== 'open' || open.path !== scene) {
     return (
@@ -73,6 +77,12 @@ function EntityBody({ scene, entity }: { scene: string; entity: string }): React
   if (found === undefined) {
     return <Empty>That entity is no longer in {basename(scene)}.</Empty>
   }
+
+  // The file's entity is what gets edited; the resolved one is what it draws.
+  // Falling back to the file's own is the gap of one render before the prefabs
+  // it points at have been read.
+  const drawn = resolved.entities.find((candidate) => candidate.id === entity) ?? found
+  const source = prefabRefOf(found)
 
   return (
     <div className="inspector" data-testid="inspector-panel" data-inspecting-entity={found.id}>
@@ -89,8 +99,10 @@ function EntityBody({ scene, entity }: { scene: string; entity: string }): React
         scenePath={scene}
         scene={open.scene}
         entity={found}
+        resolved={drawn}
         tree={project.state === 'ready' ? project.tree : null}
         assets={assets}
+        prefabProblem={source === null ? undefined : resolved.problems[source.path]}
       />
     </div>
   )
@@ -250,6 +262,8 @@ function DocumentBody({ path }: { path: string }): ReactElement {
     )
   }
 
+  if (answer.view.document?.format === PREFAB_FORMAT) return <PrefabBody path={path} />
+
   const scene = open.state === 'open' && open.path === path ? open.scene : null
 
   return (
@@ -266,6 +280,38 @@ function DocumentBody({ path }: { path: string }): ReactElement {
         It is open in the Viewport. Select an entity in the Hierarchy to tune it.
       </Note>
     </Section>
+  )
+}
+
+/**
+ * A prefab, with controls.
+ *
+ * Rendered from the **document store** rather than from the answer the service
+ * gave, on the same grounds as a texture's import settings: the transaction API
+ * can only change a document the store is holding, so a control built over the
+ * served copy would look entirely correct and do nothing (`editor-ui` U12). The
+ * served answer above is still what decides that this file is a prefab at all.
+ */
+function PrefabBody({ path }: { path: string }): ReactElement {
+  const project = useProject()
+  const prefab = usePrefabDocument(path)
+
+  if (prefab === null) {
+    return (
+      <Section title="Document">
+        <Field label="Format" value="Prefab" testId="inspector-document-format" />
+        <Note>Reading it…</Note>
+      </Section>
+    )
+  }
+
+  return (
+    <>
+      <Section title="Document">
+        <Field label="Format" value="Prefab" testId="inspector-document-format" />
+      </Section>
+      <PrefabInspector path={path} prefab={prefab} tree={project.state === 'ready' ? project.tree : null} />
+    </>
   )
 }
 

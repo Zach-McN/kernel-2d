@@ -4,7 +4,15 @@ import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import { AssetMetaSchema } from '../../runtime/formats/meta-schema.js'
-import { SceneSchema, spriteOf, type Scene } from '../../runtime/formats/scene-schema.js'
+import {
+  PrefabSchema,
+  SceneSchema,
+  prefabRefOf,
+  resolveEntity,
+  spriteOf,
+  type Prefab,
+  type Scene,
+} from '../../runtime/formats/scene-schema.js'
 import { writeSampleProject } from '../../scripts/sample/write.js'
 import { makeTempProject, type TempProject } from '../fixtures/project-fixture.js'
 
@@ -206,14 +214,53 @@ describe('the sample scenes', () => {
     for (const entity of entities) expect(entity.name).not.toBe('')
   })
 
+  const prefabAt = (prefabPath: string): Prefab =>
+    PrefabSchema.parse(JSON.parse(fs.readFileSync(project.file(prefabPath), 'utf8')))
+
   it('points every texture reference at a file that is actually there', () => {
     for (const scenePath of ['scenes/level-01.json', 'scenes/level-02.json']) {
       for (const entity of sceneAt(scenePath).entities) {
-        const sprite = spriteOf(entity)
+        // Resolved the way the editor resolves it, so an instance is checked
+        // through the prefab it points at rather than counted as having no
+        // picture. Asking the raw entity would pass this level today and fail
+        // the moment anything was placed from a prefab.
+        const source = prefabRefOf(entity)
+        const resolved = resolveEntity(entity, source === null ? null : prefabAt(source.path))
+        const sprite = spriteOf(resolved)
+
         expect(sprite, `${scenePath}: ${entity.name}`).not.toBeNull()
         expect(fs.existsSync(project.file(sprite?.texture.path ?? '')), sprite?.texture.path).toBe(true)
       }
     }
+  })
+
+  /**
+   * The sample's one prefab, and the two instances of it.
+   *
+   * The load-bearing assertion is the last one: an instance carries a reference
+   * and *no copy* of what it inherits. A generator that wrote the sprite into
+   * both places would produce a sample that looked right, drew right, and
+   * stopped following the prefab the first time anybody edited it — which is the
+   * one thing prefabs exist to do.
+   */
+  it('places the slime prefab twice, by reference and nothing else', () => {
+    const prefab = prefabAt('prefabs/enemy-slime.json')
+    const instances = sceneAt('scenes/level-02.json').entities.filter(
+      (entity) => prefabRefOf(entity) !== null,
+    )
+
+    expect(instances).toHaveLength(2)
+    for (const entity of instances) {
+      expect(prefabRefOf(entity)?.path).toBe('prefabs/enemy-slime.json')
+      // The witness half of D5: a prefab has no `.meta`, so the id the level
+      // records is the one the document itself carries.
+      expect(prefabRefOf(entity)?.id, entity.name).toBe(prefab.id)
+      expect(spriteOf(entity), `${entity.name} carries its own sprite`).toBeNull()
+      expect(Object.keys(entity.components)).toEqual(['prefab'])
+    }
+
+    // And where they stand is still the level's: one of them is tilted.
+    expect(instances.map((entity) => entity.transform.rotation)).toEqual([0, 20])
   })
 
   /**

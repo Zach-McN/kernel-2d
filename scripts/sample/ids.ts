@@ -16,7 +16,13 @@ function digest(seed: string): string {
   return createHash('sha256').update(seed).digest('hex').slice(0, 16)
 }
 
-/** The id in a generated asset's `.meta`, and in every reference to it. */
+/**
+ * The id in a generated asset's `.meta`, and in every reference to it.
+ *
+ * Also the id a generated *document* carries inside itself, where it has one — a
+ * prefab has no `.meta` because a document is its own annotation, and one
+ * function serving both is the point of ids being opaque.
+ */
 export function sampleAssetId(projectRelativePath: string): string {
   return digest(projectRelativePath)
 }

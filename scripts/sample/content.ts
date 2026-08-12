@@ -5,11 +5,15 @@ import {
   type TextureImportSettings,
 } from '../../runtime/formats/meta-schema.js'
 import {
+  PREFAB_FORMAT,
+  PREFAB_VERSION,
   SCENE_FORMAT,
   SCENE_VERSION,
   defaultTransform,
+  serializePrefab,
   serializeScene,
   type Entity,
+  type Prefab,
   type Scene,
 } from '../../runtime/formats/scene-schema.js'
 import { sampleAssetId, sampleEntityId } from './ids.js'
@@ -29,10 +33,10 @@ import { decay, encodeWav, sine } from './wav.js'
  * document that is not one is a trap for whoever opens it, and real ones can
  * simply be dropped in.
  *
- * The scenes are real documents now that `SceneSchema` exists. The prefab and
+ * The scenes and the prefab are real documents now that their schemas exist. The
  * data files are still placeholders that say so in their own contents, because
  * those formats have no schema yet — plausible-looking contents are how a wrong
- * format quietly becomes precedent. Both scenes are valid on purpose: a
+ * format quietly becomes precedent. Everything real here is valid on purpose: a
  * deliberately broken sample would be a trap for whoever opened it, so the
  * broken cases are produced by tests against a throwaway copy instead.
  */
@@ -166,10 +170,16 @@ export function sampleFiles(generatedAt: string): SampleFile[] {
       marking: 'inside',
     },
 
+    // --- prefabs, which are a real format now -----------------------------
+    {
+      path: SLIME_PREFAB,
+      contents: serializePrefab(slimePrefab(generatedAt)),
+      marking: 'inside',
+    },
+
     // --- formats that do not exist yet ------------------------------------
     { path: 'data/items.json', contents: note('Placeholder for the item database. No schema for it exists yet.'), marking: 'inside' },
     { path: 'data/waves.json', contents: note('Placeholder for the wave schedule. No schema for it exists yet.'), marking: 'inside' },
-    { path: 'prefabs/enemy-slime.json', contents: note('Placeholder prefab. PrefabSchema does not exist yet — do not treat this shape as the format.'), marking: 'inside' },
     { path: 'project.json', contents: note('Placeholder project settings. The real format lands with the runtime.'), marking: 'inside' },
   ]
 }
@@ -192,6 +202,7 @@ export function sampleFiles(generatedAt: string): SampleFile[] {
 
 const LEVEL_ONE = 'scenes/level-01.json'
 const LEVEL_TWO = 'scenes/level-02.json'
+const SLIME_PREFAB = 'prefabs/enemy-slime.json'
 
 const KNIGHT = 'assets/textures/characters/knight-idle.png'
 const RUN_STRIP = 'assets/textures/characters/knight-run-strip.png'
@@ -203,7 +214,10 @@ const BUTTON = 'assets/textures/ui/button-idle.png'
 
 interface Placement {
   name: string
-  texture: string
+  /** The texture this entity draws itself. Exactly one of this and `prefab`. */
+  texture?: string
+  /** The prefab this entity is an instance of. What it draws comes from there. */
+  prefab?: string
   x: number
   y: number
   rotation?: number
@@ -224,18 +238,55 @@ function scene(scenePath: string, generatedAt: string, placements: readonly Plac
       ...(placement.scaleX === undefined ? {} : { scaleX: placement.scaleX }),
       ...(placement.scaleY === undefined ? {} : { scaleY: placement.scaleY }),
     },
-    components: {
-      // Both halves of the reference, always: the path resolves it and the id
-      // is what notices when the file at that path is no longer the same one
-      // (editor-kernel D5).
-      sprite: { texture: { id: sampleAssetId(placement.texture), path: placement.texture } },
-    },
+    // Both halves of the reference, always, whichever kind it is: the path
+    // resolves it and the id is what notices when the file at that path is no
+    // longer the same one (editor-kernel D5).
+    //
+    // An instance carries *only* the reference. Copying the prefab's sprite in
+    // here as well would look identical the day it was generated and stop
+    // following the prefab the day after, which is the whole point of placing
+    // one by reference.
+    components: reference(placement),
   }))
 
   return {
     format: SCENE_FORMAT,
     version: SCENE_VERSION,
     entities,
+    generatedBy: GENERATED_BY,
+    generatedAt,
+  }
+}
+
+function reference(placement: Placement): Record<string, unknown> {
+  if (placement.prefab !== undefined) {
+    return { prefab: { source: { id: sampleAssetId(placement.prefab), path: placement.prefab } } }
+  }
+  if (placement.texture !== undefined) {
+    return { sprite: { texture: { id: sampleAssetId(placement.texture), path: placement.texture } } }
+  }
+  throw new Error(`${placement.name} has neither a texture nor a prefab.`)
+}
+
+/**
+ * The one prefab in the sample: a slime, placed twice in level two.
+ *
+ * It exists so the first thing anybody can try is changing a prefab's picture
+ * and watching both slimes in the level change with it, without touching the
+ * level. A format nothing in the sample exercises is a format that only the
+ * tests believe in.
+ */
+function slimePrefab(generatedAt: string): Prefab {
+  return {
+    format: PREFAB_FORMAT,
+    version: PREFAB_VERSION,
+    // A document carries its own id — there is no `.meta` beside a prefab,
+    // because nothing needs annotating from outside a file you can write inside.
+    id: sampleAssetId(SLIME_PREFAB),
+    name: 'Slime',
+    components: {
+      sprite: { texture: { id: sampleAssetId(SLIME), path: SLIME } },
+    },
     generatedBy: GENERATED_BY,
     generatedAt,
   }
@@ -253,12 +304,19 @@ function levelOne(generatedAt: string): Scene {
   ])
 }
 
-/** A second, smaller level, so opening one and then the other is worth doing. */
+/**
+ * A second, smaller level, so opening one and then the other is worth doing —
+ * and the one that shows prefabs working.
+ *
+ * Both slimes are instances rather than entities carrying their own sprite. One
+ * of them is tilted, which is the point being made: what a thing *is* comes from
+ * the prefab, and how it stands is the level's.
+ */
 function levelTwo(generatedAt: string): Scene {
   return scene(LEVEL_TWO, generatedAt, [
     { name: 'Cave floor', texture: CAVE, x: 144, y: 8, scaleX: 18 },
-    { name: 'Slime', texture: SLIME, x: 96, y: 16 },
-    { name: 'Tilted slime', texture: SLIME, x: 176, y: 16, rotation: 20 },
+    { name: 'Slime', prefab: SLIME_PREFAB, x: 96, y: 16 },
+    { name: 'Tilted slime', prefab: SLIME_PREFAB, x: 176, y: 16, rotation: 20 },
     { name: 'Continue button', texture: BUTTON, x: 120, y: 140, scaleX: 2, scaleY: 2 },
   ])
 }

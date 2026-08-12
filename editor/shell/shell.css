@@ -675,6 +675,14 @@ body {
   text-transform: uppercase;
 }
 
+/* An instance is an ordinary state, not a fault — so it must not wear the
+   colour every other badge in this list uses to mean "this is broken". */
+.entity-row__badge--prefab {
+  margin-left: 8px;
+  background: rgba(122, 162, 247, 0.16);
+  color: var(--shell-text-dim);
+}
+
 .viewport__zoom {
   display: flex;
   align-items: center;

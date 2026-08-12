@@ -1,19 +1,24 @@
-import { useState, type ReactElement, type ReactNode } from 'react'
+import type { ReactElement, ReactNode } from 'react'
 
-import { assetTypeForName } from '../../runtime/formats/meta-schema'
 import {
   SCENE_FORMAT,
+  prefabRefOf,
   spriteOf,
   unknownComponentTypesOf,
+  type AssetRef,
   type Entity,
   type Scene,
+  type SpriteComponent,
 } from '../../runtime/formats/scene-schema'
-import { MetaViewSchema } from '../../sidecar/meta-view-schema'
-import type { ProjectTree, TreeNode } from '../../sidecar/tree-schema'
+import type { ProjectTree } from '../../sidecar/tree-schema'
 import { basename } from '../shell/asset-kinds'
 import { describeProblem, type SceneAssets } from '../shell/scene-assets'
+import { describePrefabProblem, instancesOf, useResolvedScene, type PrefabProblem } from '../shell/scene-prefabs'
+import { useSelection } from '../shell/selection'
+import { usePlacePrefab } from '../shell/usePlacePrefab'
 import { editDocument, sealEdits } from '../store/open-documents'
 import { NumberField } from './NumberField'
+import { TexturePicker } from './TexturePicker'
 
 /**
  * One entity's properties, ready to tune.
@@ -31,18 +36,30 @@ import { NumberField } from './NumberField'
 interface EntityInspectorProps {
   scenePath: string
   scene: Scene
+  /** The entity as the file has it. Everything editable is edited on this one. */
   entity: Entity
+  /**
+   * The same entity with its prefab's components filled in — what it actually
+   * draws. Never written back; see `editor/shell/scene-prefabs.tsx`.
+   */
+  resolved: Entity
   tree: ProjectTree | null
   assets: SceneAssets
+  /** Why this entity's prefab could not be used, if it could not. */
+  prefabProblem: PrefabProblem | undefined
 }
 
 export function EntityInspector({
   scenePath,
   scene,
   entity,
+  resolved,
   tree,
   assets,
+  prefabProblem,
 }: EntityInspectorProps): ReactElement {
+  const resolvedScene = useResolvedScene()
+
   const change = (field: string, label: string, recipe: (entity: Entity) => void): void => {
     editDocument(scenePath, { label, merge: `${scenePath}#${entity.id}#${field}` }, (document) => {
       if (document.format !== SCENE_FORMAT) return
@@ -51,9 +68,15 @@ export function EntityInspector({
     })
   }
 
-  const sprite = spriteOf(entity)
+  // What it carries itself, and what it actually draws. For an ordinary entity
+  // these are the same thing; for an instance the second one comes from the
+  // prefab, and telling them apart is what lets this panel say where a picture
+  // is decided.
+  const own = spriteOf(entity)
+  const drawn = spriteOf(resolved)
+  const source = prefabRefOf(entity)
   const unknown = unknownComponentTypesOf(entity)
-  const problem = sprite === null ? undefined : assets.problems[sprite.texture.path]
+  const problem = drawn === null ? undefined : assets.problems[drawn.texture.path]
 
   return (
     <>
@@ -149,18 +172,35 @@ export function EntityInspector({
         <Note>y counts upward from the bottom-left corner of the viewport.</Note>
       </Section>
 
-      <Section title="Sprite">
-        <TexturePicker scenePath={scenePath} entity={entity} tree={tree} />
-        {problem !== undefined && (
-          <p className="inspector__note inspector__note--bad" data-testid="entity-texture-problem">
-            {describeProblem(problem)}
-          </p>
-        )}
-        {sprite !== null && <Field label="Reference" value={sprite.texture.id} testId="entity-texture-id" />}
-        <Note>
-          Where this sprite sits is decided by the pivot in the texture&apos;s own import settings, not here.
-        </Note>
-      </Section>
+      {source === null ? (
+        <Section title="Sprite">
+          <TexturePicker
+            value={own?.texture ?? null}
+            tree={tree}
+            testId="entity-texture-control"
+            onPick={(reference) => setTexture(scenePath, entity.id, reference)}
+          />
+          {problem !== undefined && (
+            <p className="inspector__note inspector__note--bad" data-testid="entity-texture-problem">
+              {describeProblem(problem)}
+            </p>
+          )}
+          {own !== null && <Field label="Reference" value={own.texture.id} testId="entity-texture-id" />}
+          <Note>
+            Where this sprite sits is decided by the pivot in the texture&apos;s own import settings, not
+            here.
+          </Note>
+        </Section>
+      ) : (
+        <FromPrefab
+          source={source}
+          drawn={drawn}
+          placed={instancesOf(resolvedScene.entities, source.path)}
+          overridden={own !== null}
+          problem={prefabProblem}
+          textureProblem={problem === undefined ? null : describeProblem(problem)}
+        />
+      )}
 
       {unknown.length > 0 && (
         <Section title="Other components">
@@ -175,117 +215,114 @@ export function EntityInspector({
 }
 
 /**
- * Which texture this entity draws.
+ * Writing one entity's sprite reference, or removing it.
  *
- * **This is the one place a D5 reference is written**, and the reason it is
- * asynchronous: a reference carries the stable id as well as the path, and the
- * id lives in the texture's own `.meta`. Picking a texture therefore asks the
- * service what that file's id is and then writes the pair in a single
- * transaction. Writing only the path would look identical today and lose the
- * half of the reference that survives a rename.
- *
- * "Nothing" removes the whole sprite component rather than emptying a field. A
- * component map with a sprite that draws nothing in it is a shape the format
- * does not need, and removing it is what makes an entity with no sprite one
- * thing rather than two.
+ * One transaction, because the id and the path are one reference and half of one
+ * is not worth writing. Re-found by id inside the recipe rather than closed over,
+ * the same as every other write in this editor.
  */
-function TexturePicker({
-  scenePath,
-  entity,
-  tree,
-}: {
-  scenePath: string
-  entity: Entity
-  tree: ProjectTree | null
-}): ReactElement {
-  const [problem, setProblem] = useState<string | null>(null)
-  const sprite = spriteOf(entity)
-  const textures = tree === null ? [] : texturesIn(tree)
+function setTexture(scenePath: string, entityId: string, reference: AssetRef | null): void {
+  editDocument(scenePath, { label: reference === null ? 'Remove sprite' : 'Set texture' }, (document) => {
+    if (document.format !== SCENE_FORMAT) return
+    const target = document.entities.find((candidate) => candidate.id === entityId)
+    if (target === undefined) return
 
-  const pick = async (path: string): Promise<void> => {
-    setProblem(null)
-
-    if (path === '') {
-      editDocument(scenePath, { label: 'Remove sprite' }, (document) => {
-        if (document.format !== SCENE_FORMAT) return
-        const target = document.entities.find((candidate) => candidate.id === entity.id)
-        if (target !== undefined) delete target.components['sprite']
-      })
-      return
-    }
-
-    let id: string
-    try {
-      const response = await fetch(`/api/meta?path=${encodeURIComponent(path)}`, { cache: 'no-store' })
-      if (!response.ok) throw new Error(String(response.status))
-      const view = MetaViewSchema.parse(await response.json())
-      if (view.status !== 'ok' || view.meta === null) {
-        setProblem(
-          `${basename(path)} has no import settings yet, so there is no id to point at. Try again in a moment.`,
-        )
-        return
-      }
-      id = view.meta.id
-    } catch {
-      setProblem('Could not ask the editor service for that texture. Is the editor command still running?')
-      return
-    }
-
-    // One transaction: the id and the path are one reference and half of one is
-    // not worth writing.
-    editDocument(scenePath, { label: 'Set texture' }, (document) => {
-      if (document.format !== SCENE_FORMAT) return
-      const target = document.entities.find((candidate) => candidate.id === entity.id)
-      if (target !== undefined) target.components['sprite'] = { texture: { id, path } }
-    })
-  }
-
-  return (
-    <>
-      <Row label="Texture">
-        <select
-          className="control control--choice"
-          data-testid="entity-texture-control"
-          value={sprite?.texture.path ?? ''}
-          onChange={(event) => void pick(event.target.value)}
-        >
-          <option value="">Nothing — this entity draws no sprite</option>
-          {textures.map((path) => (
-            <option key={path} value={path}>
-              {path}
-            </option>
-          ))}
-          {/* A reference to a file that is gone still has to be shown as the
-              current value, or the control would silently read as "Nothing"
-              while the scene says otherwise. */}
-          {sprite !== null && !textures.includes(sprite.texture.path) && (
-            <option value={sprite.texture.path}>{sprite.texture.path} — not in the project</option>
-          )}
-        </select>
-      </Row>
-      {problem !== null && (
-        <p className="inspector__note inspector__note--bad" data-testid="entity-texture-pick-problem">
-          {problem}
-        </p>
-      )}
-    </>
-  )
+    if (reference === null) delete target.components['sprite']
+    else target.components['sprite'] = { texture: reference }
+  })
 }
 
-/** Every texture in the project, by path, in the order the folder lists them. */
-function texturesIn(tree: ProjectTree): string[] {
-  const found: string[] = []
+/**
+ * Where an instance's picture comes from.
+ *
+ * No texture control, on purpose. This entity draws what the prefab says, and a
+ * picker here would either change every instance — which is the prefab's own
+ * panel's job, where it is obvious that is what is happening — or quietly cut
+ * this one loose from the file it was placed from. Instead it says where the
+ * decision lives and offers one press to go there.
+ */
+function FromPrefab({
+  source,
+  drawn,
+  placed,
+  overridden,
+  problem,
+  textureProblem,
+}: {
+  source: AssetRef
+  drawn: SpriteComponent | null
+  /** How many instances of this prefab the open level has. */
+  placed: number
+  overridden: boolean
+  problem: PrefabProblem | undefined
+  textureProblem: string | null
+}): ReactElement {
+  const selection = useSelection()
+  const placing = usePlacePrefab(source.path)
 
-  const walk = (node: TreeNode): void => {
-    if (node.kind === 'file') {
-      if (assetTypeForName(node.name) === 'texture') found.push(node.path)
-      return
-    }
-    for (const child of node.children) walk(child)
-  }
+  return (
+    <Section title="From prefab">
+      <div className="inspector__field">
+        <span className="inspector__label">Prefab</span>
+        <span className="control-row">
+          <button
+            type="button"
+            className="control control--action"
+            data-testid="entity-open-prefab"
+            title={source.path}
+            onClick={() => selection.selectFile(source.path)}
+          >
+            {basename(source.path)}
+          </button>
+          {/* The same gesture as the prefab's own Place, offered from what it
+              just placed. The Inspector holds one thing at a time, so placing
+              moves it here — without this, "place it fifty times" would be fifty
+              round trips back to the Assets panel. */}
+          <button
+            type="button"
+            className="control control--action"
+            data-testid="entity-place-another"
+            disabled={!placing.canPlace}
+            onClick={placing.place}
+          >
+            Place another
+          </button>
+        </span>
+      </div>
 
-  walk(tree.tree)
-  return found
+      <Field
+        label="Placed"
+        value={`${placed} ${placed === 1 ? 'time' : 'times'} in this level`}
+        testId="entity-prefab-count"
+      />
+
+      {problem !== undefined && (
+        <p className="inspector__note inspector__note--bad" data-testid="entity-prefab-problem">
+          {describePrefabProblem(problem)}
+        </p>
+      )}
+
+      {drawn !== null && <Field label="Texture" value={drawn.texture.path} testId="entity-prefab-texture" />}
+
+      {textureProblem !== null && (
+        <p className="inspector__note inspector__note--bad" data-testid="entity-texture-problem">
+          {textureProblem}
+        </p>
+      )}
+
+      {overridden && (
+        <Note data-testid="entity-prefab-override">
+          This one carries a sprite of its own, written into the level rather than inherited, so it ignores
+          the prefab&apos;s. Remove it from the file to follow the prefab again.
+        </Note>
+      )}
+
+      <Note>
+        Its picture is decided in the prefab, for every instance at once. Where it stands, how big it is and
+        how far it is turned are this one&apos;s alone.
+      </Note>
+    </Section>
+  )
 }
 
 /** Where this entity sits in the draw order, said in words rather than as an index. */

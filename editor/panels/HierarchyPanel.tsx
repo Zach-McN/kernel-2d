@@ -4,15 +4,17 @@ import {
   SCENE_FORMAT,
   copyEntity,
   defaultEntity,
+  prefabRefOf,
   spriteOf,
   type Entity,
 } from '../../runtime/formats/scene-schema'
 import { basename } from '../shell/asset-kinds'
 import { useOpenScene } from '../shell/open-scene'
 import { useSceneAssets, type SceneAssets } from '../shell/scene-assets'
+import { useResolvedScene, type ResolvedScene } from '../shell/scene-prefabs'
 import { useSelection } from '../shell/selection'
 import { editDocument } from '../store/open-documents'
-import { mintEntityId } from '../store/ids'
+import { mintId } from '../store/ids'
 
 /**
  * What is in the open scene, in the order it is drawn.
@@ -33,6 +35,7 @@ export function HierarchyPanel(): ReactElement {
   const open = useOpenScene()
   const selection = useSelection()
   const assets = useSceneAssets()
+  const resolved = useResolvedScene()
 
   if (open.state === 'none') {
     return <Empty>No scene is open. Click a scene in the Assets panel to see what is in it.</Empty>
@@ -80,7 +83,7 @@ export function HierarchyPanel(): ReactElement {
   }
 
   const add = (): void => {
-    const id = mintEntityId()
+    const id = mintId()
     change('Add entity', (list) => {
       list.push(defaultEntity(id, nextEntityName(list)))
     })
@@ -106,7 +109,7 @@ export function HierarchyPanel(): ReactElement {
    * it off. Any offset would be a number this editor invented.
    */
   const duplicate = (id: string): void => {
-    const copyId = mintEntityId()
+    const copyId = mintId()
     change('Duplicate entity', (list) => {
       const at = list.findIndex((entity) => entity.id === id)
       const source = list[at]
@@ -191,15 +194,22 @@ export function HierarchyPanel(): ReactElement {
         </p>
       ) : (
         <ol className="hierarchy__list" aria-label={`Entities in ${name}`}>
-          {entities.map((entity) => (
-            <Row
-              key={entity.id}
-              entity={entity}
-              selected={entity.id === selected}
-              problem={problemFor(entity, assets)}
-              onSelect={() => selection.selectEntity(path, entity.id)}
-            />
-          ))}
+          {entities.map((entity) => {
+            // The file's entity decides what this row *is*; the resolved one
+            // decides what it draws. Falling back is the gap of one render
+            // before the prefabs it points at have been read.
+            const drawn = resolved.entities.find((one) => one.id === entity.id) ?? entity
+            return (
+              <Row
+                key={entity.id}
+                entity={drawn}
+                fromPrefab={prefabRefOf(entity)?.path ?? null}
+                selected={entity.id === selected}
+                problem={problemFor(entity, drawn, assets, resolved)}
+                onSelect={() => selection.selectEntity(path, entity.id)}
+              />
+            )
+          })}
         </ol>
       )}
 
@@ -208,9 +218,26 @@ export function HierarchyPanel(): ReactElement {
   )
 }
 
-/** Whether this entity's texture is one the scene cannot draw, in a word. */
-function problemFor(entity: Entity, assets: SceneAssets): string | null {
-  const sprite = spriteOf(entity)
+/**
+ * Why this row cannot be drawn, in a word, or null.
+ *
+ * The prefab is asked about first: an instance whose prefab is missing has no
+ * texture *because* of that, and "missing texture" would send the human looking
+ * at the wrong file.
+ */
+function problemFor(
+  entity: Entity,
+  drawn: Entity,
+  assets: SceneAssets,
+  resolved: ResolvedScene,
+): string | null {
+  const source = prefabRefOf(entity)
+  if (source !== null) {
+    const problem = resolved.problems[source.path]
+    if (problem !== undefined) return problem.kind === 'missing' ? 'missing prefab' : 'prefab problem'
+  }
+
+  const sprite = spriteOf(drawn)
   if (sprite === null) return null
   const problem = assets.problems[sprite.texture.path]
   if (problem === undefined) return null
@@ -218,13 +245,16 @@ function problemFor(entity: Entity, assets: SceneAssets): string | null {
 }
 
 interface RowProps {
+  /** Resolved: the texture shown is the one this row actually draws. */
   entity: Entity
+  /** The prefab this is an instance of, or null when it is not one. */
+  fromPrefab: string | null
   selected: boolean
   problem: string | null
   onSelect: () => void
 }
 
-function Row({ entity, selected, problem, onSelect }: RowProps): ReactElement {
+function Row({ entity, fromPrefab, selected, problem, onSelect }: RowProps): ReactElement {
   const sprite = spriteOf(entity)
 
   return (
@@ -235,16 +265,25 @@ function Row({ entity, selected, problem, onSelect }: RowProps): ReactElement {
         data-entity-id={entity.id}
         data-selected={selected}
         data-entity-problem={problem ?? ''}
+        data-entity-prefab={fromPrefab ?? ''}
         onClick={onSelect}
       >
         <span className="entity-row__name">{entity.name}</span>
+        {fromPrefab !== null && (
+          <span
+            className="entity-row__badge entity-row__badge--prefab"
+            title={`An instance of ${fromPrefab}`}
+          >
+            prefab
+          </span>
+        )}
         {sprite !== null && (
           <span className="entity-row__texture" title={sprite.texture.path}>
             {basename(sprite.texture.path)}
           </span>
         )}
         {problem !== null && (
-          <span className="entity-row__badge" title="This entity's texture cannot be drawn">
+          <span className="entity-row__badge" title="This entity cannot be drawn">
             {problem}
           </span>
         )}

@@ -1,6 +1,6 @@
 import { useState, type ReactElement } from 'react'
 
-import { defaultScene } from '../../runtime/formats/scene-schema'
+import { defaultPrefab, defaultScene, type Prefab, type Scene } from '../../runtime/formats/scene-schema'
 import { formatBytes } from '../../sidecar/bytes'
 import type { ProjectTree } from '../../sidecar/tree-schema'
 import { findNode } from '../shell/asset-kinds'
@@ -8,6 +8,7 @@ import { assetRowsFor, type AssetRow } from '../shell/asset-rows'
 import { useProject } from '../shell/project-context'
 import { useSelection } from '../shell/selection'
 import { createDocumentOnDisk } from '../store/document-disk'
+import { mintId } from '../store/ids'
 
 /**
  * The project folder, mirrored. Selecting anything here is what the Inspector
@@ -72,7 +73,7 @@ export function AssetsPanel(): ReactElement {
         </p>
       )}
 
-      <NewScene folder={folderFor(selection.selectedFilePath, project.tree)} onCreated={reveal} />
+      <NewDocument folder={folderFor(selection.selectedFilePath, project.tree)} onCreated={reveal} />
 
       <ul className="assets__tree" role="tree" aria-label="Project folder">
         {assetRowsFor(project.tree.tree.children).map((row) => (
@@ -116,15 +117,26 @@ function folderFor(selectedPath: string | null, tree: ProjectTree): string {
 }
 
 /**
- * Making a level.
+ * Making a level, or a prefab.
  *
  * The whole path is on screen before anything is committed, because this is the
  * one control in the editor that puts a file in somebody's project folder and
  * "where did it go?" is not a question a human should have to answer by
  * searching. Refusals are the service's own sentences, shown as they arrive —
  * it knows things this panel does not, like whether the name is already taken.
+ *
+ * One name field and two buttons rather than two rows, because the *path* is the
+ * same question either way and only the contents differ. Which button was
+ * pressed decides what goes inside; nothing about the file's name or folder says
+ * which kind it is, and nothing later reads it that way (`editor-ui` U11).
  */
-function NewScene({ folder, onCreated }: { folder: string; onCreated: (path: string) => void }): ReactElement {
+function NewDocument({
+  folder,
+  onCreated,
+}: {
+  folder: string
+  onCreated: (path: string) => void
+}): ReactElement {
   const [name, setName] = useState('')
   const [problem, setProblem] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -135,17 +147,18 @@ function NewScene({ folder, onCreated }: { folder: string; onCreated: (path: str
   const file = typed === '' ? '' : typed.endsWith('.json') ? typed : `${typed}.json`
   const path = file === '' ? '' : folder === '' ? file : `${folder}/${file}`
 
-  const create = (): void => {
+  const create = (document: Scene | Prefab): void => {
     if (path === '' || busy) return
 
     setBusy(true)
     setProblem(null)
 
-    void createDocumentOnDisk(path, defaultScene())
+    void createDocumentOnDisk(path, document)
       .then(() => {
         setName('')
-        // Selecting it is what opens it: a file becomes the open scene because
-        // of the format inside it, which the shell reads when it is selected.
+        // Selecting it is what opens it: a file becomes the open scene, or the
+        // prefab the Inspector is showing, because of the format inside it,
+        // which the shell reads when it is selected.
         onCreated(path)
       })
       .catch((error: unknown) => {
@@ -162,7 +175,7 @@ function NewScene({ folder, onCreated }: { folder: string; onCreated: (path: str
       data-testid="new-scene"
       onSubmit={(event) => {
         event.preventDefault()
-        create()
+        create(defaultScene())
       }}
     >
       <div className="assets__new-row">
@@ -170,8 +183,8 @@ function NewScene({ folder, onCreated }: { folder: string; onCreated: (path: str
           type="text"
           className="control control--text"
           data-testid="new-scene-name"
-          placeholder="New level"
-          aria-label="Name for a new level"
+          placeholder="New level or prefab"
+          aria-label="Name for a new level or prefab"
           value={name}
           onChange={(event) => {
             setName(event.target.value)
@@ -185,6 +198,18 @@ function NewScene({ folder, onCreated }: { folder: string; onCreated: (path: str
           disabled={path === '' || busy}
         >
           New scene
+        </button>
+        <button
+          type="button"
+          className="control control--action"
+          data-testid="new-prefab-create"
+          disabled={path === '' || busy}
+          // The prefab is named after the file it is going into, which is the
+          // name the human just typed — there is nothing else it could sensibly
+          // be, and it is editable the moment it opens.
+          onClick={() => create(defaultPrefab(mintId(), stemOf(file)))}
+        >
+          New prefab
         </button>
       </div>
 
@@ -201,6 +226,11 @@ function NewScene({ folder, onCreated }: { folder: string; onCreated: (path: str
       )}
     </form>
   )
+}
+
+/** A file name without its extension, for naming what goes inside it. */
+function stemOf(file: string): string {
+  return file.replace(/\.json$/i, '')
 }
 
 interface AssetNodeProps {

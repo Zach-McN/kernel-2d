@@ -1,7 +1,7 @@
 import { useStore } from 'zustand'
 
 import { ASSET_META_FORMAT, type AssetMeta } from '../../runtime/formats/meta-schema'
-import { SCENE_FORMAT, type Scene } from '../../runtime/formats/scene-schema'
+import { PREFAB_FORMAT, SCENE_FORMAT, type Prefab, type Scene } from '../../runtime/formats/scene-schema'
 import { writeDocumentToDisk } from './document-disk'
 import { createDocumentStore, type Document, type DocumentState } from './documents'
 import { writeMetaToDisk } from './meta-disk'
@@ -33,7 +33,9 @@ import { writeMetaToDisk } from './meta-disk'
  */
 function saveToDisk(path: string, document: Document): Promise<unknown> {
   if (document.format === ASSET_META_FORMAT) return writeMetaToDisk(path, document)
-  if (document.format === SCENE_FORMAT) return writeDocumentToDisk(path, document)
+  if (document.format === SCENE_FORMAT || document.format === PREFAB_FORMAT) {
+    return writeDocumentToDisk(path, document)
+  }
   throw new Error(`This editor has nowhere to save a ${String((document as { format: string }).format)}.`)
 }
 
@@ -80,6 +82,14 @@ export function useSceneDocument(path: string | null): Scene | null {
   return useDocumentState((state) => {
     const document = path === null ? undefined : state.docs[path]
     return document !== undefined && document.format === SCENE_FORMAT ? document : null
+  })
+}
+
+/** The prefab at one path, or null. */
+export function usePrefabDocument(path: string | null): Prefab | null {
+  return useDocumentState((state) => {
+    const document = path === null ? undefined : state.docs[path]
+    return document !== undefined && document.format === PREFAB_FORMAT ? document : null
   })
 }
 

@@ -2,7 +2,7 @@ import { applyPatches, enablePatches, freeze, produceWithPatches, type Draft, ty
 import { createStore } from 'zustand/vanilla'
 
 import type { AssetMeta } from '../../runtime/formats/meta-schema'
-import type { Scene } from '../../runtime/formats/scene-schema'
+import type { Prefab, Scene } from '../../runtime/formats/scene-schema'
 
 /**
  * The transaction API: the one door every change to a document goes through,
@@ -39,12 +39,13 @@ enablePatches()
  * this file — merging, coalescing, staleness, the save debounce — is the same
  * whether the thing being edited is a texture's import settings or a level.
  * That is the whole payoff of document-level undo (editor-kernel D7): the scene
- * format arrived and not one line of undo was written for it.
+ * and prefab formats both arrived and not one line of undo was written for
+ * either.
  *
  * The only place the difference shows is which service endpoint the write goes
  * to, and that is a one-line branch on `format` in `open-documents.ts`.
  */
-export type Document = AssetMeta | Scene
+export type Document = AssetMeta | Scene | Prefab
 
 export interface DocumentState {
   /** Keyed by the project-relative path of the file the settings belong to. */
