@@ -1,6 +1,12 @@
 import type { ReactElement, ReactNode } from 'react'
 
-import { SCENE_FORMAT, defaultEntity, spriteOf, type Entity } from '../../runtime/formats/scene-schema'
+import {
+  SCENE_FORMAT,
+  copyEntity,
+  defaultEntity,
+  spriteOf,
+  type Entity,
+} from '../../runtime/formats/scene-schema'
 import { basename } from '../shell/asset-kinds'
 import { useOpenScene } from '../shell/open-scene'
 import { useSceneAssets, type SceneAssets } from '../shell/scene-assets'
@@ -83,6 +89,35 @@ export function HierarchyPanel(): ReactElement {
     selection.selectEntity(path, id)
   }
 
+  /**
+   * A copy of an entity, directly behind nothing that was not already there.
+   *
+   * What has to survive the copy is a fact about the format, so `copyEntity`
+   * answers that. Two things are this panel's:
+   *
+   * It gets a **new id**, because two entities with one id is a scene the format
+   * rejects, and the failure would surface at the next save rather than here.
+   * And it goes in **directly after the original** rather than at the end of the
+   * list, because list order is draw order — appending would quietly bring the
+   * copy to the front of the level.
+   *
+   * It lands exactly on top of the original, which is what every editor of this
+   * kind does: the copy is selected, so the outline is on it and one drag moves
+   * it off. Any offset would be a number this editor invented.
+   */
+  const duplicate = (id: string): void => {
+    const copyId = mintEntityId()
+    change('Duplicate entity', (list) => {
+      const at = list.findIndex((entity) => entity.id === id)
+      const source = list[at]
+      if (source === undefined) return
+      list.splice(at + 1, 0, copyEntity(source, copyId, nextCopyName(list, source.name)))
+    })
+    // Outside the transaction: what is selected afterwards is not part of the
+    // edit, or undo would restore a selection as well as a document.
+    selection.selectEntity(path, copyId)
+  }
+
   const remove = (id: string): void => {
     change('Delete entity', (list) => {
       const at = list.findIndex((entity) => entity.id === id)
@@ -108,6 +143,16 @@ export function HierarchyPanel(): ReactElement {
       <header className="hierarchy__bar">
         <button type="button" className="control control--action" data-testid="entity-add" onClick={add}>
           Add
+        </button>
+        <button
+          type="button"
+          className="control control--action"
+          data-testid="entity-duplicate"
+          title="A copy, on top of this one and just in front of it"
+          disabled={selected === null}
+          onClick={() => selected !== null && duplicate(selected)}
+        >
+          Duplicate
         </button>
         <button
           type="button"
@@ -219,6 +264,23 @@ function nextEntityName(entities: readonly Entity[]): string {
   const taken = new Set(entities.map((entity) => entity.name))
   for (let n = entities.length + 1; ; n += 1) {
     const name = `Entity ${n}`
+    if (!taken.has(name)) return name
+  }
+}
+
+/**
+ * What a copy is called: the original's name with a number after it.
+ *
+ * A duplicate that kept the name exactly would give the list two identical rows
+ * — legal in the format, and useless to read. Counting up from the original
+ * rather than from the list's length keeps "Slime 2, Slime 3" in order however
+ * much else is in the scene.
+ */
+function nextCopyName(entities: readonly Entity[], original: string): string {
+  const taken = new Set(entities.map((entity) => entity.name))
+  const stem = original.replace(/ \d+$/, '')
+  for (let n = 2; ; n += 1) {
+    const name = `${stem} ${n}`
     if (!taken.has(name)) return name
   }
 }

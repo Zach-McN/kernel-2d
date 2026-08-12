@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   SceneSchema,
   componentOf,
+  copyEntity,
   defaultEntity,
   defaultScene,
   defaultTransform,
@@ -188,6 +189,68 @@ describe('reading a component', () => {
   it('knows which types it has a schema for', () => {
     expect(isKnownComponentType('sprite')).toBe(true)
     expect(isKnownComponentType('patrolRoute')).toBe(false)
+  })
+})
+
+/**
+ * Copying an entity, held to the promise that makes it safe to offer as a
+ * button: everything comes with it.
+ *
+ * The failure this guards against is the quietest kind. A copy that dropped a
+ * component the kernel has no schema for would look exactly like working, and
+ * the loss would be found weeks later by somebody with no reason to suspect the
+ * Duplicate button — the same shape as the parse-drops-a-key failure the block
+ * above exists for, arriving through a different door.
+ */
+describe('copying an entity', () => {
+  it('takes the new id and name it is given', () => {
+    const copy = copyEntity(knight, 'ffff0000ffff0000', 'Knight 2')
+
+    expect(copy.id).toBe('ffff0000ffff0000')
+    expect(copy.name).toBe('Knight 2')
+  })
+
+  it('brings everything else exactly as it was', () => {
+    const copy = copyEntity(slime, 'ffff0000ffff0000', 'Slime 2')
+
+    expect(copy.transform).toEqual(slime.transform)
+    expect(copy.components).toEqual(slime.components)
+  })
+
+  it('brings components this kernel has no schema for', () => {
+    const withExtras: Entity = {
+      ...knight,
+      components: { ...knight.components, patrol: { from: 10, to: 90, waypoints: [{ x: 1, y: 2 }] } },
+      designerNote: 'faces right on purpose',
+    } as Entity
+
+    const copy = copyEntity(withExtras, 'ffff0000ffff0000', 'Knight 2')
+
+    expect(copy.components['patrol']).toEqual({ from: 10, to: 90, waypoints: [{ x: 1, y: 2 }] })
+    expect((copy as unknown as Record<string, unknown>)['designerNote']).toBe('faces right on purpose')
+  })
+
+  it('shares nothing with the original, so moving one does not move the other', () => {
+    const copy = copyEntity(slime, 'ffff0000ffff0000', 'Slime 2')
+    copy.transform.x = 999
+
+    expect(slime.transform.x).toBe(220)
+  })
+
+  it('makes a scene the format still accepts, with both entities in it', () => {
+    const copy = copyEntity(slime, 'ffff0000ffff0000', 'Slime 2')
+    const parsed = SceneSchema.safeParse({ ...scene, entities: [...scene.entities, copy] })
+
+    expect(parsed.success).toBe(true)
+  })
+
+  it('is rejected if it keeps the original’s id, which is why one is minted', () => {
+    // Two entities with one id is not a scene with a cosmetic flaw in it, and
+    // this is the assertion that says so about a copy in particular.
+    const same = copyEntity(slime, slime.id, 'Slime 2')
+    const parsed = SceneSchema.safeParse({ ...scene, entities: [...scene.entities, same] })
+
+    expect(parsed.success).toBe(false)
   })
 })
 

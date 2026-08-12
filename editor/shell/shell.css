@@ -140,6 +140,33 @@ body {
   color: var(--shell-bad);
 }
 
+/* Making a level: the name, the button, and the path it is about to create. */
+.assets__new {
+  padding: 6px 12px 10px;
+  border-bottom: 1px solid var(--shell-line);
+}
+
+.assets__new-row {
+  display: flex;
+  gap: 6px;
+}
+
+.assets__new-row .control--text {
+  flex: 1;
+  min-width: 0;
+}
+
+.assets__new-path {
+  margin: 6px 0 0;
+  color: var(--shell-text-dim);
+  overflow-wrap: anywhere;
+}
+
+.assets__new-problem {
+  margin: 6px 0 0;
+  color: var(--shell-bad);
+}
+
 .asset-row__button {
   display: flex;
   align-items: center;

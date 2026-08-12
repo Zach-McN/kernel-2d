@@ -125,6 +125,57 @@ test.describe('changing what is in the scene', () => {
       .toBe('6')
   })
 
+  test('duplicates one, on top of the original and just in front of it', async ({ page }) => {
+    await openScene(page, LEVEL_ONE)
+    await row(page, 'Slime').click()
+    const before = {
+      x: await page.getByTestId('entity-x-control').inputValue(),
+      y: await page.getByTestId('entity-y-control').inputValue(),
+    }
+
+    await page.getByTestId('entity-duplicate').click()
+
+    await expect(rows(page)).toHaveCount(6)
+    // Directly after the original rather than at the end: list order is draw
+    // order, so appending would quietly put the copy in front of the level.
+    expect(await names(page)).toEqual([
+      'Ground',
+      'Knight',
+      'Slime',
+      'Slime 2',
+      'Knight running',
+      'Health icon',
+    ])
+
+    // The copy is what is selected, and it is exactly where the original is —
+    // which is what makes one drag enough to separate them.
+    await expect(page.getByTestId('inspector-name')).toHaveText('Slime 2')
+    await expect(page.getByTestId('entity-x-control')).toHaveValue(before.x)
+    await expect(page.getByTestId('entity-y-control')).toHaveValue(before.y)
+  })
+
+  test('the copy draws the same sprite, so there really are two of them', async ({ page }) => {
+    await openScene(page, LEVEL_ONE)
+    await expect
+      .poll(() => page.getByTestId('viewport-panel').getAttribute('data-scene-drawn'))
+      .toBe('5')
+
+    await row(page, 'Slime').click()
+    await page.getByTestId('entity-duplicate').click()
+
+    await expect
+      .poll(() => page.getByTestId('viewport-panel').getAttribute('data-scene-drawn'))
+      .toBe('6')
+  })
+
+  test('duplicating is not offered until something is selected', async ({ page }) => {
+    await openScene(page, LEVEL_ONE)
+
+    await expect(page.getByTestId('entity-duplicate')).toBeDisabled()
+    await row(page, 'Slime').click()
+    await expect(page.getByTestId('entity-duplicate')).toBeEnabled()
+  })
+
   test('deletes one and it goes', async ({ page }) => {
     await openScene(page, LEVEL_ONE)
     await row(page, 'Slime').click()
@@ -183,6 +234,18 @@ test.describe('undo covers all of it', () => {
     await expect(rows(page)).toHaveCount(5)
     expect(await names(page)).toEqual(['Ground', 'Knight', 'Slime', 'Knight running', 'Health icon'])
     await expect(row(page, 'Slime')).toContainText('slime.png')
+  })
+
+  test('takes back a duplicate', async ({ page }) => {
+    await openScene(page, LEVEL_ONE)
+    await row(page, 'Slime').click()
+    await page.getByTestId('entity-duplicate').click()
+    await expect(rows(page)).toHaveCount(6)
+
+    await page.keyboard.press('ControlOrMeta+z')
+
+    await expect(rows(page)).toHaveCount(5)
+    expect(await names(page)).toEqual(['Ground', 'Knight', 'Slime', 'Knight running', 'Health icon'])
   })
 
   test('takes back a reorder', async ({ page }) => {

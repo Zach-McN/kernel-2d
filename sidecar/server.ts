@@ -5,7 +5,7 @@ import path from 'node:path'
 import { pipeline } from 'node:stream/promises'
 
 import { NotFoundError, resolveAssetBytes } from './asset-files.js'
-import { readDocumentView, writeDocumentFor } from './document-files.js'
+import { createDocumentFor, readDocumentView, writeDocumentFor } from './document-files.js'
 import { toFileEventMessage } from './event-schema.js'
 import { createEventFeed, type EventFeed } from './feed.js'
 import { RefusedError, readMetaView, writeMetaFor } from './meta-files.js'
@@ -124,16 +124,26 @@ async function handleRequest(
   const url = new URL(request.url ?? '/', `http://${context.options.host}`)
   const pathname = url.pathname
 
-  // Reading is open. Writing is two PUTs and nothing else: one replaces a
-  // single named set of import settings, the other replaces a single named
-  // document. They are the only non-GETs this service answers at all.
+  // Reading is open. Writing is three requests and nothing else: two PUTs that
+  // each replace one named thing, and one POST that makes one document where
+  // there was nothing. They are the only non-GETs this service answers at all.
+  //
+  // Creating has its own verb rather than being a mode of the PUT, and the
+  // reason is worth knowing before adding a fourth: kept apart, the create
+  // refuses when anything is there and the replace refuses when nothing is, so
+  // a confused caller gets a sentence instead of a destroyed level.
   if (request.method === 'PUT' && pathname === '/meta') {
     await handleMetaWrite(context, request, response, url)
     return
   }
 
   if (request.method === 'PUT' && pathname === '/document') {
-    await handleDocumentWrite(context, request, response, url)
+    await handleDocumentWrite(context, request, response, url, 'replace')
+    return
+  }
+
+  if (request.method === 'POST' && pathname === '/document') {
+    await handleDocumentWrite(context, request, response, url, 'create')
     return
   }
 
@@ -305,13 +315,13 @@ async function handleMetaWrite(
 }
 
 /**
- * The editor asking for one document to be replaced.
+ * The editor asking for one document to be made, or one to be replaced.
  *
  * The same shape as the `.meta` write and held to the same discipline: every
  * refusal is a 400 carrying one plain sentence meant for a human, and nothing on
- * disk is touched unless the whole document was understood first. What this one
- * will and will not overwrite is stated in full at the top of
- * `document-files.ts`, and is not restated here — two copies of a privilege is
+ * disk is touched unless the whole document was understood first. What each of
+ * the two will and will not do is stated in full at the top of
+ * `document-files.ts` and is not restated here — two copies of a privilege is
  * how one of them quietly gets wider than the other.
  */
 async function handleDocumentWrite(
@@ -319,6 +329,7 @@ async function handleDocumentWrite(
   request: http.IncomingMessage,
   response: http.ServerResponse,
   url: URL,
+  intent: 'create' | 'replace',
 ): Promise<void> {
   const requested = url.searchParams.get('path') ?? ''
 
@@ -333,15 +344,17 @@ async function handleDocumentWrite(
     return
   }
 
+  const apply = intent === 'create' ? createDocumentFor : writeDocumentFor
+
   try {
-    sendJson(response, 200, await writeDocumentFor(context.options.projectPath, requested, document))
+    sendJson(response, intent === 'create' ? 201 : 200, await apply(context.options.projectPath, requested, document))
   } catch (error) {
     if (error instanceof RefusedError) {
       sendJson(response, 400, { error: error.message, path: requested })
       return
     }
     sendJson(response, 500, {
-      error: 'Could not write the document at that path',
+      error: intent === 'create' ? 'Could not make a document at that path' : 'Could not write the document at that path',
       detail: error instanceof Error ? error.message : String(error),
     })
   }

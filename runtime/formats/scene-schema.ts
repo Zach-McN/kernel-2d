@@ -278,6 +278,25 @@ export function defaultScene(): Scene {
 }
 
 /**
+ * A copy of an entity, under a new id and name.
+ *
+ * It belongs here rather than in the panel that offers the button, because what
+ * has to survive a copy is a fact about the *format*: everything, including
+ * component types this kernel has no schema for. A copy that quietly dropped one
+ * would look exactly like working, and the loss would be found much later by
+ * somebody with no reason to suspect the Duplicate button.
+ *
+ * Deep, and through JSON rather than `structuredClone`, for two reasons that
+ * both matter. An entity is a JSON document by definition, so a round trip is
+ * faithful by construction. And `structuredClone` throws on the immer draft the
+ * editor is holding mid-transaction, which is exactly where a copy gets made —
+ * a failure that does not appear until the button is pressed.
+ */
+export function copyEntity(entity: Entity, id: string, name: string): Entity {
+  return { ...(JSON.parse(JSON.stringify(entity)) as Entity), id, name }
+}
+
+/**
  * How a scene is written to disk, everywhere. Two spaces and a trailing
  * newline, the same as a `.meta`, so the file reads well in a text editor and
  * diffs a line at a time.
