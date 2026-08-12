@@ -507,6 +507,17 @@ body {
   cursor: grabbing;
 }
 
+/* Over something that can be moved, and moving it. */
+.scene .viewport__stage[data-grab='pick'],
+.scene .viewport__stage[data-grab='moving'] {
+  cursor: move;
+}
+
+/* Focused only so a press can take focus off a text field; never outlined. */
+.scene .viewport__stage:focus {
+  outline: none;
+}
+
 .scene__overlay {
   position: absolute;
   inset: 0;

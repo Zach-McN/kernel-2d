@@ -1,14 +1,17 @@
-import { useEffect, useRef, type ReactElement, type ReactNode, type RefObject } from 'react'
+import { useEffect, useMemo, useRef, type ReactElement, type ReactNode, type RefObject } from 'react'
 
 import type { SceneRequest, ShownScene } from '../../runtime'
+import { SCENE_FORMAT, type Entity } from '../../runtime/formats/scene-schema'
 import { basename } from '../shell/asset-kinds'
+import { entityAt, onScreen } from '../shell/drawn-entities'
 import { useOpenScene, type OpenSceneState } from '../shell/open-scene'
 import { describeProblem, problemsIn, useSceneAssets } from '../shell/scene-assets'
 import { useDrawScene, useSceneView, type SceneViewState } from '../shell/scene-view-context'
-import { useSceneGestures } from '../shell/useSceneGestures'
+import { useSceneGestures, type ScenePlacement } from '../shell/useSceneGestures'
 import { useSelection } from '../shell/selection'
 import { describeZoom } from '../shell/zoom'
-import { SceneOverlay, describeScene, onScreen } from './SceneOverlay'
+import { editDocument, sealEdits } from '../store/open-documents'
+import { SceneOverlay, describeScene } from './SceneOverlay'
 
 /**
  * The open scene, drawn by the real runtime.
@@ -47,6 +50,7 @@ export function ViewportPanel(): ReactElement {
   const selected = selection.selected.kind === 'entity' ? selection.selected.entity : null
   const ready = view.state === 'ready' ? view : null
 
+  const placement = usePlacement(open, current)
   const gestures = useSceneGestures({
     host,
     enabled: current !== null,
@@ -55,10 +59,15 @@ export function ViewportPanel(): ReactElement {
     frameAll: ready?.frameAll ?? noop,
     frameEntity: ready?.frameEntity ?? noop,
     selected,
+    placement,
   })
 
   const camera = current?.camera ?? null
   const visible = current === null ? null : onScreen(current)
+  const beingMoved =
+    gestures.dragging === null || open.state !== 'open'
+      ? null
+      : (open.scene.entities.find((one) => one.id === gestures.dragging) ?? null)
 
   return (
     <div
@@ -73,8 +82,10 @@ export function ViewportPanel(): ReactElement {
       data-scene-focus-x={camera === null ? '' : String(camera.focus.x)}
       data-scene-focus-y={camera === null ? '' : String(camera.focus.y)}
       data-scene-onscreen={visible === null ? '' : String(visible.count)}
+      data-scene-picked={gestures.picked ?? ''}
+      data-scene-dragging={gestures.dragging ?? ''}
     >
-      <Stage host={host} view={view} dragging={gestures.dragging} ready={gestures.ready}>
+      <Stage host={host} view={view} grab={grabOf(gestures)}>
         {current !== null && <SceneOverlay shown={current} selected={selected} />}
       </Stage>
 
@@ -84,6 +95,7 @@ export function ViewportPanel(): ReactElement {
         problems={problemsIn(assets)}
         selected={selected}
         offScreen={offScreenIn(open, current, selected)}
+        moving={beingMoved}
       />
     </div>
   )
@@ -93,13 +105,117 @@ const noop = (): void => {}
 const noPan = (_dx: number, _dy: number): void => {}
 const noZoom = (_at: { x: number; y: number }, _direction: 1 | -1): void => {}
 
+/** Which cursor the stage offers, in the order the gestures take priority. */
+function grabOf(gestures: ReturnType<typeof useSceneGestures>): string {
+  if (gestures.panning) return 'holding'
+  if (gestures.ready) return 'ready'
+  if (gestures.dragging !== null) return 'moving'
+  if (gestures.picked !== null) return 'pick'
+  return ''
+}
+
+// --- picking and placing ---------------------------------------------------
+
+/**
+ * What a press in the picture does.
+ *
+ * Every position written goes through the transaction API and nothing else, the
+ * same door the Inspector's fields use — so one drag is one press of Ctrl-Z and
+ * this feature contains no undo code at all (`editor-kernel` D7). The merge key
+ * carries the entity's id, so dragging one sprite and then another is two steps.
+ */
+function usePlacement(open: OpenSceneState, current: ShownScene | null): ScenePlacement {
+  const selection = useSelection()
+  const scenePath = open.state === 'open' ? open.path : null
+  const scale = current?.camera.scale ?? null
+
+  /**
+   * Where the entity was when it was pressed.
+   *
+   * A drag is applied as travel from the press rather than as a running sum of
+   * pointer wobbles: with snapping on, adding up rounded steps would let a
+   * sprite creep away from the pointer over a long drag and never come back.
+   */
+  const from = useRef<{ entity: string; x: number; y: number } | null>(null)
+
+  const entities = open.state === 'open' ? open.scene.entities : null
+
+  return useMemo<ScenePlacement>(
+    () => ({
+      pick: (at) => (current === null ? null : entityAt(current, at)),
+
+      select: (entityId) => {
+        from.current = null
+
+        if (entityId === null || scenePath === null) {
+          selection.selectNothing()
+          return
+        }
+
+        const entity = entities?.find((one) => one.id === entityId)
+        if (entity !== undefined) {
+          from.current = { entity: entityId, x: entity.transform.x, y: entity.transform.y }
+        }
+        selection.selectEntity(scenePath, entityId)
+      },
+
+      moveBy: (entityId, screenDx, screenDy, free) => {
+        const start = from.current
+        if (start === null || start.entity !== entityId) return
+        if (scenePath === null || scale === null) return
+
+        // Screen y counts down and the level's counts up, so the vertical
+        // travel is subtracted. The scale is the only part of the camera that
+        // matters here: a drag is a distance, not a place.
+        const at = placeAt(start.x + screenDx / scale, start.y - screenDy / scale, free)
+
+        editDocument(
+          scenePath,
+          { label: 'Move entity', merge: `${scenePath}#${entityId}#drag` },
+          (document) => {
+            if (document.format !== SCENE_FORMAT) return
+            // Re-found by id rather than remembered as an index: between the
+            // press and this move, a text editor may have changed the file.
+            const target = document.entities.find((one) => one.id === entityId)
+            if (target === undefined) return
+            target.transform.x = at.x
+            target.transform.y = at.y
+          },
+        )
+      },
+
+      drop: () => {
+        from.current = null
+        // Always, even for a press that never moved: it seals the undo step, and
+        // sealing one that was never opened costs nothing.
+        sealEdits()
+      },
+    }),
+    [current, scenePath, scale, entities, selection],
+  )
+}
+
+/**
+ * Where a drag puts an entity.
+ *
+ * Whole level units unless Alt is held, because a level laid out on whole
+ * numbers is one whose pixel art lands on the pixel grid and whose file is
+ * readable. Free placement is still rounded — to three decimals, which is finer
+ * than the closest zoom can resolve — because the alternative is seventeen
+ * digits of floating-point noise in somebody's level.
+ */
+function placeAt(x: number, y: number, free: boolean): { x: number; y: number } {
+  if (!free) return { x: Math.round(x), y: Math.round(y) }
+  return { x: Math.round(x * 1000) / 1000, y: Math.round(y * 1000) / 1000 }
+}
+
 // --- the canvas ------------------------------------------------------------
 
 interface StageProps {
   host: RefObject<HTMLDivElement | null>
   view: SceneViewState
-  dragging: boolean
-  ready: boolean
+  /** Which cursor to offer, decided by whichever gesture has priority. */
+  grab: string
   children: ReactNode
 }
 
@@ -111,7 +227,7 @@ interface StageProps {
  * drag this tab across the layout without the renderer noticing, and what keeps
  * the camera pointing where they left it.
  */
-function Stage({ host, view, dragging, ready, children }: StageProps): ReactElement {
+function Stage({ host, view, grab, children }: StageProps): ReactElement {
   const canvas = view.state === 'ready' ? view.canvas : null
   const measure = view.state === 'ready' ? view.measure : null
 
@@ -150,7 +266,11 @@ function Stage({ host, view, dragging, ready, children }: StageProps): ReactElem
       className="viewport__stage"
       ref={host}
       data-testid="viewport-stage"
-      data-grab={dragging ? 'holding' : ready ? 'ready' : ''}
+      data-grab={grab}
+      // Focusable, but never in the tab order. Pressing in the picture moves
+      // focus here, which is what takes it off a field the human was typing in
+      // — otherwise clicking a sprite and pressing F types an f into a name.
+      tabIndex={-1}
     >
       {children}
     </div>
@@ -182,6 +302,8 @@ interface CaptionProps {
   problems: ReturnType<typeof problemsIn>
   selected: string | null
   offScreen: OffScreen
+  /** The entity being dragged right now, or null. */
+  moving: Entity | null
 }
 
 /**
@@ -191,7 +313,7 @@ interface CaptionProps {
  * arrived, and collapsing it into either of the others would leave the human
  * looking at an empty panel with no idea which of the three they were in.
  */
-function Caption({ open, view, problems, selected, offScreen }: CaptionProps): ReactElement {
+function Caption({ open, view, problems, selected, offScreen, moving }: CaptionProps): ReactElement {
   if (view.state === 'unavailable') {
     return (
       <Bar>
@@ -278,7 +400,17 @@ function Caption({ open, view, problems, selected, offScreen }: CaptionProps): R
        * drawn is the less useful of the two things to say. The zoom is left off
        * both — it is written in the control row a few pixels to the right.
        */}
-      {offScreen.kind === 'all' ? (
+      {/*
+       * A drag says where it is putting the thing, in the level's own units, in
+       * the place the human is already looking. It is also the only home a
+       * modifier has: nothing else on screen could tell you Alt exists.
+       */}
+      {moving !== null ? (
+        <Note testId="viewport-dragging">
+          <strong>{moving.name}</strong> — {moving.transform.x}, {moving.transform.y}. Hold Alt to place it
+          between whole units.
+        </Note>
+      ) : offScreen.kind === 'all' ? (
         <Note bad testId="viewport-offscreen">Everything is off screen — press Home to bring it back.</Note>
       ) : offScreen.kind === 'selected' ? (
         <Note bad testId="viewport-offscreen" title={`${offScreen.name} is off screen`}>

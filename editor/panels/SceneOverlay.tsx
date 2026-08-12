@@ -1,6 +1,6 @@
 import type { ReactElement } from 'react'
 
-import { isOnScreen, type DrawnEntity, type Rect, type ShownScene } from '../../runtime'
+import type { DrawnEntity, ShownScene } from '../../runtime'
 import { describeZoom } from '../shell/zoom'
 
 /**
@@ -92,28 +92,6 @@ function Selected({ entity }: { entity: DrawnEntity }): ReactElement {
       </g>
     </g>
   )
-}
-
-/**
- * Where an entity landed on the canvas, as a rectangle.
- *
- * An entity with nothing to draw is a point rather than a box — it is still
- * somewhere, and treating it as nowhere would make it unframeable and
- * unfindable. The same rule the renderer uses to work out the extent of a
- * scene, so "off screen" and "outside what Frame all covers" cannot disagree.
- */
-function screenRectOf(entity: DrawnEntity): Rect {
-  return entity.bounds ?? { x: entity.origin.x, y: entity.origin.y, width: 0, height: 0 }
-}
-
-/** Which entities are actually on the canvas, and how many. */
-export function onScreen(shown: ShownScene): { count: number; ids: ReadonlySet<string> } {
-  const ids = new Set<string>()
-  for (const entity of shown.entities) {
-    if (isOnScreen(screenRectOf(entity), shown.canvasSize)) ids.add(entity.id)
-  }
-
-  return { count: ids.size, ids }
 }
 
 /** What is on screen, in one line: how much of the scene was drawn, and how close. */
