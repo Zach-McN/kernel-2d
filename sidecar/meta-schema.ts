@@ -94,14 +94,27 @@ export interface AssetMeta {
   generatedAt?: string | undefined
 }
 
-const PivotSchema: z.ZodType<Pivot> = z.object({
+/**
+ * Every object here is loose — it keeps keys it does not model rather than
+ * stripping them.
+ *
+ * This is the whole of the promise that a key you added by hand survives the
+ * editor changing a setting. A strict schema would parse the file, silently
+ * drop your key, and hand back a document that gets written straight over the
+ * original; preserving it would then depend on some merge step remembering to
+ * put it back, at every level, forever. Loose objects mean the value the editor
+ * holds simply *is* the value from disk, so there is nothing to remember and no
+ * level at which it can be forgotten. See text-formats F1 for the round-trip
+ * test this makes honest.
+ */
+const PivotSchema: z.ZodType<Pivot> = z.looseObject({
   x: z.number().finite(),
   y: z.number().finite(),
 })
 
 const SliceSchema: z.ZodType<Slice> = z.discriminatedUnion('mode', [
-  z.object({ mode: z.literal('single') }),
-  z.object({
+  z.looseObject({ mode: z.literal('single') }),
+  z.looseObject({
     mode: z.literal('grid'),
     frameWidth: z.number().int().positive(),
     frameHeight: z.number().int().positive(),
@@ -111,19 +124,19 @@ const SliceSchema: z.ZodType<Slice> = z.discriminatedUnion('mode', [
 ])
 
 const ImportSettingsSchema: z.ZodType<ImportSettings> = z.discriminatedUnion('type', [
-  z.object({
+  z.looseObject({
     type: z.literal('texture'),
     filter: z.enum(['nearest', 'linear']),
     pivot: PivotSchema,
     slice: SliceSchema,
   }),
-  z.object({ type: z.literal('audio') }),
-  z.object({ type: z.literal('font') }),
-  z.object({ type: z.literal('other') }),
+  z.looseObject({ type: z.literal('audio') }),
+  z.looseObject({ type: z.literal('font') }),
+  z.looseObject({ type: z.literal('other') }),
 ])
 
 export const AssetMetaSchema: z.ZodType<AssetMeta> = z
-  .object({
+  .looseObject({
     format: z.literal(ASSET_META_FORMAT),
     version: z.literal(ASSET_META_VERSION),
     // Validated as a non-empty string rather than against a pattern. The

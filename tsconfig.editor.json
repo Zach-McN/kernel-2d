@@ -7,5 +7,9 @@
     "types": ["vite/client"],
     "jsx": "react-jsx"
   },
-  "include": ["editor/**/*.ts", "editor/**/*.tsx"]
+  // `tests/store` holds the unit tests for browser-side code, which have to be
+  // checked with the editor's module resolution rather than the sidecar's.
+  // They live outside `tests/editor` because Playwright claims everything in
+  // there, and these are Vitest tests.
+  "include": ["editor/**/*.ts", "editor/**/*.tsx", "tests/store/**/*.ts"]
 }

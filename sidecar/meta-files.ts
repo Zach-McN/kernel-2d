@@ -28,9 +28,18 @@ import type { ProjectTree, TreeNode } from './tree-schema.js'
  *
  * The write privilege is exactly this, and nothing here may widen it:
  *
- *   - creates a `.meta` when an asset file has none;
- *   - deletes a `.meta` at startup when no file sits beside it;
- *   - never modifies one that already exists, not even a broken one.
+ *   - of its own accord, creates a `.meta` when an asset file has none, and
+ *     deletes a stranded one at startup;
+ *   - replaces the whole contents of one `.meta`, and only when the editor
+ *     names it and hands over a complete, valid document;
+ *   - never modifies anything else, and never changes a `.meta` on its own
+ *     initiative — including one it cannot read.
+ *
+ * The middle line is new, and the third is what keeps it from meaning more than
+ * it says: the editor gaining a write is not this service gaining one. Nothing
+ * here decides on its own that a `.meta` should be different from how it found
+ * it. The only new thing it will do is carry out an instruction that names one
+ * file and supplies every byte of its new contents.
  *
  * "Create when missing" is done with an exclusive-create flag rather than an
  * existence check followed by a write, so it is atomic: two sidecars opened on
@@ -251,8 +260,64 @@ export async function readMetaView(projectPath: string, requestedPath: string): 
   return view(shownPath, { metaPath: shownMetaPath, status: 'ok', meta: result.data })
 }
 
+/**
+ * Replaces one `.meta` with a document the editor supplied in full.
+ *
+ * Three refusals, each one plain sentence, and each leaving the file exactly as
+ * it was:
+ *
+ *   - a path that is not inside the project folder;
+ *   - a document that is not a valid `.meta`, so a half-formed edit can never
+ *     land on disk as the file of record;
+ *   - a sidecar with no file beside it, because writing one would strand it,
+ *     and a stranded sidecar is deleted at the next startup — the write would
+ *     quietly not survive the day.
+ *
+ * What it deliberately does *not* refuse is a document whose type disagrees
+ * with the file's extension. What a file says it is beats what its name
+ * suggests (editor-ui U11), so overriding that is an authoring decision rather
+ * than a mistake to be corrected.
+ *
+ * Answers with the resulting view, read back from disk rather than assumed, so
+ * one round trip tells the editor what is actually there.
+ */
+export async function writeMetaFor(
+  projectPath: string,
+  requestedPath: string,
+  document: unknown,
+): Promise<MetaView> {
+  const resolved = resolveInsideProject(projectPath, requestedPath)
+  if (!resolved.ok) throw new BadPathError(resolved.problem)
+
+  const absoluteMeta = isMetaFileName(resolved.absolute)
+    ? resolved.absolute
+    : metaPathFor(resolved.absolute)
+  const annotated = annotatedPathFor(absoluteMeta)
+
+  if (annotated === null || !(await exists(annotated))) {
+    throw new BadPathError(
+      'There is no file beside those import settings, so writing them would leave them stranded.',
+    )
+  }
+
+  const parsed = AssetMetaSchema.safeParse(document)
+  if (!parsed.success) {
+    throw new BadDocumentError(`Those are not import settings this editor can write — ${firstIssue(parsed.error)}.`)
+  }
+
+  await fs.writeFile(absoluteMeta, serializeMeta(parsed.data), 'utf8')
+
+  return readMetaView(projectPath, requestedPath)
+}
+
+/** Refused, with a sentence worth showing a human. Answered as 400, never 500. */
+export class RefusedError extends Error {}
+
 /** Thrown when the browser asked about a path it has no business asking about. */
-export class BadPathError extends Error {}
+export class BadPathError extends RefusedError {}
+
+/** Thrown when the browser sent something that is not a `.meta`. */
+export class BadDocumentError extends RefusedError {}
 
 function view(
   shownPath: string,

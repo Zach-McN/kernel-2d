@@ -3,6 +3,7 @@ import path from 'node:path'
 
 import { expect, test, type Page } from '@playwright/test'
 
+import { selectAsset as select } from './select-asset.js'
 import { editorTestProjectPath } from './test-project.js'
 
 /**
@@ -28,9 +29,12 @@ test.describe('the Inspector', () => {
 
     await expect(page.getByTestId('inspector-name')).toHaveText('knight-run-strip.png')
     await expect(page.getByTestId('inspector-type')).toHaveText('Texture')
-    await expect(page.getByTestId('inspector-slice')).toHaveText('16 × 16 grid')
-    await expect(page.getByTestId('inspector-filter')).toContainText('Nearest')
-    await expect(page.getByTestId('inspector-pivot')).toHaveText('0.5, 1')
+    await expect(page.getByTestId('slice-mode-control')).toHaveValue('grid')
+    await expect(page.getByTestId('frame-width-control')).toHaveValue('16')
+    await expect(page.getByTestId('frame-height-control')).toHaveValue('16')
+    await expect(page.getByTestId('filter-control')).toHaveValue('nearest')
+    await expect(page.getByTestId('pivot-x-control')).toHaveValue('0.5')
+    await expect(page.getByTestId('pivot-y-control')).toHaveValue('1')
 
     // Any id will do; that there is one, and it is not blank, is the promise.
     await expect(page.getByTestId('inspector-id')).not.toBeEmpty()
@@ -55,10 +59,32 @@ test.describe('the Inspector', () => {
     await expect(note(page)).toContainText('scene')
   })
 
-  test('says plainly that the editor does not import a README', async ({ page }) => {
+  test('names a README as something it does not import, and has nothing to tune for it', async ({
+    page,
+  }) => {
     await select(page, 'assets/source/README.txt')
 
-    await expect(note(page)).toContainText('does not import this kind of file')
+    await expect(page.getByTestId('inspector-type')).toHaveText('Not something the editor imports')
+    await expect(note(page)).toContainText('Nothing to tune on import')
+  })
+
+  /**
+   * The other half of that: a file the editor does not import *and* has no
+   * settings file for. It is written by hand here because the sample project has
+   * none — everything in it was either given a `.meta` by the generator or is a
+   * document whose own folder names it.
+   */
+  test('says plainly that it does not import a file it has no settings for', async ({ page }) => {
+    const notes = path.join(editorTestProjectPath(), 'assets', 'source', 'sketch-notes.txt')
+    fs.writeFileSync(notes, 'rough ideas for the second level')
+
+    try {
+      await select(page, 'assets/source/sketch-notes.txt')
+
+      await expect(note(page)).toContainText('does not import this kind of file')
+    } finally {
+      fs.rmSync(notes, { force: true })
+    }
   })
 
   test('shows a folder what it holds', async ({ page }) => {
@@ -94,33 +120,6 @@ test.describe('the Inspector', () => {
   })
 })
 
-function row(page: Page, assetPath: string) {
-  return page.locator(`[data-asset-path="${assetPath}"]`)
-}
-
 function note(page: Page) {
   return page.getByTestId('inspector-note')
-}
-
-/**
- * Opens the folders down to a path, then clicks it.
- *
- * Each folder is opened only if it is shut, because clicking one is a toggle —
- * a helper that clicked unconditionally would close the tree it had just opened
- * the second time a test used it.
- */
-async function select(page: Page, assetPath: string): Promise<void> {
-  const segments = assetPath.split('/')
-  for (let depth = 1; depth < segments.length; depth += 1) {
-    await open(page, segments.slice(0, depth).join('/'))
-  }
-  await row(page, assetPath).click()
-  await expect(page.getByTestId('inspector-panel')).toHaveAttribute('data-inspecting', assetPath)
-}
-
-async function open(page: Page, folderPath: string): Promise<void> {
-  const item = page.locator(`li.asset-row:has(> button[data-asset-path="${folderPath}"])`)
-  if ((await item.getAttribute('aria-expanded')) === 'true') return
-  await row(page, folderPath).click()
-  await expect(item).toHaveAttribute('aria-expanded', 'true')
 }

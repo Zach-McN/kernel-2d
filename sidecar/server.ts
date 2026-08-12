@@ -4,7 +4,7 @@ import path from 'node:path'
 
 import { toFileEventMessage } from './event-schema.js'
 import { createEventFeed, type EventFeed } from './feed.js'
-import { BadPathError, readMetaView } from './meta-files.js'
+import { RefusedError, readMetaView, writeMetaFor } from './meta-files.js'
 import { scanProject } from './scan.js'
 import { toPosixPath } from './paths.js'
 import { SIDECAR_STATUS_FORMAT, SIDECAR_STATUS_VERSION, type SidecarStatus } from './status-schema.js'
@@ -31,6 +31,13 @@ export interface ServerHandle {
  * connection is a dead one.
  */
 const HEARTBEAT_MS = 15_000
+
+/**
+ * The largest body this service will read. A `.meta` is a handful of settings;
+ * anything approaching this is not one, and reading an unbounded body from a
+ * socket is how a service is talked into exhausting its own memory.
+ */
+const MAX_BODY_BYTES = 64 * 1024
 
 interface ServerContext {
   options: ServerOptions
@@ -103,13 +110,20 @@ async function handleRequest(
   request: http.IncomingMessage,
   response: http.ServerResponse,
 ): Promise<void> {
+  const url = new URL(request.url ?? '/', `http://${context.options.host}`)
+  const pathname = url.pathname
+
+  // Reading is open; the one thing that writes is a PUT to a single named set
+  // of import settings, and it is the only non-GET this service answers at all.
+  if (request.method === 'PUT' && pathname === '/meta') {
+    await handleMetaWrite(context, request, response, url)
+    return
+  }
+
   if (request.method !== 'GET') {
     sendJson(response, 405, { error: 'Method not allowed', method: request.method ?? null })
     return
   }
-
-  const url = new URL(request.url ?? '/', `http://${context.options.host}`)
-  const pathname = url.pathname
 
   if (pathname === '/') {
     sendJson(response, 200, statusOf(context.options))
@@ -135,7 +149,7 @@ async function handleRequest(
     try {
       sendJson(response, 200, await readMetaView(context.options.projectPath, requested))
     } catch (error) {
-      if (error instanceof BadPathError) {
+      if (error instanceof RefusedError) {
         sendJson(response, 400, { error: error.message, path: requested })
         return
       }
@@ -153,6 +167,69 @@ async function handleRequest(
   }
 
   sendJson(response, 404, { error: 'Not found', path: pathname })
+}
+
+/**
+ * The editor asking for one set of import settings to be replaced.
+ *
+ * Every refusal is a 400 carrying one plain sentence, because this answer is
+ * shown to a human rather than logged: a validator dump would tell them nothing
+ * they could act on. Nothing on disk is touched unless the whole document was
+ * understood first.
+ */
+async function handleMetaWrite(
+  context: ServerContext,
+  request: http.IncomingMessage,
+  response: http.ServerResponse,
+  url: URL,
+): Promise<void> {
+  const requested = url.searchParams.get('path') ?? ''
+
+  let document: unknown
+  try {
+    document = JSON.parse(await readBody(request))
+  } catch (error) {
+    sendJson(response, 400, {
+      error: `Those import settings did not arrive as readable JSON: ${(error as Error).message}.`,
+      path: requested,
+    })
+    return
+  }
+
+  try {
+    sendJson(response, 200, await writeMetaFor(context.options.projectPath, requested, document))
+  } catch (error) {
+    if (error instanceof RefusedError) {
+      sendJson(response, 400, { error: error.message, path: requested })
+      return
+    }
+    sendJson(response, 500, {
+      error: 'Could not write the import settings for that file',
+      detail: error instanceof Error ? error.message : String(error),
+    })
+  }
+}
+
+function readBody(request: http.IncomingMessage): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = []
+    let size = 0
+
+    request.on('data', (chunk: Buffer) => {
+      size += chunk.length
+      if (size > MAX_BODY_BYTES) {
+        // Stop reading rather than keep accepting bytes that will be thrown
+        // away: the point of the cap is to bound what is held, not to count it.
+        request.destroy()
+        reject(new Error(`import settings are larger than ${MAX_BODY_BYTES} bytes`))
+        return
+      }
+      chunks.push(chunk)
+    })
+
+    request.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')))
+    request.on('error', reject)
+  })
 }
 
 /**

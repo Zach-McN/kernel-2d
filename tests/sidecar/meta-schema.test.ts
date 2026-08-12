@@ -83,6 +83,47 @@ describe('a .meta survives a round trip', () => {
   })
 })
 
+describe('a .meta keeps what a human put in it by hand', () => {
+  /**
+   * The point of this block: the editor rewrites a `.meta` from the object it
+   * parsed, so anything the parse drops is deleted from a file the human wrote.
+   * A strict schema drops silently and the round-trip test above still passes,
+   * because it only ever compares fields the schema knows about — which is
+   * exactly the trap text-formats F1 describes. These compare against the
+   * original object, extra keys and all.
+   */
+  const handEdited = {
+    ...texture,
+    myOwnNote: 'the walk cycle starts on frame 3',
+    importSettings: {
+      ...texture.importSettings,
+      teamColourMask: true,
+      pivot: { x: 0.5, y: 1, comment: 'feet' },
+      slice: { mode: 'grid', frameWidth: 16, frameHeight: 16, margin: 0, spacing: 0, rows: 4 },
+    },
+  }
+
+  it('keeps a key at the top level', () => {
+    expect(AssetMetaSchema.parse(JSON.parse(JSON.stringify(handEdited)))).toEqual(handEdited)
+  })
+
+  it('keeps one nested inside the settings, the pivot and the slice too', () => {
+    const roundTripped = AssetMetaSchema.parse(JSON.parse(serializeMeta(handEdited as AssetMeta)))
+
+    expect(roundTripped).toEqual(handEdited)
+  })
+
+  it('survives being written, read, and written again unchanged', () => {
+    const once = serializeMeta(AssetMetaSchema.parse(JSON.parse(serializeMeta(handEdited as AssetMeta))))
+    const twice = serializeMeta(AssetMetaSchema.parse(JSON.parse(once)))
+
+    // The same property that stops serialization drift is what stops the
+    // editor's write/watch/re-read cycle feeding itself: the round trip is
+    // identity, so writing back what came back changes nothing.
+    expect(twice).toBe(once)
+  })
+})
+
 describe('a .meta rejects what it should', () => {
   it('accepts one written by hand with an id a person chose', () => {
     expect(() => AssetMetaSchema.parse({ ...audio, id: 'the-menu-theme' })).not.toThrow()

@@ -15,6 +15,8 @@ import { assetRowsFor } from '../shell/asset-rows'
 import { useProject } from '../shell/project-context'
 import { useSelection } from '../shell/selection'
 import { useAssetMeta } from '../shell/useAssetMeta'
+import { useDocument, useSaveFailure } from '../store/open-documents'
+import { SaveFailure, TextureSettings } from './TextureSettings'
 
 /**
  * What the selected thing holds.
@@ -25,9 +27,11 @@ import { useAssetMeta } from '../shell/useAssetMeta'
  * sidecar has not landed yet — are ordinary rather than exceptional. Each gets
  * a sentence naming what it is and why there is nothing to tune.
  *
- * Read-only this session: everything here is shown, nothing is editable. The
- * write path arrives with the transaction API, which is where every mutation
- * has to go (editor-kernel D7).
+ * A texture's settings are read from the document store rather than from the
+ * answer the service gave, because the store is what the controls change and
+ * what undo reverses. Everything else is still read straight from that answer:
+ * there is nothing to edit about a folder, a scene, or a `.meta` this editor
+ * cannot parse.
  */
 export function InspectorPanel(): ReactElement {
   const project = useProject()
@@ -91,9 +95,10 @@ interface FileBodyProps {
 
 function FileBody({ node, meta }: FileBodyProps): ReactElement {
   const view = meta.state === 'ready' ? meta.view : null
-  // What the file says it is beats what its name suggests, on the same grounds
-  // as anywhere else: the `.meta` is authored, the extension is a guess.
-  const settings = view !== null && view.status === 'ok' ? view.meta : null
+  // The document if this window has taken it into the store, falling back to
+  // the served answer for the moment in between.
+  const document = useDocument(node.path)
+  const settings = document ?? (view !== null && view.status === 'ok' ? view.meta : null)
 
   return (
     <>
@@ -101,6 +106,9 @@ function FileBody({ node, meta }: FileBodyProps): ReactElement {
         <Field label="Size" value={formatBytes(node.size)} />
         <Field
           label="Type"
+          // What the file says it is beats what its name suggests, on the same
+          // grounds as anywhere else: the `.meta` is authored, the extension is
+          // a guess.
           value={settings === null ? describeKind(node.name) : TYPE_NAMES[settings.type]}
           testId="inspector-type"
         />
@@ -113,14 +121,34 @@ function FileBody({ node, meta }: FileBodyProps): ReactElement {
           Could not ask the editor service about this file. Is the editor command still running?
         </Note>
       )}
-      {view !== null && <MetaBody node={node} view={view} />}
+      {view !== null && <MetaBody node={node} view={view} document={document} />}
     </>
   )
 }
 
-function MetaBody({ node, view }: { node: TreeNode; view: MetaView }): ReactElement {
-  if (view.status === 'ok' && view.meta !== null) {
-    return <Settings meta={view.meta} metaPath={view.metaPath} />
+function MetaBody({
+  node,
+  view,
+  document,
+}: {
+  node: TreeNode
+  view: MetaView
+  document: AssetMeta | null
+}): ReactElement {
+  // The document, never the served answer. A control built over the answer
+  // would look right and change nothing, because the transaction API can only
+  // change a document the store is holding — and "the control does nothing"
+  // is the hardest kind of bug to see, since every part of it looks fine.
+  if (view.status === 'ok' && document !== null) {
+    return <Settings path={node.path} meta={document} metaPath={view.metaPath} />
+  }
+
+  if (view.status === 'ok') {
+    return (
+      <Section title="Import settings">
+        <Note>Reading its import settings…</Note>
+      </Section>
+    )
   }
 
   if (view.status === 'unreadable') {
@@ -142,11 +170,22 @@ function MetaBody({ node, view }: { node: TreeNode; view: MetaView }): ReactElem
   )
 }
 
-function Settings({ meta, metaPath }: { meta: AssetMeta; metaPath: string | null }): ReactElement {
+function Settings({
+  path,
+  meta,
+  metaPath,
+}: {
+  path: string
+  meta: AssetMeta
+  metaPath: string | null
+}): ReactElement {
+  const saveFailure = useSaveFailure(path)
+
   return (
     <>
       <Section title="Import settings">
-        <SettingFields settings={meta.importSettings} />
+        <SettingFields path={path} settings={meta.importSettings} />
+        {saveFailure !== null && <SaveFailure reason={saveFailure} />}
       </Section>
 
       <Section title="Where these live">
@@ -158,46 +197,18 @@ function Settings({ meta, metaPath }: { meta: AssetMeta; metaPath: string | null
             testId="inspector-generated"
           />
         )}
-        <Note>Read-only for now — editing arrives with undo, so that it can be undone.</Note>
+        <Note>Changes are saved as you make them. Ctrl-Z takes one back, Ctrl-Y puts it forward.</Note>
       </Section>
     </>
   )
 }
 
-function SettingFields({ settings }: { settings: ImportSettings }): ReactElement {
+function SettingFields({ path, settings }: { path: string; settings: ImportSettings }): ReactElement {
   if (settings.type !== 'texture') {
     return <Note data-testid="inspector-note">Nothing to tune on import for this kind of file yet.</Note>
   }
 
-  return (
-    <>
-      <Field
-        label="Filtering"
-        value={settings.filter === 'nearest' ? 'Nearest — crisp pixels' : 'Linear — smoothed'}
-        testId="inspector-filter"
-      />
-      <Field
-        label="Pivot"
-        value={`${describeNumber(settings.pivot.x)}, ${describeNumber(settings.pivot.y)}`}
-        testId="inspector-pivot"
-      />
-      <Field
-        label="Frames"
-        value={
-          settings.slice.mode === 'single'
-            ? 'One frame — the whole image'
-            : `${settings.slice.frameWidth} × ${settings.slice.frameHeight} grid`
-        }
-        testId="inspector-slice"
-      />
-      {settings.slice.mode === 'grid' && (settings.slice.margin > 0 || settings.slice.spacing > 0) && (
-        <Field
-          label="Grid gaps"
-          value={`${settings.slice.margin}px margin, ${settings.slice.spacing}px spacing`}
-        />
-      )}
-    </>
-  )
+  return <TextureSettings path={path} settings={settings} />
 }
 
 // --- saying what a file is -------------------------------------------------
@@ -291,11 +302,6 @@ function Empty({ children }: { children: ReactNode }): ReactElement {
 
 function count(n: number, noun: string): string {
   return `${n} ${noun}${n === 1 ? '' : 's'}`
-}
-
-/** `0.5` rather than `0.50000001`, and `1` rather than `1.0`. */
-function describeNumber(value: number): string {
-  return String(Math.round(value * 1000) / 1000)
 }
 
 function basename(path: string): string {

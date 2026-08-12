@@ -7,6 +7,7 @@ import { PANEL_COMPONENTS, layOutPanels } from './panels'
 import { ProjectProvider } from './project-context'
 import { SelectionProvider } from './selection'
 import { useSidecarStatus } from './useSidecarStatus'
+import { useUndoShortcuts } from './useUndoShortcuts'
 
 /**
  * The editor shell: a status strip that names the connected project, and the
@@ -14,6 +15,10 @@ import { useSidecarStatus } from './useSidecarStatus'
  */
 export function App(): ReactElement {
   const connection = useSidecarStatus()
+
+  // Undo belongs to the window, not to any panel: one stack for the whole
+  // project means Ctrl-Z has to mean the same thing wherever the cursor is.
+  useUndoShortcuts()
 
   // The window title is the other place the human looks to tell two open
   // projects apart.

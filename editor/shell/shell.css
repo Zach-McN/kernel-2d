@@ -274,6 +274,52 @@ body {
   line-height: 1.5;
 }
 
+.inspector__note--bad {
+  color: var(--shell-bad);
+}
+
+/* --- controls ------------------------------------------------------------ */
+
+/*
+ * A row of controls sits where a read-only value used to, so the label column
+ * lines up whether the setting can be changed or only looked at.
+ */
+.control-row {
+  display: flex;
+  flex: 1;
+  gap: 6px;
+  min-width: 0;
+}
+
+.control {
+  min-width: 0;
+  padding: 2px 4px;
+  border: 1px solid var(--shell-line);
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.25);
+  color: var(--shell-text);
+  font: inherit;
+  line-height: 18px;
+}
+
+.control:hover {
+  border-color: #3a4150;
+}
+
+.control:focus-visible {
+  border-color: var(--shell-good);
+  outline: none;
+}
+
+.control--choice {
+  flex: 1;
+}
+
+.control--number {
+  width: 0;
+  flex: 1;
+}
+
 /* An unreadable .meta, shown as it actually is on disk. */
 .inspector__raw {
   margin: 8px 0 0;

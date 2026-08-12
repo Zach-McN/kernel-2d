@@ -21,9 +21,11 @@
   "dependencies": {
     "chokidar": "5.0.0",
     "dockview-react": "8.0.0",
+    "immer": "11.1.16",
     "react": "19.2.8",
     "react-dom": "19.2.8",
-    "zod": "4.4.3"
+    "zod": "4.4.3",
+    "zustand": "5.0.14"
   },
   "devDependencies": {
     "@playwright/test": "1.62.1",
