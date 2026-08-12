@@ -2,7 +2,7 @@ import * as Phaser from 'phaser'
 
 import type { Pivot } from '../formats/meta-schema'
 import type { Entity } from '../formats/scene-schema'
-import { toScreenPoint, toScreenRadians } from './coordinates'
+import { toScreenPoint, toScreenRadians, type Camera, type Size } from './coordinates'
 
 /**
  * The entity layer: a set of drawn objects kept in step with a list of
@@ -18,8 +18,8 @@ import { toScreenPoint, toScreenRadians } from './coordinates'
  * be the reason the editor stutters later, when nobody remembers why.
  *
  * Where a sprite sits is decided in exactly two places, both of them elsewhere:
- * the y-up flip in `coordinates.ts`, and the pivot in the texture's `.meta`.
- * This file reads both and invents neither.
+ * the camera and the y-up flip in `coordinates.ts`, and the pivot in the
+ * texture's `.meta`. This file reads both and invents neither.
  */
 
 /** What an entity should draw, once its texture has been resolved. */
@@ -62,7 +62,8 @@ export interface EntityLayer {
   sync: (
     entities: readonly Entity[],
     resolve: ResolveSprite,
-    canvasHeight: number,
+    camera: Camera,
+    canvas: Size,
     pixelRatio: number,
   ) => DrawnEntity[]
   /** Removes everything. Used when no scene is open. */
@@ -80,7 +81,7 @@ export function createEntityLayer(scene: Phaser.Scene): EntityLayer {
   return {
     clear,
 
-    sync: (entities, resolve, canvasHeight, pixelRatio) => {
+    sync: (entities, resolve, camera, canvas, pixelRatio) => {
       const living = new Set(entities.map((entity) => entity.id))
       for (const [id, image] of [...drawn]) {
         if (living.has(id)) continue
@@ -89,7 +90,12 @@ export function createEntityLayer(scene: Phaser.Scene): EntityLayer {
       }
 
       return entities.map((entity, index) => {
-        const position = toScreenPoint(entity.transform, canvasHeight)
+        // The camera arrives already sitting on the device's pixel grid, so
+        // nothing is rounded here. Rounding each sprite individually would keep
+        // the art just as crisp and would make the distance between two
+        // entities depend on the zoom, which is a worse trade than it sounds
+        // (see `snapCamera`).
+        const position = toScreenPoint(entity.transform, camera, canvas)
         const sprite = resolve(entity)
 
         if (sprite === null) {
@@ -119,7 +125,12 @@ export function createEntityLayer(scene: Phaser.Scene): EntityLayer {
           .setOrigin(sprite.pivot.x, sprite.pivot.y)
           .setPosition(position.x * pixelRatio, position.y * pixelRatio)
           .setRotation(toScreenRadians(entity.transform.rotation))
-          .setScale(entity.transform.scaleX * pixelRatio, entity.transform.scaleY * pixelRatio)
+          // The entity's own scale times the camera's: how big the designer
+          // made it, and how close the viewport is standing.
+          .setScale(
+            entity.transform.scaleX * camera.scale * pixelRatio,
+            entity.transform.scaleY * camera.scale * pixelRatio,
+          )
           .setDepth(index)
 
         // Read back off the object rather than recomputed from the transform,

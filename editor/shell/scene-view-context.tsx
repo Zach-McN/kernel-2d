@@ -10,10 +10,24 @@ import {
   type ReactNode,
 } from 'react'
 
-import { createSceneView, type SceneRequest, type SceneView, type ShownScene } from '../../runtime'
+import {
+  createSceneView,
+  framing,
+  panBy,
+  toSceneRect,
+  zoomAbout,
+  type Camera,
+  type Point,
+  type Rect,
+  type SceneRequest,
+  type SceneView,
+  type ShownScene,
+  type Size,
+} from '../../runtime'
+import { fitStep, stepDown, stepUp } from './zoom'
 
 /**
- * The scene renderer, and everything about how the Viewport is looking at it.
+ * The scene renderer, and everything about where the Viewport is looking.
  *
  * The second live renderer in this window, and that is a deliberate deviation
  * from "one game, for the life of the window" rather than an accident of
@@ -28,6 +42,16 @@ import { createSceneView, type SceneRequest, type SceneView, type ShownScene } f
  * The canvas is created detached and handed to whichever panel is hosting it,
  * which adopts it on mount and gives it back on unmount (`editor-ui` U15). The
  * game never notices.
+ *
+ * **Where the human is looking lives here, and only here.** One camera per
+ * scene, held for as long as the window is open: outside the document store,
+ * never in a transaction, never written to a file (`editor-ui` U8). Pressing
+ * Ctrl-Z after a pan reverses the last thing that was *changed*, which is true
+ * by construction rather than by care, because a camera is not something the
+ * undo stack can see. It sits above the docking layout for the same reason the
+ * renderer does — dockview unmounts a panel body whenever its tab is dragged,
+ * and a view that lived in the panel would snap back to the origin the first
+ * time somebody moved the tab.
  */
 
 export type SceneViewState =
@@ -43,18 +67,68 @@ export type SceneViewState =
       problem: string | null
       /** Told by the panel that hosts the canvas, in CSS pixels. */
       measure: (width: number, height: number) => void
+      /** Drag the scene by this many screen pixels. */
+      pan: (screenDx: number, screenDy: number) => void
+      /**
+       * One step up or down the zoom ladder, keeping whatever is under this
+       * screen point exactly where it is.
+       */
+      zoom: (at: Point, direction: 1 | -1) => void
+      /** Put the whole scene back in frame. */
+      frameAll: () => void
+      /** Frame one entity, named by id. Does nothing if it is not on screen. */
+      frameEntity: (entityId: string) => void
     }
 
+interface SceneSubjectApi {
+  setSubject: (subject: SceneRequest | null) => void
+  /** False while any of this scene's textures is still in the air. */
+  setComplete: (complete: boolean) => void
+}
+
 const SceneViewContext = createContext<SceneViewState | null>(null)
-const SceneSubjectContext = createContext<((subject: SceneRequest | null) => void) | null>(null)
+const SceneSubjectContext = createContext<SceneSubjectApi | null>(null)
 
 export function SceneViewProvider({ children }: { children: ReactNode }): ReactElement {
   const [view, setView] = useState<SceneView | null>(null)
   const [bootProblem, setBootProblem] = useState<string | null>(null)
   const [shown, setShown] = useState<ShownScene | null>(null)
+  /**
+   * Which request the report on screen came from.
+   *
+   * Held because "is this picture the current one?" cannot be answered by the
+   * scene's path: a scene's textures resolve one at a time, so the same scene is
+   * asked for several times as it opens, and the report from the second-to-last
+   * ask is a real report of that same scene with a sprite missing from it.
+   * Compared by identity, which is exactly the question being asked.
+   */
+  const [shownFor, setShownFor] = useState<SceneRequest | null>(null)
   const [problem, setProblem] = useState<string | null>(null)
   const [subject, setSubject] = useState<SceneRequest | null>(null)
-  const [panel, setPanel] = useState<{ width: number; height: number }>({ width: 0, height: 0 })
+  const [complete, setComplete] = useState(false)
+  const [panel, setPanel] = useState<Size>({ width: 0, height: 0 })
+  /**
+   * One camera per scene, remembered for the life of the window.
+   *
+   * A scene that is not in here has never been framed, which is what the
+   * framing effect below looks for. Going away to a texture and coming back
+   * finds the view untouched; opening a level for the first time frames it,
+   * because a view chosen for one level is not a choice anybody made about
+   * another.
+   */
+  const [cameras, setCameras] = useState<Readonly<Record<string, Camera>>>({})
+
+  const scenePath = subject?.path ?? null
+
+  // Mirrors of state, read inside callbacks that must stay stable. Read during
+  // render rather than in an effect, so nothing ever sees a value from the
+  // render before last.
+  const shownRef = useRef<ShownScene | null>(shown)
+  shownRef.current = shown
+  const pathRef = useRef<string | null>(scenePath)
+  pathRef.current = scenePath
+  const camerasRef = useRef(cameras)
+  camerasRef.current = cameras
 
   useEffect(() => {
     let live = true
@@ -92,6 +166,13 @@ export function SceneViewProvider({ children }: { children: ReactNode }): ReactE
       return
     }
 
+    // A scene this window has looked at before is put back where it was
+    // *before* it is drawn, rather than drawn at the last scene's camera and
+    // corrected a frame later. Read from a ref on purpose: this effect must not
+    // re-run when a camera changes, or every frame of a drag would be a reload.
+    const remembered = camerasRef.current[subject.path]
+    if (remembered !== undefined) view.restage(remembered)
+
     let live = true
     setProblem(null)
 
@@ -102,6 +183,7 @@ export function SceneViewProvider({ children }: { children: ReactNode }): ReactE
         // request's own handler is the one that should be setting state.
         if (!live || result === null) return
         setShown(result)
+        setShownFor(subject)
       })
       .catch((error: unknown) => {
         if (!live) return
@@ -115,14 +197,125 @@ export function SceneViewProvider({ children }: { children: ReactNode }): ReactE
   }, [view, subject])
 
   // Hand the panel's measurements to the renderer. Separate from drawing
-  // because a panel dragged wider is not a reason to fetch anything again —
-  // though for a scene it *does* move every sprite, since the floor is the
-  // bottom edge.
+  // because a panel dragged wider is not a reason to fetch anything again — and
+  // the camera is left alone, so the middle of the panel keeps meaning the same
+  // place and the human keeps their place.
   useEffect(() => {
     if (view === null || panel.width === 0 || panel.height === 0) return
     const restaged = view.resize(panel.width, panel.height)
     if (restaged !== null) setShown(restaged)
   }, [view, panel])
+
+  /*
+   * Framing a scene nobody has looked at yet.
+   *
+   * The extent of a level is only known once it has been drawn, so a scene
+   * opening for the first time lands at whatever camera was current and this
+   * puts it right on the next pass. It settles rather than oscillating for the
+   * same reason the texture tab's fit does: after one pass the scene has a
+   * remembered camera, so the condition is false and nothing runs again.
+   *
+   * Held back until three things are true, and each of them was a wrong
+   * framing before it was a condition. Framing happens once per scene, so every
+   * one of them is permanent until the human touches the view.
+   *
+   * 1. **Every texture has arrived, and the picture on screen is of all of
+   *    them.** Both halves: the settings resolving is not the bytes arriving,
+   *    so the report being held when the last `.meta` lands is still a picture
+   *    of the scene with a sprite missing from it. An entity with no picture
+   *    counts as a point rather than as the area it covers, so a level whose
+   *    widest object had not loaded gets framed on the wrong middle.
+   * 2. **The canvas is the size of the panel**, not merely measured. The
+   *    renderer boots at a size of its own and is told the real one once the
+   *    observer fires, so a scene can be reported drawn on a canvas that has
+   *    nothing to do with the panel.
+   * 3. **The panel has been measured at all** — a tab behind another one is
+   *    0×0, and framing against nothing puts the level in a corner.
+   */
+  useEffect(() => {
+    if (scenePath === null || shown === null || shown.path !== scenePath) return
+    if (!complete || shownFor !== subject) return
+    if (panel.width === 0 || panel.height === 0) return
+    if (cameras[scenePath] !== undefined) return
+
+    const measured = { width: Math.round(panel.width), height: Math.round(panel.height) }
+    if (shown.canvasSize.width !== measured.width || shown.canvasSize.height !== measured.height) return
+
+    const framed = frameOn(shown.contentBounds, shown.canvasSize, shown.camera.scale)
+    setCameras((previous) =>
+      previous[scenePath] === undefined ? { ...previous, [scenePath]: framed } : previous,
+    )
+  }, [scenePath, shown, panel, cameras, complete, shownFor, subject])
+
+  // Look through whichever camera this scene is meant to have. Redraws only,
+  // never fetches — panning and zooming must not send the editor back to the
+  // service for bytes it already has.
+  useEffect(() => {
+    if (view === null || scenePath === null) return
+
+    const wanted = cameras[scenePath]
+    if (wanted === undefined) return
+    if (shown !== null && shown.path === scenePath && shown.camera === wanted) return
+
+    const restaged = view.restage(wanted)
+    if (restaged !== null) setShown(restaged)
+  }, [view, scenePath, cameras, shown])
+
+  /**
+   * Every change of view goes through here, which is what keeps a camera
+   * attached to the scene it belongs to rather than to the viewport.
+   */
+  const adjust = useCallback((change: (camera: Camera, shown: ShownScene) => Camera) => {
+    const path = pathRef.current
+    const current = shownRef.current
+    if (path === null || current === null || current.path !== path) return
+
+    setCameras((previous) => {
+      const camera = previous[path] ?? current.camera
+      const next = change(camera, current)
+      return next === camera ? previous : { ...previous, [path]: next }
+    })
+  }, [])
+
+  const pan = useCallback(
+    (screenDx: number, screenDy: number) => {
+      adjust((camera) => panBy(camera, screenDx, screenDy))
+    },
+    [adjust],
+  )
+
+  const zoom = useCallback(
+    (at: Point, direction: 1 | -1) => {
+      adjust((camera, current) => {
+        const scale = direction > 0 ? stepUp(camera.scale) : stepDown(camera.scale)
+        // Already at the end of the ladder. Returning the same camera is what
+        // stops a held-down wheel churning renders for no change.
+        if (scale === camera.scale) return camera
+        return zoomAbout(camera, at, scale, current.canvasSize)
+      })
+    },
+    [adjust],
+  )
+
+  const frameAll = useCallback(() => {
+    adjust((camera, current) => frameOn(current.contentBounds, current.canvasSize, camera.scale))
+  }, [adjust])
+
+  const frameEntity = useCallback(
+    (entityId: string) => {
+      adjust((camera, current) => {
+        const entity = current.entities.find((one) => one.id === entityId)
+        if (entity === undefined) return camera
+
+        // Inverted from what was drawn, so this frames the rectangle the human
+        // can see an outline around rather than one worked out a second way.
+        const screen = entity.bounds ?? { x: entity.origin.x, y: entity.origin.y, width: 0, height: 0 }
+        const content = toSceneRect(screen, current.camera, current.canvasSize)
+        return frameOn(content, current.canvasSize, camera.scale)
+      })
+    },
+    [adjust],
+  )
 
   const measure = useCallback((width: number, height: number) => {
     setPanel((previous) =>
@@ -134,14 +327,36 @@ export function SceneViewProvider({ children }: { children: ReactNode }): ReactE
     if (bootProblem !== null) return { state: 'unavailable', problem: bootProblem }
     if (view === null) return { state: 'booting' }
 
-    return { state: 'ready', canvas: view.canvas, shown, problem, measure }
-  }, [bootProblem, view, shown, problem, measure])
+    return { state: 'ready', canvas: view.canvas, shown, problem, measure, pan, zoom, frameAll, frameEntity }
+  }, [bootProblem, view, shown, problem, measure, pan, zoom, frameAll, frameEntity])
+
+  const subjectApi = useMemo<SceneSubjectApi>(() => ({ setSubject, setComplete }), [])
 
   return (
     <SceneViewContext.Provider value={value}>
-      <SceneSubjectContext.Provider value={setSubject}>{children}</SceneSubjectContext.Provider>
+      <SceneSubjectContext.Provider value={subjectApi}>{children}</SceneSubjectContext.Provider>
     </SceneViewContext.Provider>
   )
+}
+
+/**
+ * The camera that frames this content.
+ *
+ * Choosing the scale is where the editor's policy meets the runtime's
+ * arithmetic: the ladder is `editor-ui` U17's, unforked from the texture tab,
+ * so `8×` means the same thing in both — a whole number of screen pixels per
+ * scene unit, because pixel art at 3.4× has some rows of a sprite a pixel
+ * taller than others and the human goes looking for the fault in their own art.
+ *
+ * Content with no size — one entity whose texture is missing, say — keeps the
+ * current zoom and is simply centred. There is nothing to fit, and snapping to
+ * 1× would be an answer to a question nobody asked.
+ */
+function frameOn(content: Rect | null, canvas: Size, currentScale: number): Camera {
+  if (content === null) return framing(null, 1)
+  if (content.width <= 0 || content.height <= 0) return framing(content, currentScale)
+
+  return framing(content, fitStep(content.width, content.height, canvas.width, canvas.height))
 }
 
 export function useSceneView(): SceneViewState {
@@ -161,10 +376,16 @@ export function useSceneView(): SceneViewState {
  * rebuilt by the document store on every edit anywhere in the project, so
  * comparing by identity would redraw this scene because a neighbouring file
  * changed.
+ *
+ * `complete` says whether every texture this scene refers to has been resolved
+ * one way or the other — arrived, or known to be unusable. It travels
+ * separately from the subject, and on its own effect, so that the last texture
+ * turning out to be *missing* tells the viewport the scene has settled without
+ * also asking it to draw again.
  */
-export function useDrawScene(subject: SceneRequest | null): void {
-  const setSubject = useContext(SceneSubjectContext)
-  if (setSubject === null) throw new Error('useDrawScene was called outside the editor shell')
+export function useDrawScene(subject: SceneRequest | null, complete: boolean): void {
+  const api = useContext(SceneSubjectContext)
+  if (api === null) throw new Error('useDrawScene was called outside the editor shell')
 
   const latest = useRef(subject)
   latest.current = subject
@@ -172,8 +393,12 @@ export function useDrawScene(subject: SceneRequest | null): void {
   const key = subject === null ? '' : JSON.stringify(subject)
 
   useEffect(() => {
-    setSubject(latest.current)
-  }, [key, setSubject])
+    api.setSubject(latest.current)
+  }, [key, api])
+
+  useEffect(() => {
+    api.setComplete(complete)
+  }, [complete, api])
 }
 
 function messageOf(error: unknown): string {

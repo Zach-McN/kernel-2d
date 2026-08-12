@@ -4,7 +4,16 @@ import type { TextureImportSettings } from '../formats/meta-schema'
 import { spriteOf, type Entity, type Scene } from '../formats/scene-schema'
 import { applyImportSettings } from '../textures/import-settings'
 import { createEntityLayer, type DrawnEntity, type EntityLayer, type ResolvedSprite } from './entity-layer'
-import { toScreenPoint } from './coordinates'
+import {
+  DEFAULT_CAMERA,
+  snapCamera,
+  toSceneRect,
+  toScreenPoint,
+  union,
+  type Camera,
+  type Rect,
+  type Size,
+} from './coordinates'
 
 /**
  * A scene, drawn by the real renderer.
@@ -47,10 +56,31 @@ export interface ShownScene {
   path: string
   /** In list order, which is draw order. */
   entities: DrawnEntity[]
-  /** Where the scene's own origin landed, in CSS pixels. The bottom-left corner. */
+  /**
+   * Where the scene's own origin landed, in CSS pixels from the canvas's
+   * top-left. Off the canvas whenever the camera is looking elsewhere.
+   */
   sceneOrigin: { x: number; y: number }
   /** The canvas, in CSS pixels — what the overlay is drawing on top of. */
-  canvasSize: { width: number; height: number }
+  canvasSize: Size
+  /**
+   * The camera this was actually drawn with, rather than the one that was
+   * asked for. Same instinct as reading a filter back off a live texture: a
+   * caption built from the request keeps saying the right thing long after the
+   * line that applies it stops working.
+   */
+  camera: Camera
+  /**
+   * The extent of everything drawn, in **scene** units, or null for a scene
+   * with nothing in it.
+   *
+   * This is what framing needs, and it is arrived at by inverting the
+   * rectangles that were actually drawn rather than by working the extent out
+   * again from the transforms — a second derivation of the same geometry is two
+   * answers that agree until they don't. An entity with nothing to draw counts
+   * as a point at its own position, so it is still findable.
+   */
+  contentBounds: Rect | null
   /**
    * Textures that were offered and could not be fetched or decoded. Rare, and
    * distinct from a texture the caller never offered: this one was supposed to
@@ -69,16 +99,27 @@ export interface SceneView {
   /** Detached until something puts it in the document. */
   readonly canvas: HTMLCanvasElement
   /**
-   * Both in CSS pixels. Answers with the new placement of everything on
-   * screen, because a taller panel moves every sprite — the floor is the bottom
-   * edge — and anything drawn on top has to move with it.
+   * Both in CSS pixels. The camera is left exactly as it was, so a panel
+   * dragged wider reveals more scene on both sides rather than moving what was
+   * already on screen — the middle of the panel keeps meaning the same place.
+   * Answers with the new placement, because everything drawn on top has to move
+   * with the picture.
    */
   resize: (width: number, height: number) => ShownScene | null
   /**
-   * Draws a scene. Resolves with what was drawn, or with `null` when a later
-   * request overtook this one.
+   * Draws a scene, with whatever camera is current. Resolves with what was
+   * drawn, or with `null` when a later request overtook this one.
+   *
+   * The camera is deliberately not part of the request: a request is compared
+   * by value to decide when bytes need fetching again, so a camera inside one
+   * would turn every frame of a drag into a reload.
    */
   show: (request: SceneRequest) => Promise<ShownScene | null>
+  /**
+   * Looks from somewhere else, without fetching or uploading anything.
+   * Panning and zooming are a redraw, never a reload.
+   */
+  restage: (camera: Camera) => ShownScene | null
   /** Draws nothing at all. */
   clear: () => void
   destroy: () => void
@@ -119,13 +160,15 @@ export async function createSceneView(options: SceneViewOptions): Promise<SceneV
 
   const stage = await whenReady
 
-  let cssWidth = INITIAL_SIZE.width
-  let cssHeight = INITIAL_SIZE.height
-  setCanvasStyleSize(canvas, cssWidth, cssHeight)
+  let canvasSize: Size = { ...INITIAL_SIZE }
+  setCanvasStyleSize(canvas, canvasSize.width, canvasSize.height)
 
   const images = new Map<string, HTMLImageElement>()
   let sequence = 0
   let current: SceneRequest | null = null
+  // Where the viewport is looking. Held here rather than passed in with every
+  // request so that panning costs a redraw and nothing else.
+  let camera: Camera = DEFAULT_CAMERA
 
   const textureKeyFor = (path: string, version: number): string => `scene:${path}@${version}`
 
@@ -159,11 +202,22 @@ export async function createSceneView(options: SceneViewOptions): Promise<SceneV
       }
     }
 
+    // Everything is drawn through the camera moved onto the device's pixel
+    // grid, and the extent is measured back through the same one — so the
+    // inversion is exact and a level's size is the same measurement at every
+    // zoom. The camera *reported* is the one that was asked for: the snap is a
+    // sub-pixel presentation detail, and handing it back would make the caller's
+    // own state disagree with itself on the next comparison.
+    const drawing = snapCamera(camera, canvasSize, pixelRatio)
+    const entities = stage.entities.sync(request.scene.entities, resolve, drawing, canvasSize, pixelRatio)
+
     return {
       path: request.path,
-      entities: stage.entities.sync(request.scene.entities, resolve, cssHeight, pixelRatio),
-      sceneOrigin: toScreenPoint({ x: 0, y: 0 }, cssHeight),
-      canvasSize: { width: cssWidth, height: cssHeight },
+      entities,
+      sceneOrigin: toScreenPoint({ x: 0, y: 0 }, drawing, canvasSize),
+      canvasSize: { ...canvasSize },
+      camera,
+      contentBounds: extentOf(entities, drawing, canvasSize),
       undrawable: undrawableIn(request, available, textureKeyFor),
     }
   }
@@ -182,10 +236,15 @@ export async function createSceneView(options: SceneViewOptions): Promise<SceneV
     canvas,
 
     resize: (width, height) => {
-      cssWidth = Math.max(1, Math.round(width))
-      cssHeight = Math.max(1, Math.round(height))
-      game.scale.resize(cssWidth * pixelRatio, cssHeight * pixelRatio)
-      setCanvasStyleSize(canvas, cssWidth, cssHeight)
+      canvasSize = { width: Math.max(1, Math.round(width)), height: Math.max(1, Math.round(height)) }
+      game.scale.resize(canvasSize.width * pixelRatio, canvasSize.height * pixelRatio)
+      setCanvasStyleSize(canvas, canvasSize.width, canvasSize.height)
+      if (current === null) return null
+      return draw(current, registered(current))
+    },
+
+    restage: (next) => {
+      camera = next
       if (current === null) return null
       return draw(current, registered(current))
     },
@@ -253,6 +312,26 @@ export async function createSceneView(options: SceneViewOptions): Promise<SceneV
       game.destroy(true)
     },
   }
+}
+
+/**
+ * How much of the scene is here, in the scene's own units.
+ *
+ * Built by inverting what was drawn rather than by measuring the transforms a
+ * second time, so "frame everything" frames exactly the things that are on the
+ * canvas — including an entity whose texture is missing, which has no picture
+ * but is still somewhere and still worth being able to find.
+ */
+function extentOf(entities: readonly DrawnEntity[], camera: Camera, canvas: Size): Rect | null {
+  let extent: Rect | null = null
+
+  for (const entity of entities) {
+    const screen = entity.bounds ?? { x: entity.origin.x, y: entity.origin.y, width: 0, height: 0 }
+    const rect = toSceneRect(screen, camera, canvas)
+    extent = extent === null ? rect : union(extent, rect)
+  }
+
+  return extent
 }
 
 function undrawableIn(

@@ -1,6 +1,7 @@
 import type { ReactElement } from 'react'
 
-import type { DrawnEntity, ShownScene } from '../../runtime'
+import { isOnScreen, type DrawnEntity, type Rect, type ShownScene } from '../../runtime'
+import { describeZoom } from '../shell/zoom'
 
 /**
  * What is selected and where the floor is, drawn over the scene.
@@ -34,12 +35,13 @@ export function SceneOverlay({ shown, selected }: SceneOverlayProps): ReactEleme
 }
 
 /**
- * The scene's own origin, marked in the corner it sits in.
+ * The scene's own origin, wherever the camera has put it.
  *
  * Worth two short lines of chrome because the coordinate convention is
  * otherwise invisible: y counts *upward* from here, so an entity at y=0 stands
- * on this line rather than at the top of the panel. There is no camera yet, so
- * this is also the only clue about where an entity that is off screen has gone.
+ * on this line rather than below it. Under a camera it is also the one fixed
+ * landmark in the level — panning away and watching it leave is how the human
+ * knows which direction they have gone.
  */
 function Origin({ at }: { at: { x: number; y: number } }): ReactElement {
   return (
@@ -92,7 +94,29 @@ function Selected({ entity }: { entity: DrawnEntity }): ReactElement {
   )
 }
 
-/** What is on screen, in one line: how much of the scene was drawn. */
+/**
+ * Where an entity landed on the canvas, as a rectangle.
+ *
+ * An entity with nothing to draw is a point rather than a box — it is still
+ * somewhere, and treating it as nowhere would make it unframeable and
+ * unfindable. The same rule the renderer uses to work out the extent of a
+ * scene, so "off screen" and "outside what Frame all covers" cannot disagree.
+ */
+function screenRectOf(entity: DrawnEntity): Rect {
+  return entity.bounds ?? { x: entity.origin.x, y: entity.origin.y, width: 0, height: 0 }
+}
+
+/** Which entities are actually on the canvas, and how many. */
+export function onScreen(shown: ShownScene): { count: number; ids: ReadonlySet<string> } {
+  const ids = new Set<string>()
+  for (const entity of shown.entities) {
+    if (isOnScreen(screenRectOf(entity), shown.canvasSize)) ids.add(entity.id)
+  }
+
+  return { count: ids.size, ids }
+}
+
+/** What is on screen, in one line: how much of the scene was drawn, and how close. */
 export function describeScene(shown: ShownScene, entityCount: number): string {
   if (entityCount === 0) return 'This scene is empty. Add an entity in the Hierarchy to put something in it.'
 
@@ -105,7 +129,9 @@ export function describeScene(shown: ShownScene, entityCount: number): string {
       ? `${count(drawn, 'entity', 'entities')} drawn`
       : `${count(drawn, 'entity', 'entities')} drawn, ${nothing} with nothing to draw`
 
-  return `${what} — 1:1 from the bottom-left corner, ${size}.`
+  // The zoom is written the way the texture tab writes it, from the same
+  // ladder, so `8×` means one thing across the editor rather than two.
+  return `${what} — ${describeZoom(shown.camera.scale)}, ${size}.`
 }
 
 function count(n: number, one: string, many: string): string {

@@ -59,7 +59,23 @@ export {
 
 export { framesFor, type FrameRect, type SlicedFrames } from './textures/frames'
 
-export { toScenePoint, toScreenPoint, toScreenRadians, type Point } from './scene/coordinates'
+export {
+  DEFAULT_CAMERA,
+  framing,
+  isOnScreen,
+  panBy,
+  snapCamera,
+  toSceneRect,
+  toScenePoint,
+  toScreenPoint,
+  toScreenRadians,
+  union,
+  zoomAbout,
+  type Camera,
+  type Point,
+  type Rect,
+  type Size,
+} from './scene/coordinates'
 
 export type { DrawnEntity } from './scene/entity-layer'
 

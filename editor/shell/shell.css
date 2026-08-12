@@ -466,6 +466,47 @@ body {
   background-image: none;
 }
 
+/*
+ * The scene's caption is one line, always, however much it has to say.
+ *
+ * This is a constraint rather than a style. The bar sits under the stage, so a
+ * second line of caption makes the canvas twenty pixels shorter — and the
+ * canvas's size is what framing is computed against. A sentence that appears
+ * only when the level is off screen would therefore be on screen at exactly the
+ * moment the human presses the key that frames it, framing the level for a
+ * panel that is about to grow back, and two presses of one key would give two
+ * different zooms. Wrapping is where that loop comes from, so wrapping is what
+ * is switched off; the sentences are written short enough that nothing is
+ * actually clipped, and the full text is on the element's tooltip regardless.
+ */
+.scene .viewport__bar {
+  flex-wrap: nowrap;
+}
+
+.scene .viewport__note {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.scene .viewport__zoom {
+  flex-shrink: 0;
+}
+
+/*
+ * The camera's two cursors. `ready` is space held down — the offer of a drag,
+ * before one has started — and `holding` is the drag itself. Without the first
+ * one, space-and-drag is a gesture with nothing on screen to suggest it exists.
+ */
+.scene .viewport__stage[data-grab='ready'] {
+  cursor: grab;
+}
+
+.scene .viewport__stage[data-grab='holding'] {
+  cursor: grabbing;
+}
+
 .scene__overlay {
   position: absolute;
   inset: 0;
