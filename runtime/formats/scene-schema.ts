@@ -1,7 +1,7 @@
 import { z } from 'zod'
 
 /**
- * The scene format: a level, as text. And the prefab format beside it.
+ * The scene format: a level, as text.
  *
  * A scene is a flat, ordered list of entities. Each carries a transform, a name,
  * and a map of components keyed by type. That is the whole of it — the shape is
@@ -9,18 +9,13 @@ import { z } from 'zod'
  * the component map rather than into this file.
  *
  * It lives in `runtime/` because the runtime is the layer that ships and the
- * runtime is what loads a scene (editor-kernel D20, text-formats T10). Like the
- * `.meta` schema beside it, it is compiled by two TypeScript projects with
- * different resolution rules, so **it imports nothing but `zod` and must never
- * gain a relative import** (editor-ui U4). That is why the component registry
- * sits in this file rather than in one of its own.
+ * runtime is what loads a scene (editor-kernel D20, text-formats T10).
  *
- * **And it is why the prefab format is in here too**, rather than in a file of
- * its own next door. A prefab is a bag of components, components are checked
- * against that registry, and a module the service compiles cannot reach across
- * to another one. The two formats are separate documents with separate schemas
- * that happen to share a file; nothing about a scene depends on a prefab, and
- * the arrow only runs the other way — an entity may *point at* a prefab.
+ * **The component registry lives here**, with the entity that carries a
+ * component map — including `prefab`, which is a reference an entity holds. The
+ * prefab *document* is `prefab-schema.ts` next door, and the arrow runs one way:
+ * that file imports this one, and this one never imports it. Two formats, two
+ * files, and nothing about a scene depending on a prefab existing.
  *
  * Three decisions worth knowing before changing anything here:
  *
@@ -49,9 +44,6 @@ import { z } from 'zod'
 
 export const SCENE_FORMAT = 'kernel2d.scene'
 export const SCENE_VERSION = 1
-
-export const PREFAB_FORMAT = 'kernel2d.prefab'
-export const PREFAB_VERSION = 1
 
 /**
  * A reference to a file in the project, carrying a stable id *and* a readable
@@ -142,40 +134,6 @@ export interface Scene {
   generatedAt?: string | undefined
 }
 
-/**
- * A reusable entity template: define an enemy once, place it fifty times.
- *
- * Three decisions worth knowing before changing anything here:
- *
- *   1. **It carries its own id.** A texture's stable id lives in the `.meta`
- *      beside it because nothing can be written inside a PNG. A document has no
- *      such problem — it is its own annotation — so a prefab holds the id that
- *      references to it record, and never grows a sidecar.
- *
- *   2. **There is no transform.** A prefab says what a thing *is*; where it
- *      stands, how big it is and how far it is turned belong to each placement.
- *      A transform sitting here that instances ignored would be a field that
- *      looked authoritative and did nothing, which is worse than not having one.
- *
- *   3. **A prefab may not contain a `prefab` component.** Refused by the schema
- *      rather than guarded against at every reader, which is what makes a cycle
- *      unwritable instead of merely unlikely.
- */
-export interface Prefab {
-  format: typeof PREFAB_FORMAT
-  version: typeof PREFAB_VERSION
-  /** Stable, minted once, never changed. What a reference to this records. */
-  id: string
-  /** What it is called — and the name an instance of it starts with. */
-  name: string
-  /** What every instance of it draws. Same shape as an entity's. */
-  components: Record<string, unknown>
-  /** Present only on prefabs an AI produced. Read, preserved, never invented. */
-  generatedBy?: string | undefined
-  /** `YYYY-MM-DD`, alongside `generatedBy`. */
-  generatedAt?: string | undefined
-}
-
 // --- the schema -----------------------------------------------------------
 
 /**
@@ -247,18 +205,18 @@ export const EntitySchema: z.ZodType<Entity> = z
   // Known components are *checked*, never replaced. Replacing them would run
   // each value back through its own schema and hand back the result, which is
   // exactly the key-stripping the loose objects above exist to prevent.
-  .superRefine(checkComponents)
+  .superRefine(checkKnownComponents)
 
 /**
  * The half of the entity check a prefab needs too: every component whose type
  * is in the registry has to be one this editor can read.
  *
- * Shared rather than written twice, because the two would drift the first time
- * a component type was added — and the symptom would be a prefab accepting
- * something a scene rejects, which reads as the file being fine until it is
- * placed.
+ * Exported for `prefab-schema.ts` and for nothing else. Shared rather than
+ * written twice, because the two would drift the first time a component type was
+ * added — and the symptom would be a prefab accepting something a scene rejects,
+ * which reads as the file being fine until it is placed.
  */
-function checkComponents(holder: ComponentHolder, ctx: z.RefinementCtx): void {
+export function checkKnownComponents(holder: ComponentHolder, ctx: z.RefinementCtx): void {
   for (const [type, value] of Object.entries(holder.components)) {
     if (!isKnownComponentType(type)) continue
     const result = COMPONENT_SCHEMAS[type].safeParse(value)
@@ -299,33 +257,6 @@ export const SceneSchema: z.ZodType<Scene> = z
         input: entity.id,
       })
     })
-  })
-
-export const PrefabSchema: z.ZodType<Prefab> = z
-  .looseObject({
-    format: z.literal(PREFAB_FORMAT),
-    version: z.literal(PREFAB_VERSION),
-    id: z.string().min(1),
-    name: z.string(),
-    components: z.record(z.string(), z.unknown()),
-    generatedBy: z.string().min(1).optional(),
-    generatedAt: z.string().min(1).optional(),
-  })
-  .superRefine((prefab, ctx) => {
-    // Caught here rather than at every reader: a prefab made of a prefab is a
-    // cycle waiting to be written, and refusing the shape is what makes one
-    // impossible instead of merely unlikely.
-    if (Object.hasOwn(prefab.components, 'prefab')) {
-      ctx.addIssue({
-        code: 'custom',
-        message: 'a prefab cannot be an instance of another prefab',
-        path: ['components', 'prefab'],
-        input: prefab.components['prefab'],
-      })
-      return
-    }
-
-    checkComponents(prefab, ctx)
   })
 
 // --- reading a component --------------------------------------------------
@@ -380,52 +311,6 @@ export function unknownComponentTypesOf(holder: ComponentHolder): string[] {
     .sort()
 }
 
-// --- resolving an instance ------------------------------------------------
-
-/**
- * An entity with its prefab's components filled in.
- *
- * It lives here, with the format, because this is what a scene *means* rather
- * than something the editor does to one: the runtime's scene loader will need
- * exactly this arithmetic when it boots a level, and two derivations of it would
- * be the editor and the game disagreeing about what a level contains
- * (editor-kernel D2, D20).
- *
- * **The transform is never touched.** Where an instance stands is its own, which
- * is the whole of decision 1 in `PrefabComponent` above.
- *
- * **What the entity carries itself wins, per component type.** The editor offers
- * no way to write such an override today, but a hand-edited file has to mean
- * something, and "the one written here beats the one it inherits" is the least
- * surprising thing it can mean. It is also the shape overrides will need when
- * they arrive, so nothing has to change format to get them.
- *
- * The result is **for drawing and describing, never for writing back**: it
- * carries a copy of the prefab's components, and saving it would bake them into
- * the level and quietly sever the link. Every writer in this kernel re-finds its
- * entity by id inside a transaction, which is what keeps that true by
- * construction rather than by remembering.
- */
-export function resolveEntity(entity: Entity, prefab: Prefab | null): Entity {
-  // The same object back when there is nothing to merge, so a scene with no
-  // instances in it costs nothing and stays stable to compare against.
-  if (prefab === null) return entity
-  return { ...entity, components: { ...prefab.components, ...entity.components } }
-}
-
-/** Every entity in a scene, resolved against the prefabs found by path. */
-export function resolveEntities(
-  entities: readonly Entity[],
-  prefabs: Readonly<Record<string, Prefab>>,
-): Entity[] {
-  return entities.map((entity) => {
-    const source = prefabRefOf(entity)
-    // Resolved by path, per D5. A prefab that is missing leaves the entity
-    // exactly as the file has it, which is what lets a panel say so.
-    return source === null ? entity : resolveEntity(entity, prefabs[source.path] ?? null)
-  })
-}
-
 // --- what a fresh one looks like ------------------------------------------
 
 /**
@@ -445,22 +330,6 @@ export function defaultEntity(id: string, name: string): Entity {
 
 export function defaultScene(): Scene {
   return { format: SCENE_FORMAT, version: SCENE_VERSION, entities: [] }
-}
-
-/**
- * A new prefab: named, with an id, and drawing nothing yet.
- *
- * Empty rather than pre-filled with a sprite that points nowhere — a reference
- * to no file is a broken reference, and a format should not ship one as its
- * starting state.
- */
-export function defaultPrefab(id: string, name: string): Prefab {
-  return { format: PREFAB_FORMAT, version: PREFAB_VERSION, id, name, components: {} }
-}
-
-/** An entity that is an instance of a prefab, placed and named. */
-export function instanceOfPrefab(id: string, name: string, source: AssetRef): Entity {
-  return { id, name, transform: defaultTransform(), components: { prefab: { source } } }
 }
 
 /**
@@ -489,9 +358,4 @@ export function copyEntity(entity: Entity, id: string, name: string): Entity {
  */
 export function serializeScene(scene: Scene): string {
   return `${JSON.stringify(scene, null, 2)}\n`
-}
-
-/** The same, for a prefab. */
-export function serializePrefab(prefab: Prefab): string {
-  return `${JSON.stringify(prefab, null, 2)}\n`
 }

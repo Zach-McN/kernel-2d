@@ -18,7 +18,7 @@ import { relativePosixPath } from './paths.js'
  * tables as those formats arrive.
  *
  * This is where the service's write privilege lives, and the whole of it is four
- * lines (editor-kernel D17), each one a sentence:
+ * lines (editor-kernel D22, widening D17), each one a sentence:
  *
  *   - of its own accord, creates a `.meta` when an asset has none, and deletes
  *     a stranded one at startup;

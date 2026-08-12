@@ -4,15 +4,8 @@ import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import { AssetMetaSchema } from '../../runtime/formats/meta-schema.js'
-import {
-  PrefabSchema,
-  SceneSchema,
-  prefabRefOf,
-  resolveEntity,
-  spriteOf,
-  type Prefab,
-  type Scene,
-} from '../../runtime/formats/scene-schema.js'
+import { PrefabSchema, resolveEntity, type Prefab } from '../../runtime/formats/prefab-schema.js'
+import { SceneSchema, prefabRefOf, spriteOf, type Scene } from '../../runtime/formats/scene-schema.js'
 import { writeSampleProject } from '../../scripts/sample/write.js'
 import { makeTempProject, type TempProject } from '../fixtures/project-fixture.js'
 

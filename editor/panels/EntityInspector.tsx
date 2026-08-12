@@ -1,4 +1,4 @@
-import type { ReactElement, ReactNode } from 'react'
+import type { ReactElement } from 'react'
 
 import {
   SCENE_FORMAT,
@@ -17,6 +17,7 @@ import { describePrefabProblem, instancesOf, useResolvedScene, type PrefabProble
 import { useSelection } from '../shell/selection'
 import { usePlacePrefab } from '../shell/usePlacePrefab'
 import { editDocument, sealEdits } from '../store/open-documents'
+import { Field, Note, Row, Section } from './fields'
 import { NumberField } from './NumberField'
 import { TexturePicker } from './TexturePicker'
 
@@ -337,40 +338,3 @@ function drawOrderOf(scene: Scene, entity: Entity): string {
 }
 
 // --- small pieces ----------------------------------------------------------
-
-function Section({ title, children }: { title: string; children: ReactNode }): ReactElement {
-  return (
-    <section className="inspector__section">
-      <h3 className="inspector__section-title">{title}</h3>
-      {children}
-    </section>
-  )
-}
-
-function Row({ label, children }: { label: string; children: ReactNode }): ReactElement {
-  return (
-    <div className="inspector__field">
-      <span className="inspector__label">{label}</span>
-      <span className="control-row">{children}</span>
-    </div>
-  )
-}
-
-function Field({ label, value, testId }: { label: string; value: string; testId?: string }): ReactElement {
-  return (
-    <p className="inspector__field">
-      <span className="inspector__label">{label}</span>
-      <span className="inspector__value" data-testid={testId}>
-        {value}
-      </span>
-    </p>
-  )
-}
-
-function Note({ children, ...rest }: { children: ReactNode; 'data-testid'?: string }): ReactElement {
-  return (
-    <p className="inspector__note" {...rest}>
-      {children}
-    </p>
-  )
-}

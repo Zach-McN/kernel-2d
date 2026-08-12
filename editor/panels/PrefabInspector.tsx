@@ -1,18 +1,14 @@
-import type { ReactElement, ReactNode } from 'react'
+import type { ReactElement } from 'react'
 
-import {
-  PREFAB_FORMAT,
-  spriteOf,
-  unknownComponentTypesOf,
-  type AssetRef,
-  type Prefab,
-} from '../../runtime/formats/scene-schema'
+import { PREFAB_FORMAT, type Prefab } from '../../runtime/formats/prefab-schema'
+import { spriteOf, unknownComponentTypesOf, type AssetRef } from '../../runtime/formats/scene-schema'
 import type { ProjectTree } from '../../sidecar/tree-schema'
 import { basename } from '../shell/asset-kinds'
 import { describeProblem, useSceneAssets } from '../shell/scene-assets'
 import { instancesOf, useResolvedScene } from '../shell/scene-prefabs'
 import { usePlacePrefab } from '../shell/usePlacePrefab'
 import { editDocument, sealEdits } from '../store/open-documents'
+import { Field, Note, Section } from './fields'
 import { TexturePicker } from './TexturePicker'
 
 /**
@@ -149,31 +145,3 @@ export function PrefabInspector({
 }
 
 // --- small pieces ----------------------------------------------------------
-
-function Section({ title, children }: { title: string; children: ReactNode }): ReactElement {
-  return (
-    <section className="inspector__section">
-      <h3 className="inspector__section-title">{title}</h3>
-      {children}
-    </section>
-  )
-}
-
-function Field({ label, value, testId }: { label: string; value: string; testId?: string }): ReactElement {
-  return (
-    <p className="inspector__field">
-      <span className="inspector__label">{label}</span>
-      <span className="inspector__value" data-testid={testId}>
-        {value}
-      </span>
-    </p>
-  )
-}
-
-function Note({ children, ...rest }: { children: ReactNode; 'data-testid'?: string }): ReactElement {
-  return (
-    <p className="inspector__note" {...rest}>
-      {children}
-    </p>
-  )
-}

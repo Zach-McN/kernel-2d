@@ -1,19 +1,13 @@
-import { createContext, useContext, useEffect, useMemo, useState, type ReactElement, type ReactNode } from 'react'
+import { createContext, useContext, useMemo, type ReactElement, type ReactNode } from 'react'
 
-import {
-  PREFAB_FORMAT,
-  prefabRefOf,
-  resolveEntities,
-  type Entity,
-  type Prefab,
-  type Scene,
-} from '../../runtime/formats/scene-schema'
+import { PREFAB_FORMAT, resolveEntities, type Prefab } from '../../runtime/formats/prefab-schema'
+import { prefabRefOf, type Entity, type Scene } from '../../runtime/formats/scene-schema'
 import { DocumentViewSchema } from '../../sidecar/document-view-schema'
 import type { ProjectTree } from '../../sidecar/tree-schema'
-import { adoptFromDisk, beginRead, useAllDocuments } from '../store/open-documents'
-import { findNode } from './asset-kinds'
+import { adoptFromDisk, useAllDocuments } from '../store/open-documents'
 import { useOpenScene } from './open-scene'
 import { useProject } from './project-context'
+import { referencesTo, useReferences, type Answer } from './useReferences'
 
 /**
  * Filling in what a level's instances inherit from the prefabs they point at.
@@ -25,12 +19,11 @@ import { useProject } from './project-context'
  * recomputed a second way. Reading the service's answer instead would work
  * exactly once, at open, and then quietly stop.
  *
- * Two halves, the same shape as `scene-assets.tsx` one layer down:
+ * Two halves:
  *
- *   - **the fetch**, which asks the service for each prefab a level references
- *     and puts it in the store. Keyed on the file's modification time as well as
- *     its path, so a prefab edited in a text editor is asked for again while an
- *     unrelated change to the folder is not (`editor-kernel` G11);
+ *   - **the fetch**, which is `useReferences.ts` — the same mechanism the
+ *     textures one layer down uses, because following a reference by path and
+ *     modification time is one problem however many kinds of file it is about;
  *   - **the merge**, which is `resolveEntities` from the format itself rather
  *     than arithmetic invented here — the runtime's scene loader will do the
  *     same sum when play mode arrives, and two derivations of what a level
@@ -74,30 +67,28 @@ export interface ResolvedScene {
 
 const EMPTY: ResolvedScene = { path: null, entities: [], prefabs: {}, problems: {}, loading: false }
 
-/** A reference to resolve: where to look, which file was expected, and when it last changed. */
-interface Wanted {
-  path: string
-  expectedId: string
-  version: number
-}
-
-function wantedIn(scene: Scene | null, tree: ProjectTree | null): Wanted[] {
-  if (scene === null) return []
-
+/** The prefabs a level's entities point at, deduplicated, with the id each recorded. */
+function prefabsWantedBy(scene: Scene | null): Map<string, string> {
   const byPath = new Map<string, string>()
-  for (const entity of scene.entities) {
+  for (const entity of scene?.entities ?? []) {
     const source = prefabRefOf(entity)
     if (source !== null && !byPath.has(source.path)) byPath.set(source.path, source.id)
   }
+  return byPath
+}
 
-  // Sorted so the list is comparable as a string: this drives an effect, and an
-  // array in a different order every render would re-fetch the world.
-  return [...byPath.entries()]
-    .map(([path, expectedId]) => {
-      const node = tree === null ? null : findNode(tree, path)
-      return { path, expectedId, version: node !== null && node.kind === 'file' ? node.mtimeMs : 0 }
-    })
-    .sort((a, b) => a.path.localeCompare(b.path))
+/** Asking the service for one prefab, and putting it in the store. */
+async function askForPrefab(path: string, readStartedAt: number): Promise<Answer> {
+  const response = await fetch(`/api/document?path=${encodeURIComponent(path)}`, { cache: 'no-store' })
+  if (!response.ok) return 'the editor service would not answer about it'
+
+  const view = DocumentViewSchema.parse(await response.json())
+  if (view.status === 'none') return 'there is no file there'
+  if (view.status === 'unreadable' || view.document === null) return view.problem ?? 'it could not be read'
+  if (view.document.format !== PREFAB_FORMAT) return `that file is a ${view.document.format}, not a prefab`
+
+  adoptFromDisk(view.path, view.document, readStartedAt)
+  return null
 }
 
 const ScenePrefabsContext = createContext<ResolvedScene | null>(null)
@@ -122,97 +113,39 @@ export function useResolvedScene(): ResolvedScene {
 }
 
 function useResolution(path: string | null, scene: Scene | null, tree: ProjectTree | null): ResolvedScene {
-  const wanted = wantedIn(scene, tree)
-  const fetchKey = wanted.map((one) => `${one.path}@${one.version}`).join('\n')
-
-  /**
-   * What asking for one prefab came to, keyed the same way the fetch is. `null`
-   * means it arrived and is in the store; a string is the reason it did not.
-   */
-  const [answers, setAnswers] = useState<Readonly<Record<string, string | null>>>({})
-
-  useEffect(() => {
-    if (wanted.length === 0) return
-
-    let stopped = false
-    const fresh = wanted.filter((one) => answers[`${one.path}@${one.version}`] === undefined)
-    if (fresh.length === 0) return
-
-    void Promise.all(
-      fresh.map(async (one): Promise<[string, string | null]> => {
-        const at = `${one.path}@${one.version}`
-        // Taken before the question is asked: a late answer is
-        // indistinguishable from a fresh one, and the store is what needs to be
-        // able to tell them apart.
-        const readStartedAt = beginRead()
-        try {
-          const response = await fetch(`/api/document?path=${encodeURIComponent(one.path)}`, {
-            cache: 'no-store',
-          })
-          if (!response.ok) return [at, 'the editor service would not answer about it']
-
-          const view = DocumentViewSchema.parse(await response.json())
-          if (view.status === 'none') return [at, 'there is no file there']
-          if (view.status === 'unreadable' || view.document === null) {
-            return [at, view.problem ?? 'it could not be read']
-          }
-          if (view.document.format !== PREFAB_FORMAT) {
-            return [at, `that file is a ${view.document.format}, not a prefab`]
-          }
-
-          adoptFromDisk(view.path, view.document, readStartedAt)
-          return [at, null]
-        } catch {
-          return [at, 'the editor service could not be reached']
-        }
-      }),
-    ).then((settled) => {
-      if (stopped) return
-      setAnswers((previous) => ({ ...previous, ...Object.fromEntries(settled) }))
-    })
-
-    return () => {
-      stopped = true
-    }
-    // Keyed on the string rather than the array, which is rebuilt every render.
-  }, [fetchKey])
+  const wanted = referencesTo(prefabsWantedBy(scene), tree)
+  const followed = useReferences(wanted, tree, askForPrefab)
 
   // The whole document map, which is reference-stable until something in it
   // actually changes — so editing a prefab re-runs this and moving an entity
-  // does not.
+  // does not. This is the line that makes "editing the prefab updates every
+  // instance" true: the prefab drawn here and the prefab the Inspector edits are
+  // one object.
   const documents = useAllDocuments()
 
   return useMemo(() => {
     if (scene === null) return EMPTY
     // A level with no instances in it hands back the store's own array, so
     // nothing downstream sees a new list every render.
-    if (fetchKey === '') return { ...EMPTY, path, entities: scene.entities }
+    if (wanted.length === 0) return { ...EMPTY, path, entities: scene.entities }
 
     const prefabs: Record<string, Prefab> = {}
     const problems: Record<string, PrefabProblem> = {}
     let loading = false
 
     for (const one of wanted) {
-      if (tree === null) {
-        // Before the folder has been read everything is missing, and saying so
-        // would be a lie.
+      const state = followed.states[one.path]
+
+      if (state === undefined || state.kind === 'loading') {
         loading = true
         continue
       }
-
-      const node = findNode(tree, one.path)
-      if (node === null || node.kind !== 'file') {
+      if (state.kind === 'missing') {
         problems[one.path] = { kind: 'missing', path: one.path }
         continue
       }
-
-      const answer = answers[`${one.path}@${one.version}`]
-      if (answer === undefined) {
-        loading = true
-        continue
-      }
-      if (answer !== null) {
-        problems[one.path] = { kind: 'unreadable', path: one.path, detail: answer }
+      if (state.kind === 'unusable') {
+        problems[one.path] = { kind: 'unreadable', path: one.path, detail: state.detail }
         continue
       }
 
@@ -233,14 +166,14 @@ function useResolution(path: string | null, scene: Scene | null, tree: ProjectTr
         }
       }
 
-      // Drawn either way: the file at that path is what the level points at, and
+      // Used either way: the file at that path is what the level points at, and
       // refusing to show it would be less informative than showing it and
       // saying so.
       prefabs[one.path] = document
     }
 
     return { path, entities: resolveEntities(scene.entities, prefabs), prefabs, problems, loading }
-  }, [path, scene, fetchKey, answers, documents, tree])
+  }, [path, scene, followed, documents])
 }
 
 /** Every prefab problem in a level, most useful first, as one list. */

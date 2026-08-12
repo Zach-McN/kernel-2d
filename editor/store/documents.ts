@@ -2,7 +2,8 @@ import { applyPatches, enablePatches, freeze, produceWithPatches, type Draft, ty
 import { createStore } from 'zustand/vanilla'
 
 import type { AssetMeta } from '../../runtime/formats/meta-schema'
-import type { Prefab, Scene } from '../../runtime/formats/scene-schema'
+import type { Prefab } from '../../runtime/formats/prefab-schema'
+import type { Scene } from '../../runtime/formats/scene-schema'
 
 /**
  * The transaction API: the one door every change to a document goes through,
@@ -43,7 +44,8 @@ enablePatches()
  * either.
  *
  * The only place the difference shows is which service endpoint the write goes
- * to, and that is a one-line branch on `format` in `open-documents.ts`.
+ * to, and that is one small branch on `format` in `open-documents.ts` — the
+ * `.meta` has an endpoint of its own; every real document goes out of the other.
  */
 export type Document = AssetMeta | Scene | Prefab
 

@@ -9,12 +9,13 @@ import {
   type Entity,
 } from '../../runtime/formats/scene-schema'
 import { basename } from '../shell/asset-kinds'
+import { freeName, namesIn, stemOfName } from '../shell/entity-names'
 import { useOpenScene } from '../shell/open-scene'
 import { useSceneAssets, type SceneAssets } from '../shell/scene-assets'
 import { useResolvedScene, type ResolvedScene } from '../shell/scene-prefabs'
 import { useSelection } from '../shell/selection'
-import { editDocument } from '../store/open-documents'
 import { mintId } from '../store/ids'
+import { editDocument } from '../store/open-documents'
 
 /**
  * What is in the open scene, in the order it is drawn.
@@ -24,12 +25,17 @@ import { mintId } from '../store/ids'
  * is no second field saying so, deliberately — see the note in
  * `runtime/formats/scene-schema.ts`.
  *
- * **Every one of the four actions goes through the transaction API and nothing
+ * **Every one of the five actions goes through the transaction API and nothing
  * else** (`editor-kernel` D7). Adding is where a session is most likely to reach
  * past it, because creating something feels different from editing it — it is
- * not. An add is a recipe that pushes onto `entities`, a delete is one that
- * splices, a move is one that swaps two slots, and Ctrl-Z reverses all three
- * without a line of undo code being written here.
+ * not. An add is a recipe that pushes onto `entities`, a duplicate is one that
+ * splices a copy in, a delete is one that splices one out, a move is one that
+ * swaps two slots — and Ctrl-Z reverses every one of them without a line of undo
+ * code being written here.
+ *
+ * A row shows what its entity *draws*, which for an instance comes from the
+ * prefab it points at. Everything it *changes* goes to the document, re-found by
+ * id inside the transaction (`editor-ui` U23).
  */
 export function HierarchyPanel(): ReactElement {
   const open = useOpenScene()
@@ -292,36 +298,21 @@ function Row({ entity, fromPrefab, selected, problem, onSelect }: RowProps): Rea
   )
 }
 
-/**
- * A name for a new entity that is not already taken.
- *
- * Names are not identifiers — two entities may share one, and the id is what
- * anything refers to — but handing out three rows all called "Entity" makes a
- * list nobody can read.
- */
+/** A name for a new entity, counting on from the length of the list. */
 function nextEntityName(entities: readonly Entity[]): string {
-  const taken = new Set(entities.map((entity) => entity.name))
-  for (let n = entities.length + 1; ; n += 1) {
-    const name = `Entity ${n}`
-    if (!taken.has(name)) return name
-  }
+  return freeName(namesIn(entities), 'Entity', { from: entities.length + 1 })
 }
 
 /**
  * What a copy is called: the original's name with a number after it.
  *
  * A duplicate that kept the name exactly would give the list two identical rows
- * — legal in the format, and useless to read. Counting up from the original
- * rather than from the list's length keeps "Slime 2, Slime 3" in order however
- * much else is in the scene.
+ * — legal in the format, and useless to read. Counting up from the original's
+ * stem rather than from the list's length keeps "Slime 2, Slime 3" in order
+ * however much else is in the scene.
  */
 function nextCopyName(entities: readonly Entity[], original: string): string {
-  const taken = new Set(entities.map((entity) => entity.name))
-  const stem = original.replace(/ \d+$/, '')
-  for (let n = 2; ; n += 1) {
-    const name = `${stem} ${n}`
-    if (!taken.has(name)) return name
-  }
+  return freeName(namesIn(entities), stemOfName(original))
 }
 
 function Empty({ children }: { children: ReactNode }): ReactElement {

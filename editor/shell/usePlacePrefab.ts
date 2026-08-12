@@ -1,6 +1,8 @@
-import { SCENE_FORMAT, instanceOfPrefab, type Entity } from '../../runtime/formats/scene-schema'
+import { instanceOfPrefab } from '../../runtime/formats/prefab-schema'
+import { SCENE_FORMAT, type Entity } from '../../runtime/formats/scene-schema'
 import { mintId } from '../store/ids'
 import { editDocument, usePrefabDocument } from '../store/open-documents'
+import { freeName, namesIn } from './entity-names'
 import { useResolvedScene } from './scene-prefabs'
 import { useSceneView } from './scene-view-context'
 import { useSelection } from './selection'
@@ -77,16 +79,10 @@ export function usePlacePrefab(prefabPath: string | null): {
  * What a placed instance is called: the prefab's name, then a number.
  *
  * Counting within the level rather than across the project, because "Slime 2"
- * should mean the second one here and not the second one ever placed. Names are
- * not identifiers — the id is what anything refers to — but fifty rows all
- * reading "Slime" is a list nobody can use.
+ * should mean the second one here and not the second one ever placed. The bare
+ * name is offered first, so the only slime in a level is just "Slime".
  */
 function nextInstanceName(entities: readonly Entity[], prefabName: string): string {
   const stem = prefabName.trim() === '' ? 'Instance' : prefabName.trim()
-  const taken = new Set(entities.map((entity) => entity.name))
-  if (!taken.has(stem)) return stem
-  for (let n = 2; ; n += 1) {
-    const name = `${stem} ${n}`
-    if (!taken.has(name)) return name
-  }
+  return freeName(namesIn(entities), stem, { bare: true })
 }

@@ -20,10 +20,14 @@ import { SceneOverlay, describeScene } from './SceneOverlay'
  * The panel's own job is small: host the canvas, measure itself, mark what is
  * selected, carry the gestures that drive the camera, and say what is going on
  * whenever there is no picture. The drawing is the runtime's, the scene is the
- * document store's, which textures are available is `scene-assets.ts`, and where
- * the camera is looking is `scene-view-context.tsx` — this panel fetches nothing
- * of its own, so the picture and the Hierarchy and the Inspector are all
- * describing one object (`editor-ui` U12).
+ * document store's, what its instances inherit is `scene-prefabs.tsx`, which
+ * textures all of that needs is `scene-assets.tsx`, and where the camera is
+ * looking is `scene-view-context.tsx` — this panel fetches nothing of its own,
+ * so the picture and the Hierarchy and the Inspector are all describing one
+ * object (`editor-ui` U12).
+ *
+ * It draws the **resolved** entities and edits the document, which is the rule
+ * every panel that touches a level now keeps (`editor-ui` U23).
  *
  * Where the human is looking is not in the level. It lives for as long as the
  * window does, never reaches the document, and never reaches the scene file —

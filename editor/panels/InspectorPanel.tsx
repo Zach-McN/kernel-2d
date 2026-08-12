@@ -6,7 +6,8 @@ import {
   type AssetMeta,
   type ImportSettings,
 } from '../../runtime/formats/meta-schema'
-import { PREFAB_FORMAT, prefabRefOf } from '../../runtime/formats/scene-schema'
+import { PREFAB_FORMAT } from '../../runtime/formats/prefab-schema'
+import { prefabRefOf } from '../../runtime/formats/scene-schema'
 import { formatBytes } from '../../sidecar/bytes'
 import type { MetaView } from '../../sidecar/meta-view-schema'
 import type { DirectoryNode, TreeNode } from '../../sidecar/tree-schema'
@@ -21,6 +22,7 @@ import { useSelection } from '../shell/selection'
 import type { AssetMetaState } from '../shell/useAssetMeta'
 import { useMetaDocument, usePrefabDocument, useSaveFailure } from '../store/open-documents'
 import { EntityInspector } from './EntityInspector'
+import { Field, Note, Section } from './fields'
 import { PrefabInspector } from './PrefabInspector'
 import { SaveFailure, TextureSettings } from './TextureSettings'
 
@@ -424,34 +426,6 @@ function describeMissingMeta(path: string): string {
 }
 
 // --- small pieces ----------------------------------------------------------
-
-function Section({ title, children }: { title: string; children: ReactNode }): ReactElement {
-  return (
-    <section className="inspector__section">
-      <h3 className="inspector__section-title">{title}</h3>
-      {children}
-    </section>
-  )
-}
-
-function Field({ label, value, testId }: { label: string; value: string; testId?: string }): ReactElement {
-  return (
-    <p className="inspector__field">
-      <span className="inspector__label">{label}</span>
-      <span className="inspector__value" data-testid={testId}>
-        {value}
-      </span>
-    </p>
-  )
-}
-
-function Note({ children, ...rest }: { children: ReactNode; 'data-testid'?: string }): ReactElement {
-  return (
-    <p className="inspector__note" {...rest}>
-      {children}
-    </p>
-  )
-}
 
 function Empty({ children }: { children: ReactNode }): ReactElement {
   return (

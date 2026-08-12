@@ -1,6 +1,7 @@
 import { useState, type ReactElement } from 'react'
 
-import { defaultPrefab, defaultScene, type Prefab, type Scene } from '../../runtime/formats/scene-schema'
+import { defaultPrefab, type Prefab } from '../../runtime/formats/prefab-schema'
+import { defaultScene, type Scene } from '../../runtime/formats/scene-schema'
 import { formatBytes } from '../../sidecar/bytes'
 import type { ProjectTree } from '../../sidecar/tree-schema'
 import { findNode } from '../shell/asset-kinds'
@@ -172,7 +173,7 @@ function NewDocument({
   return (
     <form
       className="assets__new"
-      data-testid="new-scene"
+      data-testid="new-document"
       onSubmit={(event) => {
         event.preventDefault()
         create(defaultScene())
@@ -182,7 +183,7 @@ function NewDocument({
         <input
           type="text"
           className="control control--text"
-          data-testid="new-scene-name"
+          data-testid="new-document-name"
           placeholder="New level or prefab"
           aria-label="Name for a new level or prefab"
           value={name}
@@ -214,13 +215,13 @@ function NewDocument({
       </div>
 
       {path !== '' && (
-        <p className="assets__new-path" data-testid="new-scene-path">
+        <p className="assets__new-path" data-testid="new-document-path">
           Will make <strong>{path}</strong>
         </p>
       )}
 
       {problem !== null && (
-        <p className="assets__new-problem" data-testid="new-scene-problem">
+        <p className="assets__new-problem" data-testid="new-document-problem">
           {problem}
         </p>
       )}

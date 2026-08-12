@@ -38,7 +38,7 @@ function fileFor(projectRelative: string): string {
 }
 
 async function nameIt(page: Page, name: string): Promise<void> {
-  const field = page.getByTestId('new-scene-name')
+  const field = page.getByTestId('new-document-name')
   await field.click()
   await field.press('ControlOrMeta+a')
   await field.fill(name)
@@ -47,7 +47,7 @@ async function nameIt(page: Page, name: string): Promise<void> {
 /** Selects the `scenes` folder, so that is where a new level would go. */
 async function inScenesFolder(page: Page): Promise<void> {
   await page.locator('[data-asset-path="scenes"]').click()
-  await expect(page.getByTestId('new-scene')).toBeVisible()
+  await expect(page.getByTestId('new-document')).toBeVisible()
 }
 
 // --- acceptance: making one -------------------------------------------------
@@ -58,7 +58,7 @@ test('a new level is made where it said it would be, and opens', async ({ page }
 
   // The whole path, before anything is committed. This is the promise: nobody
   // should have to go looking for the file they just made.
-  await expect(page.getByTestId('new-scene-path')).toContainText('scenes/level-03.json')
+  await expect(page.getByTestId('new-document-path')).toContainText('scenes/level-03.json')
 
   await page.getByTestId('new-scene-create').click()
 
@@ -78,11 +78,11 @@ test('the name field does not need the extension, and does not double it', async
   await inScenesFolder(page)
 
   await nameIt(page, 'level-03')
-  await expect(page.getByTestId('new-scene-path')).toContainText('scenes/level-03.json')
+  await expect(page.getByTestId('new-document-path')).toContainText('scenes/level-03.json')
 
   await nameIt(page, 'level-03.json')
-  await expect(page.getByTestId('new-scene-path')).toContainText('scenes/level-03.json')
-  await expect(page.getByTestId('new-scene-path')).not.toContainText('.json.json')
+  await expect(page.getByTestId('new-document-path')).toContainText('scenes/level-03.json')
+  await expect(page.getByTestId('new-document-path')).not.toContainText('.json.json')
 })
 
 test('where it goes follows what is selected, rather than a folder written into the editor', async ({
@@ -90,13 +90,13 @@ test('where it goes follows what is selected, rather than a folder written into 
 }) => {
   await nameIt(page, 'level-03')
   // Nothing selected: the top of the project.
-  await expect(page.getByTestId('new-scene-path')).toContainText('Will make level-03.json')
+  await expect(page.getByTestId('new-document-path')).toContainText('Will make level-03.json')
 
   await selectAsset(page, LEVEL_ONE)
-  await expect(page.getByTestId('new-scene-path')).toContainText('scenes/level-03.json')
+  await expect(page.getByTestId('new-document-path')).toContainText('scenes/level-03.json')
 
   await page.locator('[data-asset-path="data"]').click()
-  await expect(page.getByTestId('new-scene-path')).toContainText('data/level-03.json')
+  await expect(page.getByTestId('new-document-path')).toContainText('data/level-03.json')
 })
 
 test('it cannot be asked for until it has a name', async ({ page }) => {
@@ -117,7 +117,7 @@ test('asking for a level that already exists says so, and leaves the first one a
   await nameIt(page, 'level-01')
   await page.getByTestId('new-scene-create').click()
 
-  await expect(page.getByTestId('new-scene-problem')).toContainText('already something at that path')
+  await expect(page.getByTestId('new-document-problem')).toContainText('already something at that path')
 
   // Bytes *and* timestamp: identical contents alone would also pass for a file
   // that had been rewritten with the same text, which is a different promise
@@ -131,7 +131,7 @@ test('a folder that does not exist is refused rather than made', async ({ page }
   await nameIt(page, 'chapter-two/level-03')
   await page.getByTestId('new-scene-create').click()
 
-  await expect(page.getByTestId('new-scene-problem')).toContainText('never creates one')
+  await expect(page.getByTestId('new-document-problem')).toContainText('never creates one')
   expect(fs.existsSync(fileFor('chapter-two'))).toBe(false)
 })
 

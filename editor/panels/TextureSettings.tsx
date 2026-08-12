@@ -1,7 +1,8 @@
-import type { ReactElement, ReactNode } from 'react'
+import type { ReactElement } from 'react'
 
 import { ASSET_META_FORMAT, type TextureFilter, type TextureImportSettings } from '../../runtime/formats/meta-schema'
 import { editDocument, sealEdits } from '../store/open-documents'
+import { Row } from './fields'
 import { NumberField } from './NumberField'
 
 /**
@@ -176,14 +177,5 @@ export function SaveFailure({ reason }: { reason: string }): ReactElement {
     <p className="inspector__note inspector__note--bad" data-testid="inspector-save-failure">
       These settings are not on disk: {reason} Change something else and the editor will try again.
     </p>
-  )
-}
-
-function Row({ label, children }: { label: string; children: ReactNode }): ReactElement {
-  return (
-    <div className="inspector__field">
-      <span className="inspector__label">{label}</span>
-      <span className="control-row">{children}</span>
-    </div>
   )
 }

@@ -7,13 +7,15 @@ import {
 import {
   PREFAB_FORMAT,
   PREFAB_VERSION,
+  serializePrefab,
+  type Prefab,
+} from '../../runtime/formats/prefab-schema.js'
+import {
   SCENE_FORMAT,
   SCENE_VERSION,
   defaultTransform,
-  serializePrefab,
   serializeScene,
   type Entity,
-  type Prefab,
   type Scene,
 } from '../../runtime/formats/scene-schema.js'
 import { sampleAssetId, sampleEntityId } from './ids.js'

@@ -90,10 +90,10 @@ function textures(page: Page): Promise<string[]> {
 
 async function makePrefab(page: Page, name: string): Promise<void> {
   await page.locator('[data-asset-path="prefabs"]').click()
-  const field = page.getByTestId('new-scene-name')
+  const field = page.getByTestId('new-document-name')
   await field.click()
   await field.fill(name)
-  await page.getByTestId('new-scene-create').isEnabled()
+  await expect(page.getByTestId('new-prefab-create')).toBeEnabled()
   await page.getByTestId('new-prefab-create').click()
   await expect
     .poll(() => fs.existsSync(fileFor(`prefabs/${name}.json`)), { timeout: SETTLES })
@@ -174,11 +174,11 @@ test('one press of Ctrl-Z takes the prefab change back, everywhere at once', asy
 
 test('a new prefab is made where the preview said, and opens ready to fill in', async ({ page }) => {
   await page.locator('[data-asset-path="prefabs"]').click()
-  const field = page.getByTestId('new-scene-name')
+  const field = page.getByTestId('new-document-name')
   await field.click()
   await field.fill('enemy-bat')
 
-  await expect(page.getByTestId('new-scene-path')).toContainText('prefabs/enemy-bat.json')
+  await expect(page.getByTestId('new-document-path')).toContainText('prefabs/enemy-bat.json')
 
   await page.getByTestId('new-prefab-create').click()
 
@@ -194,12 +194,12 @@ test('a name that is taken is refused, and the prefab that is there is left alon
   const before = fingerprint(SLIME_PREFAB)
 
   await page.locator('[data-asset-path="prefabs"]').click()
-  const field = page.getByTestId('new-scene-name')
+  const field = page.getByTestId('new-document-name')
   await field.click()
   await field.fill('enemy-slime')
   await page.getByTestId('new-prefab-create').click()
 
-  await expect(page.getByTestId('new-scene-problem')).toContainText('already something at that path')
+  await expect(page.getByTestId('new-document-problem')).toContainText('already something at that path')
   expect(fingerprint(SLIME_PREFAB)).toEqual(before)
 })
 

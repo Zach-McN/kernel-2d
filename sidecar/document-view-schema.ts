@@ -1,6 +1,7 @@
 import { z } from 'zod'
 
-import { PREFAB_FORMAT, PrefabSchema, SCENE_FORMAT, SceneSchema } from '../runtime/formats/scene-schema.js'
+import { PREFAB_FORMAT, PrefabSchema } from '../runtime/formats/prefab-schema.js'
+import { SCENE_FORMAT, SceneSchema } from '../runtime/formats/scene-schema.js'
 
 /**
  * The documents this service will read and write, and the answer it gives about

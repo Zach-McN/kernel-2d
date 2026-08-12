@@ -38,36 +38,40 @@ export {
 
 export {
   COMPONENT_SCHEMAS,
-  PREFAB_FORMAT,
-  PREFAB_VERSION,
-  PrefabSchema,
   SCENE_FORMAT,
   SCENE_VERSION,
   SceneSchema,
   componentOf,
   copyEntity,
   defaultEntity,
-  defaultPrefab,
   defaultScene,
   defaultTransform,
-  instanceOfPrefab,
   isKnownComponentType,
   prefabRefOf,
-  resolveEntities,
-  resolveEntity,
-  serializePrefab,
   serializeScene,
   spriteOf,
   unknownComponentTypesOf,
   type AssetRef,
+  type ComponentHolder,
   type Entity,
   type KnownComponentType,
-  type Prefab,
   type PrefabComponent,
   type Scene,
   type SpriteComponent,
   type Transform,
 } from './formats/scene-schema'
+
+export {
+  PREFAB_FORMAT,
+  PREFAB_VERSION,
+  PrefabSchema,
+  defaultPrefab,
+  instanceOfPrefab,
+  resolveEntities,
+  resolveEntity,
+  serializePrefab,
+  type Prefab,
+} from './formats/prefab-schema'
 
 export { framesFor, type FrameRect, type SlicedFrames } from './textures/frames'
 

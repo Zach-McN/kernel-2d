@@ -1,7 +1,8 @@
 import { useStore } from 'zustand'
 
 import { ASSET_META_FORMAT, type AssetMeta } from '../../runtime/formats/meta-schema'
-import { PREFAB_FORMAT, SCENE_FORMAT, type Prefab, type Scene } from '../../runtime/formats/scene-schema'
+import { PREFAB_FORMAT, type Prefab } from '../../runtime/formats/prefab-schema'
+import { SCENE_FORMAT, type Scene } from '../../runtime/formats/scene-schema'
 import { writeDocumentToDisk } from './document-disk'
 import { createDocumentStore, type Document, type DocumentState } from './documents'
 import { writeMetaToDisk } from './meta-disk'

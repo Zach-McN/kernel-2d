@@ -1,23 +1,28 @@
-import { createContext, useContext, useEffect, useMemo, useState, type ReactElement, type ReactNode } from 'react'
+import { createContext, useContext, useMemo, type ReactElement, type ReactNode } from 'react'
 
 import type { AssetMeta, TextureImportSettings } from '../../runtime/formats/meta-schema'
-import { metaPathFor } from '../../runtime/formats/meta-schema'
+import { ASSET_META_FORMAT, metaPathFor } from '../../runtime/formats/meta-schema'
 import { spriteOf, type Entity } from '../../runtime/formats/scene-schema'
 import type { SceneTexture } from '../../runtime'
 import { MetaViewSchema } from '../../sidecar/meta-view-schema'
 import type { ProjectTree } from '../../sidecar/tree-schema'
-import { adoptFromDisk, beginRead, useAllDocuments } from '../store/open-documents'
-import { findNode } from './asset-kinds'
+import { adoptFromDisk, useAllDocuments } from '../store/open-documents'
 import { useProject } from './project-context'
 import { useResolvedScene } from './scene-prefabs'
+import { referencesTo, useReferences, type Answer } from './useReferences'
 
 /**
- * Turning the texture references in a scene into something the renderer can
+ * Turning the texture references in a level into something the renderer can
  * draw, and saying what is wrong with the ones it cannot.
  *
- * **This is the first code to honour D5**, which has been written down since day
- * one and has never had anything to obey it. A reference carries a stable id
- * *and* a readable path, and the two are used differently:
+ * It is handed the level's **resolved** entities rather than the scene document,
+ * because an instance's picture is named by the prefab it points at — so which
+ * textures a level needs cannot be known from the file alone. That is why
+ * `scene-prefabs.tsx` sits above this one.
+ *
+ * **This was the first code to honour D5**, which had been written down since day
+ * one and had nothing obeying it. A reference carries a stable id *and* a
+ * readable path, and the two are used differently:
  *
  *   - **the path resolves it.** It is looked up in the project folder, which is
  *     what makes a scene greppable and lets a session understand a level by
@@ -26,6 +31,10 @@ import { useResolvedScene } from './scene-prefabs'
  *     is compared with the one the scene recorded. Disagreement means the
  *     reference now points at a *different file* than the one it was written
  *     against — somebody swapped two textures, or restored one from a backup.
+ *
+ * `scene-prefabs.tsx` does the same three things for a prefab reference, and the
+ * only difference is where the id is read from: a texture's lives in the `.meta`
+ * beside it, a prefab's inside the document itself (`editor-kernel` D24).
  *
  * Reconciling the pair after a move is a fixup tool's job and does not exist
  * yet. Until it does, the id's whole value is that the disagreement is said out
@@ -58,22 +67,8 @@ export interface SceneAssets {
 
 const EMPTY: SceneAssets = { textures: {}, problems: {}, loading: false }
 
-/** A reference to resolve: where to look, and which file the scene expected. */
-interface Wanted {
-  path: string
-  /** The id the scene recorded. The witness. */
-  expectedId: string
-  /**
-   * When the settings file beside it last changed, or 0 when there is none.
-   *
-   * Part of the fetch key, so a `.meta` edited in a text editor is asked for
-   * again while an unrelated change to the folder is not — the same reason an
-   * asset's URL carries its modification time (`editor-kernel` G11).
-   */
-  settingsVersion: number
-}
-
-function wantedIn(entities: readonly Entity[], tree: ProjectTree | null): Wanted[] {
+/** The textures a level's entities point at, deduplicated, with the id each recorded. */
+function texturesWantedBy(entities: readonly Entity[]): Map<string, string> {
   const byPath = new Map<string, string>()
   for (const entity of entities) {
     const sprite = spriteOf(entity)
@@ -81,26 +76,14 @@ function wantedIn(entities: readonly Entity[], tree: ProjectTree | null): Wanted
       byPath.set(sprite.texture.path, sprite.texture.id)
     }
   }
-
-  // Sorted so the list is comparable as a string: this drives an effect, and an
-  // array in a different order every render would re-fetch the world.
-  return [...byPath.entries()]
-    .map(([path, expectedId]) => {
-      const settings = tree === null ? null : findNode(tree, metaPathFor(path))
-      return {
-        path,
-        expectedId,
-        settingsVersion: settings !== null && settings.kind === 'file' ? settings.mtimeMs : 0,
-      }
-    })
-    .sort((a, b) => a.path.localeCompare(b.path))
+  return byPath
 }
 
 /**
  * Read once per window, shared by every panel that needs it.
  *
- * Three panels ask what a scene's textures resolve to — the Viewport draws
- * them, the Hierarchy marks the entities that cannot be drawn, and the Inspector
+ * Three panels ask what a level's textures resolve to — the Viewport draws them,
+ * the Hierarchy marks the entities that cannot be drawn, and the Inspector
  * explains why. Three callers of the hook would be three sets of requests kept
  * on three timers, and a panel a beat behind its neighbour with nothing on
  * screen saying which one is right (`editor-ui` U9). Above the layout, because
@@ -116,10 +99,7 @@ export function SceneAssetsProvider({ children }: { children: ReactNode }): Reac
   // The *resolved* entities, not the scene's own: an instance's picture is named
   // by the prefab it points at, so a level's textures cannot be known from the
   // file alone.
-  const assets = useResolvedSceneAssets(
-    resolved.entities,
-    project.state === 'ready' ? project.tree : null,
-  )
+  const assets = useResolvedSceneAssets(resolved.entities, project.state === 'ready' ? project.tree : null)
 
   return <SceneAssetsContext.Provider value={assets}>{children}</SceneAssetsContext.Provider>
 }
@@ -130,62 +110,31 @@ export function useSceneAssets(): SceneAssets {
   return assets
 }
 
+/**
+ * Asking the service for one texture's import settings, and putting them in the
+ * store — which is where every reader of them looks, including the Inspector if
+ * the human selects this same texture in the Assets panel a moment later.
+ */
+async function askForSettings(path: string, readStartedAt: number): Promise<Answer> {
+  const response = await fetch(`/api/meta?path=${encodeURIComponent(path)}`, { cache: 'no-store' })
+  if (!response.ok) return 'the editor service would not answer about it'
+
+  const view = MetaViewSchema.parse(await response.json())
+  if (view.status === 'none') return 'it has no import settings yet'
+  if (view.status === 'unreadable' || view.meta === null) {
+    return view.problem ?? 'its import settings could not be read'
+  }
+
+  adoptFromDisk(view.path, view.meta, readStartedAt)
+  return null
+}
+
 function useResolvedSceneAssets(entities: readonly Entity[], tree: ProjectTree | null): SceneAssets {
-  const wanted = wantedIn(entities, tree)
-  const fetchKey = wanted.map((one) => `${one.path}@${one.settingsVersion}`).join('\n')
-
-  /**
-   * What asking for one texture's settings came to, keyed the same way the
-   * fetch is. `null` means the settings arrived and are in the store; a string
-   * is the reason there are none.
-   */
-  const [answers, setAnswers] = useState<Readonly<Record<string, string | null>>>({})
-
-  useEffect(() => {
-    if (wanted.length === 0) return
-
-    let stopped = false
-    const fresh = wanted.filter((one) => answers[`${one.path}@${one.settingsVersion}`] === undefined)
-    if (fresh.length === 0) return
-
-    void Promise.all(
-      fresh.map(async (one): Promise<[string, string | null]> => {
-        const at = `${one.path}@${one.settingsVersion}`
-        // Taken before the question is asked: a late answer is
-        // indistinguishable from a fresh one, and the store is what needs to be
-        // able to tell them apart.
-        const readStartedAt = beginRead()
-        try {
-          const response = await fetch(`/api/meta?path=${encodeURIComponent(one.path)}`, {
-            cache: 'no-store',
-          })
-          if (!response.ok) return [at, 'the editor service would not answer about it']
-
-          const view = MetaViewSchema.parse(await response.json())
-          if (view.status === 'none') return [at, 'it has no import settings yet']
-          if (view.status === 'unreadable' || view.meta === null) {
-            return [at, view.problem ?? 'its import settings could not be read']
-          }
-
-          // Straight into the store, which is where every reader of these
-          // settings looks — including the Inspector, if the human selects this
-          // same texture in the Assets panel a moment later.
-          adoptFromDisk(view.path, view.meta, readStartedAt)
-          return [at, null]
-        } catch {
-          return [at, 'the editor service could not be reached']
-        }
-      }),
-    ).then((settled) => {
-      if (stopped) return
-      setAnswers((previous) => ({ ...previous, ...Object.fromEntries(settled) }))
-    })
-
-    return () => {
-      stopped = true
-    }
-    // Keyed on the string rather than the array, which is rebuilt every render.
-  }, [fetchKey])
+  // Keyed on the `.meta` beside each texture rather than on the texture itself:
+  // what is being asked for here is the settings, and those change when the
+  // sidecar does.
+  const wanted = referencesTo(texturesWantedBy(entities), tree, metaPathFor)
+  const followed = useReferences(wanted, tree, askForSettings)
 
   // The whole document map, which is reference-stable until something in it
   // actually changes — so editing a texture's filtering re-runs this and moving
@@ -200,32 +149,23 @@ function useResolvedSceneAssets(entities: readonly Entity[], tree: ProjectTree |
     let loading = false
 
     for (const one of wanted) {
-      const node = tree === null ? null : findNode(tree, one.path)
+      const state = followed.states[one.path]
 
-      if (tree === null) {
-        // Before the folder has been read everything is missing, and saying so
-        // would be a lie.
+      if (state === undefined || state.kind === 'loading') {
         loading = true
         continue
       }
-
-      if (node === null || node.kind !== 'file') {
+      if (state.kind === 'missing') {
         problems[one.path] = { kind: 'missing', path: one.path }
         continue
       }
-
-      const answer = answers[`${one.path}@${one.settingsVersion}`]
-      if (answer === undefined) {
-        loading = true
-        continue
-      }
-      if (answer !== null) {
-        problems[one.path] = { kind: 'no-settings', path: one.path, detail: answer }
+      if (state.kind === 'unusable') {
+        problems[one.path] = { kind: 'no-settings', path: one.path, detail: state.detail }
         continue
       }
 
       const document = documents[one.path]
-      if (document === undefined || document.format !== 'kernel2d.asset-meta') {
+      if (document === undefined || document.format !== ASSET_META_FORMAT) {
         // The gap of one render between the answer arriving and the store
         // settling. Not a problem, just not ready.
         loading = true
@@ -252,11 +192,13 @@ function useResolvedSceneAssets(entities: readonly Entity[], tree: ProjectTree |
       }
 
       const settings: TextureImportSettings = meta.importSettings
-      textures[one.path] = { version: node.mtimeMs, settings }
+      // The texture's own modification time, which is what the renderer uses to
+      // notice the bytes changed (`editor-kernel` G11).
+      textures[one.path] = { version: state.node.mtimeMs, settings }
     }
 
     return { textures, problems, loading }
-  }, [fetchKey, answers, documents, tree])
+  }, [followed, documents])
 }
 
 /** Every texture problem in a scene, most useful first, as one list. */
