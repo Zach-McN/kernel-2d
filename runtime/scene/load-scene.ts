@@ -1,7 +1,7 @@
 import type { z } from 'zod'
 
-import { ASSET_META_FORMAT, AssetMetaSchema, metaPathFor, type AssetMeta } from '../formats/meta-schema'
-import { PREFAB_FORMAT, PrefabSchema, resolveEntities, type Prefab } from '../formats/prefab-schema'
+import { ASSET_META_FORMAT, AssetMetaSchema, metaPathFor, type AssetMeta } from '../formats/meta-schema.js'
+import { PREFAB_FORMAT, PrefabSchema, resolveEntities, type Prefab } from '../formats/prefab-schema.js'
 import {
   SCENE_FORMAT,
   SceneSchema,
@@ -9,8 +9,8 @@ import {
   spriteOf,
   type Entity,
   type Scene,
-} from '../formats/scene-schema'
-import type { SceneRequest, SceneTexture } from './scene-view'
+} from '../formats/scene-schema.js'
+import type { SceneRequest, SceneTexture } from './scene-request.js'
 
 /**
  * Opening a level and turning it into something the renderer can draw — the
@@ -38,6 +38,14 @@ import type { SceneRequest, SceneTexture } from './scene-view'
  *     those is the function the editor already calls. Two derivations of what a
  *     level *is* would be the editor and the shipped game disagreeing about the
  *     game, which is D2's failure with a longer fuse.
+ *
+ * **This file is compiled by both TypeScript projects, so it may reach only
+ * modules that are** — no Phaser, no DOM, and relative imports spelled `./x.js`
+ * (`text-formats` T10/T14). That is not housekeeping: the export command opens a
+ * project by calling this loader in plain Node, which is the only way "the folder
+ * I am about to hand over will load" can be checked with the same code that will
+ * load it. The two types it needs from the renderer live in `scene-request.ts`
+ * for exactly this reason.
  *
  * **What fails the whole load, and what is merely named.** Only the level itself
  * is fatal: no file, or a file that will not parse. A prefab that has gone, a

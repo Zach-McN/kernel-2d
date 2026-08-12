@@ -1,9 +1,9 @@
 import * as Phaser from 'phaser'
 
-import type { TextureImportSettings } from '../formats/meta-schema'
-import { spriteOf, type Entity, type Scene } from '../formats/scene-schema'
+import { spriteOf, type Entity } from '../formats/scene-schema'
 import { applyImportSettings } from '../textures/import-settings'
 import { createEntityLayer, type DrawnEntity, type EntityLayer, type ResolvedSprite } from './entity-layer'
+import type { SceneRequest, SceneTexture } from './scene-request'
 import {
   DEFAULT_CAMERA,
   snapCamera,
@@ -30,27 +30,12 @@ import {
  * can each answer that question their own way (editor-kernel D1).
  */
 
-/** What the caller can tell this view about one texture the scene refers to. */
-export interface SceneTexture {
-  /** Changes whenever the file on disk does. Half the cache key. */
-  version: number
-  settings: TextureImportSettings
-}
-
-export interface SceneRequest {
-  /** The scene's own path, project-relative. Reported back so the caller can tell what it is looking at. */
-  path: string
-  scene: Scene
-  /**
-   * The textures this scene may draw, keyed by project-relative path.
-   *
-   * Only what the caller could actually supply: a texture missing from here is
-   * one the editor already knows it cannot draw — it is not in the project, or
-   * its import settings have not arrived — and saying so in words is the
-   * editor's job, not this renderer's.
-   */
-  textures: Readonly<Record<string, SceneTexture>>
-}
+/**
+ * What this view is asked to draw is declared next door, in a module the Node
+ * half of the repo can compile — see the note at the top of `scene-request.ts`
+ * for why that mattered. Re-exported here so nothing downstream can tell.
+ */
+export type { SceneRequest, SceneTexture }
 
 export interface ShownScene {
   path: string
@@ -64,12 +49,24 @@ export interface ShownScene {
   /** The canvas, in CSS pixels — what the overlay is drawing on top of. */
   canvasSize: Size
   /**
-   * The camera this was actually drawn with, rather than the one that was
-   * asked for. Same instinct as reading a filter back off a live texture: a
-   * caption built from the request keeps saying the right thing long after the
-   * line that applies it stops working.
+   * The camera this scene was *asked* to be drawn with — deliberately, and it
+   * is not quite the one it was drawn with. See `drawnWith` below: the pair
+   * exists because those two answer different questions.
    */
   camera: Camera
+  /**
+   * The camera actually used: `camera` nudged by less than a pixel onto the
+   * device's own grid, which is how pixel art is kept crisp (`phaser4-runtime`
+   * P5). Every rectangle reported in `entities` was drawn through *this* one, so
+   * it is the camera to invert with when turning the report back into the
+   * level's own units — `contentBounds` is already arrived at that way.
+   *
+   * It is reported alongside `camera` rather than instead of it because a caller
+   * that stored this one would find its own state disagreeing with itself on the
+   * next comparison: the snap depends on the canvas size, so a resize would look
+   * like the human had moved the view. Read it, invert with it, never keep it.
+   */
+  drawnWith: Camera
   /**
    * The extent of everything drawn, in **scene** units, or null for a scene
    * with nothing in it.
@@ -217,6 +214,7 @@ export async function createSceneView(options: SceneViewOptions): Promise<SceneV
       sceneOrigin: toScreenPoint({ x: 0, y: 0 }, drawing, canvasSize),
       canvasSize: { ...canvasSize },
       camera,
+      drawnWith: drawing,
       contentBounds: extentOf(entities, drawing, canvasSize),
       undrawable: undrawableIn(request, available, textureKeyFor),
     }

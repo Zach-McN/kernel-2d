@@ -32,6 +32,7 @@ function picture(entities: DrawnEntity[], overrides: Partial<ShownScene> = {}): 
     sceneOrigin: { x: 0, y: 360 },
     canvasSize: { width: 640, height: 360 },
     camera: { scale: 2, focus: { x: 0, y: 0 } },
+    drawnWith: { scale: 2, focus: { x: 0, y: 0 } },
     contentBounds: null,
     undrawable: [],
     ...overrides,

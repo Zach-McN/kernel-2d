@@ -11,6 +11,12 @@ import {
   type Prefab,
 } from '../../runtime/formats/prefab-schema.js'
 import {
+  PROJECT_FORMAT,
+  PROJECT_VERSION,
+  serializeProject,
+  type Project,
+} from '../../runtime/formats/project-schema.js'
+import {
   SCENE_FORMAT,
   SCENE_VERSION,
   defaultTransform,
@@ -35,9 +41,10 @@ import { decay, encodeWav, sine } from './wav.js'
  * document that is not one is a trap for whoever opens it, and real ones can
  * simply be dropped in.
  *
- * The scenes and the prefab are real documents now that their schemas exist. The
- * data files are still placeholders that say so in their own contents, because
- * those formats have no schema yet — plausible-looking contents are how a wrong
+ * The scenes, the prefab and the project's own settings are real documents now
+ * that their schemas exist. The data files are still placeholders that say so in
+ * their own contents, because those formats have no schema yet — and
+ * plausible-looking contents are how a wrong
  * format quietly becomes precedent. Everything real here is valid on purpose: a
  * deliberately broken sample would be a trap for whoever opened it, so the
  * broken cases are produced by tests against a throwaway copy instead.
@@ -179,11 +186,35 @@ export function sampleFiles(generatedAt: string): SampleFile[] {
       marking: 'inside',
     },
 
+    // --- the project's own settings, which is a real format now -----------
+    {
+      path: 'project.json',
+      contents: serializeProject(projectSettings(generatedAt)),
+      marking: 'inside',
+    },
+
     // --- formats that do not exist yet ------------------------------------
     { path: 'data/items.json', contents: note('Placeholder for the item database. No schema for it exists yet.'), marking: 'inside' },
     { path: 'data/waves.json', contents: note('Placeholder for the wave schedule. No schema for it exists yet.'), marking: 'inside' },
-    { path: 'project.json', contents: note('Placeholder project settings. The real format lands with the runtime.'), marking: 'inside' },
   ]
+}
+
+/**
+ * The project's settings: which level the game starts on.
+ *
+ * Level one rather than level two, because the export is the first thing anybody
+ * will try and the level with a knight standing on grass is the better first
+ * picture. Changing it is a one-click job in the Inspector, which is the point of
+ * setting it to something rather than leaving it null.
+ */
+function projectSettings(generatedAt: string): Project {
+  return {
+    format: PROJECT_FORMAT,
+    version: PROJECT_VERSION,
+    startupScene: LEVEL_ONE,
+    generatedBy: GENERATED_BY,
+    generatedAt,
+  }
 }
 
 // --- the scenes -------------------------------------------------------------

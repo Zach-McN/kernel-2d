@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>kernel-2d game</title>
+    <!--
+      The whole of an exported game's page.
+
+      It is the only HTML the runtime owns, and it is deliberately this short: a
+      shipped game is a canvas and, when something is wrong, one sentence over it.
+      There is no menu, no loading bar and no chrome, because none of those is a
+      thing this kernel can do yet and a page that pretended otherwise would be the
+      page lying about the game.
+
+      Two things in the styling are load-bearing rather than taste. The canvas host
+      fills the window exactly, so the framing has one box to fit and nothing can
+      quietly change it. And the sentence is positioned *over* the host rather than
+      under it: a caption inside the measured box changes the size of the box, and
+      the framing is computed from that size, so a message appearing would reframe
+      the level (`editor-ui` UG8).
+    -->
+    <style>
+      :root {
+        color-scheme: dark;
+      }
+
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        height: 100%;
+        overflow: hidden;
+        background: #14161c;
+        color: #e8ecf2;
+        font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+      }
+
+      #game {
+        position: absolute;
+        inset: 0;
+        display: block;
+      }
+
+      #game canvas {
+        display: block;
+      }
+
+      /* Over the picture, never in the box that gets measured. */
+      #say {
+        position: fixed;
+        inset: auto 0 0 0;
+        margin: 0;
+        padding: 10px 14px;
+        background: rgba(20, 22, 28, 0.88);
+        border-top: 1px solid #2b3040;
+      }
+
+      #say.bad {
+        color: #ffb4b4;
+      }
+
+      #say[hidden] {
+        display: none;
+      }
+    </style>
+  </head>
+  <body>
+    <main id="game"></main>
+    <p id="say" hidden></p>
+    <script>
+      /*
+       * Opened from the disk rather than served, said by the only kind of script
+       * that can say it.
+       *
+       * A browser gives every `file://` document its own opaque origin, so fetching
+       * the level beside this page is refused and a texture would be refused again on
+       * its way to the graphics card. **And a module script is refused before either
+       * of those** — which is why this check cannot live in the game: the game would
+       * never load to make it.
+       *
+       * So it is a plain inline script, which is the one thing that still runs, and
+       * it says the sentence and stops. Without it the page is blank with an error in
+       * a console nobody has open, which is not something anybody should have to
+       * debug to look at a game.
+       */
+      if (window.location.protocol === 'file:') {
+        var line = document.getElementById('say')
+        line.textContent =
+          'This page has to be served rather than opened from the disk — a browser will not let a page ' +
+          'opened from a folder read the files beside it. Serve this folder over http and open it from there.'
+        line.className = 'bad'
+        line.hidden = false
+      }
+    </script>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

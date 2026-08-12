@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, type ReactElement, type ReactNode, type RefObject } from 'react'
 
-import { describeLoadProblem, type SceneRequest, type ShownScene } from '../../runtime'
+import { describeLoadProblem, inSceneUnits, type SceneRequest, type ShownScene } from '../../runtime'
 import { SCENE_FORMAT, type Entity } from '../../runtime/formats/scene-schema'
 import { basename } from '../shell/asset-kinds'
 import { entityAt, onScreen } from '../shell/drawn-entities'
@@ -126,9 +126,19 @@ export function ViewportPanel(): ReactElement {
       data-testid="viewport-panel"
       data-scene-showing={current?.path ?? ''}
       data-scene-drawn={current === null ? '' : String(current.entities.filter((e) => e.bounds !== null).length)}
-      // What the camera actually drew with, rather than what it was asked for.
-      // A caption or a test built from the request would keep claiming the view
-      // was right long after the line that applies it stopped working.
+      // The picture in the level's own units. Every other hook here is in screen
+      // pixels, which is the right unit for anything drawn over this canvas and
+      // the wrong one for comparing this picture with a picture of the same level
+      // somewhere else — an exported game is a differently-sized window and so a
+      // different framing. In level units the two agree exactly, which is what
+      // makes "the folder I shipped draws what the editor drew" checkable rather
+      // than eyeballed. One shared function, on the renderer's own report
+      // (`runtime/scene/drawn-in-scene.ts`). It carries whichever picture is
+      // current, so it describes the running level while one is running.
+      data-scene-units={current === null ? '' : JSON.stringify(inSceneUnits(current))}
+      // The camera as it was asked for. The sub-pixel nudge the renderer adds on
+      // top is presentation and is deliberately not here; `drawnWith` on the
+      // report is where anything inverting the picture gets it from.
       data-scene-scale={camera === null ? '' : String(camera.scale)}
       data-scene-focus-x={camera === null ? '' : String(camera.focus.x)}
       data-scene-focus-y={camera === null ? '' : String(camera.focus.y)}

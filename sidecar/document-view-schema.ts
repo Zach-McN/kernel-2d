@@ -1,6 +1,7 @@
 import { z } from 'zod'
 
 import { PREFAB_FORMAT, PrefabSchema } from '../runtime/formats/prefab-schema.js'
+import { PROJECT_FORMAT, ProjectSchema } from '../runtime/formats/project-schema.js'
 import { SCENE_FORMAT, SceneSchema } from '../runtime/formats/scene-schema.js'
 
 /**
@@ -33,10 +34,16 @@ export const DOCUMENT_VIEW_VERSION = 1
  * format was one line here and nothing anywhere else: reading, creating and
  * replacing all look the answer up in this object, so the write privilege at the
  * top of `document-files.ts` is the same four lines it was with one format in it.
+ * The project settings were the third, and cost the same one line — including the
+ * guard that matters most, which is that a document is only ever replaced by one
+ * of the format already at that path. A valid set of project settings sent at the
+ * path of somebody's level is refused by a rule that was written before either
+ * format existed.
  */
 export const DOCUMENT_SCHEMAS = {
   [SCENE_FORMAT]: SceneSchema,
   [PREFAB_FORMAT]: PrefabSchema,
+  [PROJECT_FORMAT]: ProjectSchema,
 } as const
 
 export type EditorDocument = z.infer<(typeof DOCUMENT_SCHEMAS)[keyof typeof DOCUMENT_SCHEMAS]>

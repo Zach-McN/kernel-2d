@@ -11,6 +11,8 @@
     "editor": "tsx scripts/editor.ts",
     "sidecar": "tsx sidecar/main.ts",
     "sample-project": "tsx scripts/sample-project.ts",
+    "export": "tsx scripts/export.ts",
+    "serve": "tsx scripts/serve.ts",
     "dev": "vite",
     "build:editor": "vite build",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.editor.json",

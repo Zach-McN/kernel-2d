@@ -3,6 +3,7 @@ import { createStore } from 'zustand/vanilla'
 
 import type { AssetMeta } from '../../runtime/formats/meta-schema'
 import type { Prefab } from '../../runtime/formats/prefab-schema'
+import type { Project } from '../../runtime/formats/project-schema'
 import type { Scene } from '../../runtime/formats/scene-schema'
 
 /**
@@ -39,15 +40,17 @@ enablePatches()
  * member it is holding: undo is patches over a map of JSON, and every rule in
  * this file — merging, coalescing, staleness, the save debounce — is the same
  * whether the thing being edited is a texture's import settings or a level.
- * That is the whole payoff of document-level undo (editor-kernel D7): the scene
- * and prefab formats both arrived and not one line of undo was written for
- * either.
+ * That is the whole payoff of document-level undo (editor-kernel D7): the scene,
+ * prefab and project formats all arrived and not one line of undo was written for
+ * any of them. Choosing which level the game starts on is undoable, saved after a
+ * quiet period and safe against a text editor changing the file underneath — none
+ * of which is code anybody wrote for it.
  *
  * The only place the difference shows is which service endpoint the write goes
  * to, and that is one small branch on `format` in `open-documents.ts` — the
  * `.meta` has an endpoint of its own; every real document goes out of the other.
  */
-export type Document = AssetMeta | Scene | Prefab
+export type Document = AssetMeta | Scene | Prefab | Project
 
 export interface DocumentState {
   /** Keyed by the project-relative path of the file the settings belong to. */

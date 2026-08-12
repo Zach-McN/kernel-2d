@@ -7,6 +7,7 @@ import {
   type ImportSettings,
 } from '../../runtime/formats/meta-schema'
 import { PREFAB_FORMAT } from '../../runtime/formats/prefab-schema'
+import { PROJECT_FORMAT } from '../../runtime/formats/project-schema'
 import { prefabRefOf } from '../../runtime/formats/scene-schema'
 import { formatBytes } from '../../sidecar/bytes'
 import type { MetaView } from '../../sidecar/meta-view-schema'
@@ -20,10 +21,16 @@ import { useSceneAssets } from '../shell/scene-assets'
 import { useResolvedScene } from '../shell/scene-prefabs'
 import { useSelection } from '../shell/selection'
 import type { AssetMetaState } from '../shell/useAssetMeta'
-import { useMetaDocument, usePrefabDocument, useSaveFailure } from '../store/open-documents'
+import {
+  useMetaDocument,
+  usePrefabDocument,
+  useProjectDocument,
+  useSaveFailure,
+} from '../store/open-documents'
 import { EntityInspector } from './EntityInspector'
 import { Field, Note, Section } from './fields'
 import { PrefabInspector } from './PrefabInspector'
+import { ProjectInspector } from './ProjectInspector'
 import { SaveFailure, TextureSettings } from './TextureSettings'
 
 /**
@@ -217,10 +224,11 @@ function FileBody({ node, meta }: FileBodyProps): ReactElement {
 /**
  * What a document holds, for a file the editor opens rather than imports.
  *
- * The interesting case is the scene, and what it says is deliberately short: a
- * scene's properties *are* its entities, and those are the Hierarchy's to list
- * and the entity inspector's to tune. Repeating them here would be a second
- * place to read the same thing.
+ * Three formats have a body of their own now, each reached by what the document
+ * says it is. The scene's is the fall-through and is deliberately short: a scene's
+ * properties *are* its entities, and those are the Hierarchy's to list and the
+ * entity inspector's to tune. Repeating them here would be a second place to read
+ * the same thing.
  */
 function DocumentBody({ path }: { path: string }): ReactElement {
   const answer = useDocumentAnswer(path)
@@ -264,7 +272,11 @@ function DocumentBody({ path }: { path: string }): ReactElement {
     )
   }
 
+  // Which body a document gets is decided by the `format` it carries, never by
+  // where it sits or what it is called (`editor-ui` U11) — so a project's settings
+  // are recognised wherever somebody keeps them.
   if (answer.view.document?.format === PREFAB_FORMAT) return <PrefabBody path={path} />
+  if (answer.view.document?.format === PROJECT_FORMAT) return <ProjectBody path={path} />
 
   const scene = open.state === 'open' && open.path === path ? open.scene : null
 
@@ -313,6 +325,42 @@ function PrefabBody({ path }: { path: string }): ReactElement {
         <Field label="Format" value="Prefab" testId="inspector-document-format" />
       </Section>
       <PrefabInspector path={path} prefab={prefab} tree={project.state === 'ready' ? project.tree : null} />
+    </>
+  )
+}
+
+/**
+ * The project's own settings, with controls.
+ *
+ * From the store rather than from the served answer, on the same grounds as a
+ * prefab and a texture's import settings (`editor-ui` U12). The served answer above
+ * is still what decides this file is project settings at all.
+ */
+function ProjectBody({ path }: { path: string }): ReactElement {
+  const project = useProject()
+  const settings = useProjectDocument(path)
+  const saveFailure = useSaveFailure(path)
+
+  if (settings === null) {
+    return (
+      <Section title="Document">
+        <Field label="Format" value="Project settings" testId="inspector-document-format" />
+        <Note>Reading it…</Note>
+      </Section>
+    )
+  }
+
+  return (
+    <>
+      <Section title="Document">
+        <Field label="Format" value="Project settings" testId="inspector-document-format" />
+        {saveFailure !== null && <SaveFailure reason={saveFailure} />}
+      </Section>
+      <ProjectInspector
+        path={path}
+        project={settings}
+        tree={project.state === 'ready' ? project.tree : null}
+      />
     </>
   )
 }

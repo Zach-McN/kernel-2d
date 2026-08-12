@@ -30,6 +30,7 @@ function shown(entities: DrawnEntity[]): ShownScene {
     sceneOrigin: { x: 0, y: 400 },
     canvasSize: { width: 800, height: 400 },
     camera: DEFAULT_CAMERA,
+    drawnWith: DEFAULT_CAMERA,
     contentBounds: null,
     undrawable: [],
   }

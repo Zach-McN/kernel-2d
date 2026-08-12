@@ -73,6 +73,15 @@ export {
   type Prefab,
 } from './formats/prefab-schema'
 
+export {
+  PROJECT_FORMAT,
+  PROJECT_VERSION,
+  ProjectSchema,
+  defaultProject,
+  serializeProject,
+  type Project,
+} from './formats/project-schema'
+
 export { framesFor, type FrameRect, type SlicedFrames } from './textures/frames'
 
 export {
@@ -93,7 +102,11 @@ export {
   type Size,
 } from './scene/coordinates'
 
+export { ZOOM_STEPS, fitStep } from './scene/scale-steps'
+
 export type { DrawnEntity } from './scene/entity-layer'
+
+export { inSceneUnits, type DrawnInScene } from './scene/drawn-in-scene'
 
 export {
   describeLoadProblem,
