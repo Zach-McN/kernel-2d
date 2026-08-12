@@ -47,7 +47,7 @@ Two distinct structures are in play. **This repo** is the editor software. A **g
 | `sidecar/` | The Node background process that owns the disk: chokidar file watching, `.meta` generation, JSON read/write API, static asset serving. Development-only, never ships. |
 | `scripts/` | Development entry points and their settings — `npm run editor` lives here, along with the editor window's host/port knobs. Never ships. |
 | `tests/` | Vitest unit tests and Playwright browser tests. Sample data lives in `tests/fixtures/` — never in a real content folder. |
-| `docs/` | The feasibility report; genre specs as they're written. |
+| `docs/` | The feasibility report; `using-the-editor.md`, the human's page of what the editor can do and how to run it; genre specs as they're written. |
 
 Plus root-level `CLAUDE.md`, `.gitattributes`, `package.json`, and the symlink to the `gamedev-skills` library.
 
@@ -74,8 +74,9 @@ Training data skews heavily Phaser 3. **Check the vendored Phaser 4 docs before 
 2. Vitest passes, including round-trip tests (`load(save(x)) === x`) for every schema touched.
 3. Playwright smoke pass is green; visual changes are screenshot-verified.
 4. **Dual-write:** the relevant SKILL.md files are updated. A session must either record at least one new Decision, Gotcha, or Contract, or state plainly that nothing new was learned and why. A code change without a skill update is an incomplete change, same as a change without tests.
-5. **Both repos clean.** Skill edits land in the linked `gamedev-skills` repo — commit and push there as well as here. Commit before starting work and after finishing.
-6. **Hand off a test plan.** End every session with concrete steps for the human to verify by hand ("open the editor, drop a PNG in assets/textures, confirm it appears within a second"), phrased as observable behavior.
+5. **Update the human's page.** `docs/using-the-editor.md` says what the editor can do, how to run it, and what it deliberately cannot do yet. If a session changed any of those three, that page changes in the same commit — including deleting a line from "cannot do yet". If it changed none of them, say so. It is written in observable behavior with no code in it, and it is the human's page rather than a session's: the skills hold *why*, this holds *what*.
+6. **Both repos clean.** Skill edits land in the linked `gamedev-skills` repo — commit and push there as well as here. Commit before starting work and after finishing.
+7. **Hand off a test plan.** End every session with concrete steps for the human to verify by hand ("open the editor, drop a PNG in assets/textures, confirm it appears within a second"), phrased as observable behavior.
 
 No session ends red. If checks fail, fix them or revert. If work must stop mid-feature, park it on a branch marked WIP — never leave `main` red.
 
