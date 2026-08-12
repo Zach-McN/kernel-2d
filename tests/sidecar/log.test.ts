@@ -104,7 +104,9 @@ describe('the banner printed at startup', () => {
   })
 
   it('names the editor window too, when the sidecar is running behind one', () => {
-    const banner = formatBanner(config, tree(1, 1), 'http://127.0.0.1:7331', 'http://127.0.0.1:5173/').join('\n')
+    const banner = formatBanner(config, tree(1, 1), 'http://127.0.0.1:7331', {
+      editorUrl: 'http://127.0.0.1:5173/',
+    }).join('\n')
 
     expect(banner).toContain('kernel-2d editor')
     expect(banner).toContain('http://127.0.0.1:5173/')

@@ -1,21 +1,22 @@
 import { useState, type ReactElement } from 'react'
 
 import { formatBytes } from '../../sidecar/bytes'
-import type { TreeNode } from '../../sidecar/tree-schema'
-import { useProjectTree } from '../shell/useProjectTree'
+import { assetRowsFor, type AssetRow } from '../shell/asset-rows'
+import { useProject } from '../shell/project-context'
+import { useSelection } from '../shell/selection'
 
 /**
- * The project folder, mirrored exactly.
+ * The project folder, mirrored. Selecting anything here is what the Inspector
+ * answers about.
  *
- * Everything on disk is shown, including the `.meta` sidecars — the folder is
- * the database, and a browser that quietly hides part of it is no longer a
- * mirror. Folding a sidecar into the row of the asset it belongs to is a job
- * for the feature that gives those files meaning.
+ * Which rows a folder has — and why a `.meta` is folded into the row of the
+ * file it annotates — is decided in `asset-rows.ts`, because the Inspector has
+ * to count a folder's contents the same way this lists them.
  */
 export function AssetsPanel(): ReactElement {
-  const project = useProjectTree()
+  const project = useProject()
+  const selection = useSelection()
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set())
-  const [selected, setSelected] = useState<string | null>(null)
 
   const toggle = (path: string): void => {
     setExpanded((previous) => {
@@ -46,15 +47,15 @@ export function AssetsPanel(): ReactElement {
       )}
 
       <ul className="assets__tree" role="tree" aria-label="Project folder">
-        {project.tree.tree.children.map((node) => (
+        {assetRowsFor(project.tree.tree.children).map((row) => (
           <AssetNode
-            key={node.path}
-            node={node}
+            key={row.node.path}
+            row={row}
             depth={0}
             expanded={expanded}
-            selected={selected}
+            selected={selection.path}
             onToggle={toggle}
-            onSelect={setSelected}
+            onSelect={selection.select}
           />
         ))}
       </ul>
@@ -67,7 +68,7 @@ export function AssetsPanel(): ReactElement {
 }
 
 interface AssetNodeProps {
-  node: TreeNode
+  row: AssetRow
   depth: number
   expanded: ReadonlySet<string>
   selected: string | null
@@ -75,7 +76,8 @@ interface AssetNodeProps {
   onSelect: (path: string) => void
 }
 
-function AssetNode({ node, depth, expanded, selected, onToggle, onSelect }: AssetNodeProps): ReactElement {
+function AssetNode({ row, depth, expanded, selected, onToggle, onSelect }: AssetNodeProps): ReactElement {
+  const { node } = row
   const isFolder = node.kind === 'directory'
   const isOpen = isFolder && expanded.has(node.path)
 
@@ -88,21 +90,36 @@ function AssetNode({ node, depth, expanded, selected, onToggle, onSelect }: Asse
         data-asset-path={node.path}
         data-kind={node.kind}
         data-selected={selected === node.path}
-        onClick={() => (isFolder ? onToggle(node.path) : onSelect(node.path))}
+        data-has-settings={row.hasSettings}
+        data-orphaned-settings={row.isOrphanedSettings}
+        onClick={() => {
+          onSelect(node.path)
+          if (isFolder) onToggle(node.path)
+        }}
       >
         <span className="asset-row__chevron" aria-hidden="true">
           {isFolder ? (isOpen ? '▾' : '▸') : ''}
         </span>
         <span className="asset-row__name">{node.name}</span>
+        {row.hasSettings && (
+          <span className="asset-row__badge" title="Has import settings beside it">
+            meta
+          </span>
+        )}
+        {row.isOrphanedSettings && (
+          <span className="asset-row__badge asset-row__badge--orphan" title="Import settings with no file beside them">
+            orphaned
+          </span>
+        )}
         {!isFolder && <span className="asset-row__size">{formatBytes(node.size)}</span>}
       </button>
 
       {isFolder && isOpen && (
         <ul className="assets__tree" role="group">
-          {node.children.map((child) => (
+          {assetRowsFor(node.children).map((child) => (
             <AssetNode
-              key={child.path}
-              node={child}
+              key={child.node.path}
+              row={child}
               depth={depth + 1}
               expanded={expanded}
               selected={selected}

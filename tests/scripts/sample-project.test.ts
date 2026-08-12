@@ -3,6 +3,7 @@ import path from 'node:path'
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
+import { AssetMetaSchema } from '../../sidecar/meta-schema.js'
 import { writeSampleProject } from '../../scripts/sample/write.js'
 import { makeTempProject, type TempProject } from '../fixtures/project-fixture.js'
 
@@ -82,14 +83,61 @@ describe('filling a project folder with sample content', () => {
     expect(scene).toMatchObject({ generatedBy: expect.any(String), generatedAt: GENERATED_AT })
   })
 
+  it('writes import settings the editor can actually open', () => {
+    const report = build()
+
+    // Generated content is held to the same schema as anything a human writes:
+    // a sample folder the editor could not open would be testing nothing.
+    for (const written of report.written) {
+      const metaPath = `${project.file(written)}.meta`
+      if (!fs.existsSync(metaPath)) continue
+      expect(() => AssetMetaSchema.parse(JSON.parse(fs.readFileSync(metaPath, 'utf8'))), written).not.toThrow()
+    }
+  })
+
+  it('says how the sheets in it are cut up, so there is something to look at', () => {
+    build()
+
+    const strip = AssetMetaSchema.parse(
+      JSON.parse(fs.readFileSync(`${project.file('assets/textures/characters/knight-run-strip.png')}.meta`, 'utf8')),
+    )
+
+    expect(strip.type).toBe('texture')
+    expect(strip.importSettings).toMatchObject({
+      slice: { mode: 'grid', frameWidth: 16, frameHeight: 16 },
+      pivot: { x: 0.5, y: 1 },
+    })
+  })
+
+  it('gives every asset an id of its own', () => {
+    build()
+
+    const idOf = (assetPath: string): string =>
+      AssetMetaSchema.parse(JSON.parse(fs.readFileSync(`${project.file(assetPath)}.meta`, 'utf8'))).id
+
+    const ids = [
+      idOf('assets/textures/characters/knight-idle.png'),
+      idOf('assets/textures/characters/slime.png'),
+      idOf('assets/audio/sfx/jump.wav'),
+      idOf('assets/fonts/pixel-8.fnt'),
+    ]
+
+    expect(new Set(ids).size).toBe(ids.length)
+  })
+
   it('produces the same bytes every time, so re-running does not churn the folder', () => {
     build()
     const first = fs.readFileSync(project.file('assets/textures/tiles/tileset-grass.png'))
+    const firstMeta = fs.readFileSync(`${project.file('assets/textures/tiles/tileset-grass.png')}.meta`)
 
     build()
     const second = fs.readFileSync(project.file('assets/textures/tiles/tileset-grass.png'))
+    const secondMeta = fs.readFileSync(`${project.file('assets/textures/tiles/tileset-grass.png')}.meta`)
 
     expect(second.equals(first)).toBe(true)
+    // Including the ids: minted at random they would change on every run, and
+    // the churn would bury every real change in the noise.
+    expect(secondMeta.equals(firstMeta)).toBe(true)
   })
 
   it('leaves a file alone when nothing marks it as generated', () => {

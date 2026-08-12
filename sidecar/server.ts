@@ -4,6 +4,7 @@ import path from 'node:path'
 
 import { toFileEventMessage } from './event-schema.js'
 import { createEventFeed, type EventFeed } from './feed.js'
+import { BadPathError, readMetaView } from './meta-files.js'
 import { scanProject } from './scan.js'
 import { toPosixPath } from './paths.js'
 import { SIDECAR_STATUS_FORMAT, SIDECAR_STATUS_VERSION, type SidecarStatus } from './status-schema.js'
@@ -107,7 +108,8 @@ async function handleRequest(
     return
   }
 
-  const pathname = new URL(request.url ?? '/', `http://${context.options.host}`).pathname
+  const url = new URL(request.url ?? '/', `http://${context.options.host}`)
+  const pathname = url.pathname
 
   if (pathname === '/') {
     sendJson(response, 200, statusOf(context.options))
@@ -120,6 +122,25 @@ async function handleRequest(
     } catch (error) {
       sendJson(response, 500, {
         error: 'Could not read the project folder',
+        detail: error instanceof Error ? error.message : String(error),
+      })
+    }
+    return
+  }
+
+  if (pathname === '/meta') {
+    // A missing parameter is answered the same way a bad one is: this endpoint
+    // only ever speaks about one named file.
+    const requested = url.searchParams.get('path') ?? ''
+    try {
+      sendJson(response, 200, await readMetaView(context.options.projectPath, requested))
+    } catch (error) {
+      if (error instanceof BadPathError) {
+        sendJson(response, 400, { error: error.message, path: requested })
+        return
+      }
+      sendJson(response, 500, {
+        error: 'Could not read the import settings for that file',
         detail: error instanceof Error ? error.message : String(error),
       })
     }
@@ -185,7 +206,7 @@ function statusOf(options: ServerOptions): SidecarStatus {
     version: SIDECAR_STATUS_VERSION,
     projectPath: toPosixPath(options.projectPath),
     projectName: path.basename(options.projectPath),
-    endpoints: { tree: '/tree', events: '/events' },
+    endpoints: { tree: '/tree', events: '/events', meta: '/meta' },
   }
 }
 

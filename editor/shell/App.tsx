@@ -4,6 +4,8 @@ import type { ReactElement } from 'react'
 
 import { StatusStrip } from './StatusStrip'
 import { PANEL_COMPONENTS, layOutPanels } from './panels'
+import { ProjectProvider } from './project-context'
+import { SelectionProvider } from './selection'
 import { useSidecarStatus } from './useSidecarStatus'
 
 /**
@@ -20,16 +22,23 @@ export function App(): ReactElement {
       connection.state === 'connected' ? `${connection.status.projectName} — kernel-2d` : 'kernel-2d editor'
   }, [connection])
 
+  // Both providers sit outside the docking layout, because dockview mounts and
+  // unmounts panel bodies as tabs move: state held inside a panel would be lost
+  // the first time the human dragged it somewhere else.
   return (
-    <div className="editor-shell">
-      <StatusStrip connection={connection} />
-      <main className="editor-shell__panels">
-        <DockviewReact
-          components={PANEL_COMPONENTS}
-          theme={themeAbyss}
-          onReady={(event) => layOutPanels(event.api)}
-        />
-      </main>
-    </div>
+    <ProjectProvider>
+      <SelectionProvider>
+        <div className="editor-shell">
+          <StatusStrip connection={connection} />
+          <main className="editor-shell__panels">
+            <DockviewReact
+              components={PANEL_COMPONENTS}
+              theme={themeAbyss}
+              onReady={(event) => layOutPanels(event.api)}
+            />
+          </main>
+        </div>
+      </SelectionProvider>
+    </ProjectProvider>
   )
 }

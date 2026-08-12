@@ -2,6 +2,7 @@ import type { DockviewApi, IDockviewPanelProps } from 'dockview-react'
 import type { FunctionComponent, ReactElement } from 'react'
 
 import { AssetsPanel } from '../panels/AssetsPanel'
+import { InspectorPanel } from '../panels/InspectorPanel'
 
 /**
  * Every panel the editor has, declared once.
@@ -39,6 +40,7 @@ const INSPECTOR: PanelDefinition = {
   id: 'inspector',
   title: 'Inspector',
   blurb: 'The properties of whatever is selected, ready to tune.',
+  render: InspectorPanel,
 }
 
 const ASSETS: PanelDefinition = {

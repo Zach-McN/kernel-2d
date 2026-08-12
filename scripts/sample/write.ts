@@ -1,6 +1,14 @@
+import { createHash } from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
 
+import {
+  assetTypeForName,
+  defaultImportSettings,
+  defaultMeta,
+  metaPathFor as appendMetaSuffix,
+  serializeMeta,
+} from '../../sidecar/meta-schema.js'
 import { GENERATED_BY, sampleFiles, type SampleFile } from './content.js'
 
 /**
@@ -40,7 +48,7 @@ export function writeSampleProject(projectPath: string, options: WriteOptions = 
     report.written.push(file.path)
 
     if (file.marking === 'sidecar') {
-      fs.writeFileSync(metaPathFor(absolute), meta(generatedAt))
+      fs.writeFileSync(metaPathFor(absolute), meta(file, generatedAt))
     }
   }
 
@@ -49,16 +57,44 @@ export function writeSampleProject(projectPath: string, options: WriteOptions = 
 
 /** The `.meta` sidecar carries the marking for anything that cannot hold it inside. */
 export function metaPathFor(absolutePath: string): string {
-  return `${absolutePath}.meta`
+  return appendMetaSuffix(absolutePath)
 }
 
 /**
- * Minimal on purpose. The real `.meta` format — slicing, pivot, filtering —
- * lands with the import-settings feature, and will be written to accept these
- * two fields rather than replace them.
+ * A real `AssetMeta`, built from the same defaults factory the sidecar uses,
+ * that also carries the generated marking.
+ *
+ * Generated content is held to the same schema as anything a human authors —
+ * a sample folder full of documents the editor cannot open would be testing
+ * nothing. The marking rides along inside the settings file rather than in a
+ * file of its own, because a PNG has nowhere to keep it.
  */
-function meta(generatedAt: string): string {
-  return `${JSON.stringify({ generatedBy: GENERATED_BY, generatedAt }, null, 2)}\n`
+function meta(file: SampleFile, generatedAt: string): string {
+  const type = assetTypeForName(path.basename(file.path)) ?? 'other'
+  const importSettings = file.settings ?? defaultImportSettings(type)
+
+  if (importSettings.type !== type) {
+    throw new Error(
+      `${file.path}: settings are for a ${importSettings.type}, but the file name says ${type}`,
+    )
+  }
+
+  return serializeMeta({
+    ...defaultMeta(type, sampleAssetId(file.path)),
+    importSettings,
+    generatedBy: GENERATED_BY,
+    generatedAt,
+  })
+}
+
+/**
+ * Ids derived from the path rather than minted at random, so re-running this
+ * generator produces byte-identical output. The sidecar mints random ones for
+ * files a human drops in; ids are opaque, so the two ways of making them never
+ * have to agree on anything but being unique.
+ */
+function sampleAssetId(projectRelativePath: string): string {
+  return createHash('sha256').update(projectRelativePath).digest('hex').slice(0, 16)
 }
 
 function isOurs(absolutePath: string, file: SampleFile): boolean {

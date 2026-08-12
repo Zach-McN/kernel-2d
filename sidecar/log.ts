@@ -1,6 +1,7 @@
 import { formatBytes } from './bytes.js'
 import type { SidecarConfig } from './config.js'
 import type { FileEventKind } from './event-schema.js'
+import type { SweepReport } from './meta-files.js'
 import type { ProjectTree } from './tree-schema.js'
 import type { FileEvent } from './watcher.js'
 
@@ -40,26 +41,55 @@ export function formatTimestamp(at: number): string {
   return `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
 }
 
+export interface BannerExtras {
+  /**
+   * Present when the sidecar is running behind an editor window, absent when it
+   * was started on its own.
+   */
+  editorUrl?: string | undefined
+  /** What the startup sweep did to the folder's `.meta` files, if it ran. */
+  metas?: SweepReport | undefined
+}
+
 /**
- * `editorUrl` is present when the sidecar is running behind an editor window,
- * absent when it was started on its own. One banner either way, so there is a
- * single place that answers "what is running and which folder is it holding".
+ * One banner either way, so there is a single place that answers "what is
+ * running, which folder is it holding, and what did it change on the way in".
+ *
+ * That last part is why the sweep is reported here rather than left silent:
+ * this is the only moment the service deletes anything, so every file it
+ * removed is named where the human is already looking.
  */
 export function formatBanner(
   config: SidecarConfig,
   tree: ProjectTree,
   url: string,
-  editorUrl?: string,
+  extras: BannerExtras = {},
 ): string[] {
+  const { editorUrl, metas } = extras
+
   return [
     editorUrl === undefined ? 'kernel-2d sidecar' : 'kernel-2d editor',
     `  project    ${config.displayPath}`,
     `  contents   ${plural(tree.fileCount, 'file')} in ${plural(tree.directoryCount, 'folder')}`,
+    ...(metas === undefined ? [] : formatSweep(metas)),
     ...(editorUrl === undefined ? [] : [`  editor     ${editorUrl}`]),
     `  tree URL   ${url}/tree`,
     '  watching   changes appear below — a rename shows as one removal and one addition',
     '',
   ]
+}
+
+function formatSweep(metas: SweepReport): string[] {
+  const lines = [
+    `  settings   ${plural(metas.created.length, '.meta file')} created, ${metas.kept} already there`,
+  ]
+
+  if (metas.removedOrphans.length > 0) {
+    lines.push(`  removed    ${plural(metas.removedOrphans.length, '.meta file')} with no file beside them:`)
+    for (const orphan of metas.removedOrphans) lines.push(`               ${orphan}`)
+  }
+
+  return lines
 }
 
 function plural(count: number, noun: string): string {

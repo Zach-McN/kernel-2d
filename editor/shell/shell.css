@@ -191,6 +191,105 @@ body {
   font-size: 11px;
 }
 
+/* The folded-in sidecar: present on the row, never loud enough to read first. */
+.asset-row__badge {
+  flex: none;
+  padding: 0 5px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--shell-text-dim);
+  font-size: 10px;
+  line-height: 15px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.asset-row__badge--orphan {
+  background: rgba(217, 179, 74, 0.16);
+  color: var(--shell-waiting);
+}
+
+/* --- the inspector ------------------------------------------------------- */
+
+.inspector {
+  height: 100%;
+  overflow: auto;
+  padding: 12px 14px 20px;
+}
+
+.inspector__header {
+  margin-bottom: 14px;
+}
+
+.inspector__name {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.inspector__path {
+  margin: 2px 0 0;
+  color: var(--shell-text-dim);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.inspector__section {
+  margin-bottom: 14px;
+}
+
+.inspector__section-title {
+  margin: 0 0 6px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--shell-line);
+  color: var(--shell-text-dim);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.inspector__field {
+  display: flex;
+  gap: 10px;
+  margin: 0;
+  padding: 3px 0;
+  line-height: 18px;
+}
+
+.inspector__label {
+  flex: none;
+  width: 76px;
+  color: var(--shell-text-dim);
+}
+
+.inspector__value {
+  overflow-wrap: anywhere;
+}
+
+.inspector__note {
+  margin: 6px 0 0;
+  color: var(--shell-text-dim);
+  line-height: 1.5;
+}
+
+/* An unreadable .meta, shown as it actually is on disk. */
+.inspector__raw {
+  margin: 8px 0 0;
+  padding: 8px 10px;
+  max-height: 220px;
+  overflow: auto;
+  border: 1px solid var(--shell-line);
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.25);
+  color: var(--shell-text-dim);
+  font-family: 'Cascadia Mono', Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
 /* --- empty panels ------------------------------------------------------- */
 
 .panel-placeholder {

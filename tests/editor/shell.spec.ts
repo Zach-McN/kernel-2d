@@ -16,10 +16,11 @@ test.describe('the editor shell', () => {
 
     // A panel that has not been built yet says what will live in it.
     await expect(page.locator('[data-panel="viewport"]')).toContainText('The game itself')
-    await expect(page.locator('[data-panel="inspector"]')).toContainText('ready to tune')
+    await expect(page.locator('[data-panel="hierarchy"]')).toContainText('the open scene')
 
     // A panel that has been built shows itself instead.
     await expect(page.getByTestId('assets-panel')).toBeVisible()
+    await expect(page.getByTestId('inspector-panel')).toBeVisible()
   })
 
   test('says which project folder it is connected to', async ({ page }) => {
@@ -89,7 +90,7 @@ test.describe('the editor shell', () => {
     await inspectorTab.dragTo(hierarchyTab)
 
     await expect(groupHoldingBoth).toHaveCount(1)
-    await expect(page.locator('[data-panel="inspector"]')).toBeVisible()
+    await expect(page.getByTestId('inspector-panel')).toBeVisible()
   })
 
   // Not an assertion — a picture of the shell as it actually rendered, kept so

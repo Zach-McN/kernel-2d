@@ -1,3 +1,9 @@
+import {
+  defaultTextureImportSettings,
+  type ImportSettings,
+  type Slice,
+  type TextureImportSettings,
+} from '../../sidecar/meta-schema.js'
 import { PixelCanvas, drawSprite, type Colour } from './png.js'
 import { decay, encodeWav, sine } from './wav.js'
 
@@ -29,7 +35,30 @@ export interface SampleFile {
    * gets it in a `.meta` sidecar beside it, per the marking rules.
    */
   marking: 'inside' | 'sidecar'
+  /**
+   * Import settings for the generated `.meta`, where this sample has something
+   * to say beyond the defaults. Omitted means defaults, which is most files.
+   */
+  settings?: ImportSettings
 }
+
+/** Everything in this sample is drawn on a 16px grid, sheets included. */
+const grid = (frameWidth: number, frameHeight: number): Slice => ({
+  mode: 'grid',
+  frameWidth,
+  frameHeight,
+  margin: 0,
+  spacing: 0,
+})
+
+/** The middle of the bottom edge — where a character stands. */
+const FEET = { x: 0.5, y: 1 }
+
+const texture = (over: Partial<TextureImportSettings> = {}): ImportSettings => ({
+  type: 'texture',
+  ...defaultTextureImportSettings(),
+  ...over,
+})
 
 export function sampleFiles(generatedAt: string): SampleFile[] {
   const note = (text: string): string =>
@@ -37,11 +66,36 @@ export function sampleFiles(generatedAt: string): SampleFile[] {
 
   return [
     // --- textures ---------------------------------------------------------
-    { path: 'assets/textures/characters/knight-idle.png', contents: knight().toPng(), marking: 'sidecar' },
-    { path: 'assets/textures/characters/knight-run-strip.png', contents: knightRunStrip(), marking: 'sidecar' },
-    { path: 'assets/textures/characters/slime.png', contents: slime().toPng(), marking: 'sidecar' },
-    { path: 'assets/textures/tiles/tileset-grass.png', contents: tileset(GRASS_TILES), marking: 'sidecar' },
-    { path: 'assets/textures/tiles/tileset-cave.png', contents: tileset(CAVE_TILES), marking: 'sidecar' },
+    {
+      path: 'assets/textures/characters/knight-idle.png',
+      contents: knight().toPng(),
+      marking: 'sidecar',
+      settings: texture({ pivot: FEET }),
+    },
+    {
+      path: 'assets/textures/characters/knight-run-strip.png',
+      contents: knightRunStrip(),
+      marking: 'sidecar',
+      settings: texture({ pivot: FEET, slice: grid(16, 16) }),
+    },
+    {
+      path: 'assets/textures/characters/slime.png',
+      contents: slime().toPng(),
+      marking: 'sidecar',
+      settings: texture({ pivot: FEET }),
+    },
+    {
+      path: 'assets/textures/tiles/tileset-grass.png',
+      contents: tileset(GRASS_TILES),
+      marking: 'sidecar',
+      settings: texture({ slice: grid(16, 16) }),
+    },
+    {
+      path: 'assets/textures/tiles/tileset-cave.png',
+      contents: tileset(CAVE_TILES),
+      marking: 'sidecar',
+      settings: texture({ slice: grid(16, 16) }),
+    },
     { path: 'assets/textures/ui/button-idle.png', contents: button(false), marking: 'sidecar' },
     { path: 'assets/textures/ui/button-hover.png', contents: button(true), marking: 'sidecar' },
     { path: 'assets/textures/ui/icon-heart.png', contents: heart().toPng(), marking: 'sidecar' },
@@ -76,7 +130,12 @@ export function sampleFiles(generatedAt: string): SampleFile[] {
     },
 
     // --- fonts: a page and the description that goes with it --------------
-    { path: 'assets/fonts/pixel-8.png', contents: fontPage(), marking: 'sidecar' },
+    {
+      path: 'assets/fonts/pixel-8.png',
+      contents: fontPage(),
+      marking: 'sidecar',
+      settings: texture({ slice: grid(8, 16) }),
+    },
     { path: 'assets/fonts/pixel-8.fnt', contents: FONT_DESCRIPTION, marking: 'sidecar' },
 
     // --- the folder the engine ignores ------------------------------------

@@ -34,12 +34,39 @@ test.describe('the Assets panel', () => {
     await expect(row(page, 'assets/textures/characters/knight-idle.png')).toBeVisible()
   })
 
-  test('shows the whole folder, sidecars included, rather than a tidied version of it', async ({
+  test('shows an asset once, with its import settings attached rather than listed separately', async ({
     page,
   }) => {
     await openTexturesFolder(page)
 
-    await expect(row(page, 'assets/textures/characters/knight-idle.png.meta')).toBeVisible()
+    await expect(row(page, 'assets/textures/characters/knight-idle.png')).toHaveAttribute(
+      'data-has-settings',
+      'true',
+    )
+    await expect(row(page, 'assets/textures/characters/knight-idle.png.meta')).toBeHidden()
+  })
+
+  test('shows import settings with no file beside them on their own row, so they can be found', async ({
+    page,
+  }) => {
+    const stranded = path.join(
+      editorTestProjectPath(),
+      'assets',
+      'textures',
+      'characters',
+      'deleted-hero.png.meta',
+    )
+    fs.writeFileSync(stranded, '{}')
+
+    try {
+      await openTexturesFolder(page)
+
+      const orphan = row(page, 'assets/textures/characters/deleted-hero.png.meta')
+      await expect(orphan).toBeVisible({ timeout: 1000 })
+      await expect(orphan).toHaveAttribute('data-orphaned-settings', 'true')
+    } finally {
+      fs.rmSync(stranded, { force: true })
+    }
   })
 
   test('shows how big each file is', async ({ page }) => {
@@ -69,7 +96,7 @@ test.describe('the Assets panel', () => {
     await expect(scene).toHaveAttribute('data-selected', 'false')
   })
 
-  test('a file saved on disk appears within a second, and leaves when it is deleted', async ({
+  test('a file saved on disk appears within a second, with settings, and leaves when it is deleted', async ({
     page,
   }) => {
     await openTexturesFolder(page)
@@ -82,9 +109,15 @@ test.describe('the Assets panel', () => {
 
     fs.writeFileSync(newFile, 'pretend-png-bytes')
     await expect(added).toBeVisible({ timeout: 1000 })
+    await expect(added).toHaveAttribute('data-has-settings', 'true', { timeout: 1000 })
 
     fs.rmSync(newFile)
     await expect(added).toBeHidden({ timeout: 1000 })
+
+    // The settings outlive the file they described until the next start, which
+    // is the behaviour a rename depends on. Cleared by hand so the next test
+    // opens a folder in the state it expects.
+    fs.rmSync(`${newFile}.meta`, { force: true })
   })
 
   test('leaves a picture of itself behind', async ({ page }, testInfo) => {
