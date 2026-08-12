@@ -37,6 +37,22 @@ export function assetTypeOf(name: string, settings: AssetMeta | null): AssetType
   return assetTypeForName(name)
 }
 
+/**
+ * Whether it is worth asking the service what document this file holds.
+ *
+ * Deliberately the weakest possible test, and deliberately not "is this a
+ * scene?". What a file *is* is decided by the `format` it declares inside
+ * itself (`editor-ui` U11), which means finding out requires reading it — and
+ * this is only about which files are worth reading. A `.png` read as text and
+ * handed to `JSON.parse` is a wasted round trip carrying a megabyte of binary
+ * back as an error message; a `.json` anywhere in the project might be a scene,
+ * including one outside `scenes/`, because the folder is a convention and the
+ * document is a fact.
+ */
+export function couldBeDocument(name: string): boolean {
+  return name.toLowerCase().endsWith('.json')
+}
+
 /** How a file with no settings is described, by name alone. */
 export function describeKind(name: string): string {
   if (isMetaFileName(name)) return `Import settings for ${basename(annotatedPathFor(name) ?? name)}`

@@ -4,6 +4,7 @@ import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import { AssetMetaSchema } from '../../runtime/formats/meta-schema.js'
+import { SceneSchema, spriteOf, type Scene } from '../../runtime/formats/scene-schema.js'
 import { writeSampleProject } from '../../scripts/sample/write.js'
 import { makeTempProject, type TempProject } from '../fixtures/project-fixture.js'
 
@@ -170,6 +171,89 @@ describe('filling a project folder with sample content', () => {
     const report = build()
 
     expect(report.skipped).toEqual([])
-    expect(fs.readFileSync(project.file('scenes/level-01.json'), 'utf8')).toContain('SceneSchema')
+    expect(fs.readFileSync(project.file('scenes/level-01.json'), 'utf8')).toContain('kernel2d.scene')
+  })
+})
+
+/**
+ * The scenes are the first generated content in a real format the editor both
+ * reads and rewrites, so they are held to more than "a file appeared": they have
+ * to open, and every reference in them has to point at something.
+ */
+describe('the sample scenes', () => {
+  let project: TempProject
+
+  beforeEach(async () => {
+    project = await makeTempProject()
+    writeSampleProject(project.root, { generatedAt: GENERATED_AT })
+  })
+
+  afterEach(async () => {
+    await project.cleanup()
+  })
+
+  const sceneAt = (scenePath: string): Scene =>
+    SceneSchema.parse(JSON.parse(fs.readFileSync(project.file(scenePath), 'utf8')))
+
+  it.each([['scenes/level-01.json'], ['scenes/level-02.json']])('%s opens as a scene', (scenePath) => {
+    expect(sceneAt(scenePath).entities.length).toBeGreaterThan(0)
+  })
+
+  it('gives every entity a name and an id of its own', () => {
+    const entities = sceneAt('scenes/level-01.json').entities
+
+    expect(new Set(entities.map((entity) => entity.id)).size).toBe(entities.length)
+    for (const entity of entities) expect(entity.name).not.toBe('')
+  })
+
+  it('points every texture reference at a file that is actually there', () => {
+    for (const scenePath of ['scenes/level-01.json', 'scenes/level-02.json']) {
+      for (const entity of sceneAt(scenePath).entities) {
+        const sprite = spriteOf(entity)
+        expect(sprite, `${scenePath}: ${entity.name}`).not.toBeNull()
+        expect(fs.existsSync(project.file(sprite?.texture.path ?? '')), sprite?.texture.path).toBe(true)
+      }
+    }
+  })
+
+  /**
+   * The half of D5 that has never had anything to test it: a reference carries
+   * the id its texture's `.meta` holds, so the editor can notice when the file
+   * at that path is no longer the one the scene was written against.
+   */
+  it('carries the id the texture actually has, not just its path', () => {
+    for (const entity of sceneAt('scenes/level-01.json').entities) {
+      const sprite = spriteOf(entity)
+      if (sprite === null) continue
+      const meta = AssetMetaSchema.parse(
+        JSON.parse(fs.readFileSync(`${project.file(sprite.texture.path)}.meta`, 'utf8')),
+      )
+
+      expect(sprite.texture.id, sprite.texture.path).toBe(meta.id)
+    }
+  })
+
+  it('puts everything where a viewport with no camera can see it', () => {
+    // Scene space is y-up from the bottom-left and there is nothing to pan
+    // with yet, so a sample entity off screen would be a sample nobody can
+    // find. Generous bounds: this is about "visible", not about layout.
+    for (const scenePath of ['scenes/level-01.json', 'scenes/level-02.json']) {
+      for (const entity of sceneAt(scenePath).entities) {
+        expect(entity.transform.x, `${scenePath}: ${entity.name} x`).toBeGreaterThanOrEqual(0)
+        expect(entity.transform.x, `${scenePath}: ${entity.name} x`).toBeLessThan(600)
+        expect(entity.transform.y, `${scenePath}: ${entity.name} y`).toBeGreaterThanOrEqual(0)
+        expect(entity.transform.y, `${scenePath}: ${entity.name} y`).toBeLessThan(400)
+      }
+    }
+  })
+
+  it('produces the same scene bytes every time', () => {
+    const first = fs.readFileSync(project.file('scenes/level-01.json'))
+    writeSampleProject(project.root, { generatedAt: GENERATED_AT })
+    const second = fs.readFileSync(project.file('scenes/level-01.json'))
+
+    // Entity ids are derived from the scene path and the entity's position in
+    // the list; minted at random they would change on every run.
+    expect(second.equals(first)).toBe(true)
   })
 })

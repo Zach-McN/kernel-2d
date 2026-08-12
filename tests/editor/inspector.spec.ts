@@ -53,10 +53,28 @@ test.describe('the Inspector', () => {
     await expect(note(page)).toContainText('Nothing to tune on import')
   })
 
-  test('names a scene file as a scene, and says its own inspector is still to come', async ({ page }) => {
+  test('names a scene as a scene, says how much is in it, and points at the Hierarchy', async ({ page }) => {
     await select(page, 'scenes/level-01.json')
 
-    await expect(note(page)).toContainText('scene')
+    await expect(page.getByTestId('inspector-document-format')).toHaveText('Scene')
+    await expect(page.getByTestId('inspector-entity-count')).toHaveText('5 entities')
+    await expect(note(page)).toContainText('Select an entity in the Hierarchy')
+  })
+
+  test('says what is wrong with a document it cannot read, and shows the file', async ({ page }) => {
+    // A `.json` in a format nothing knows: the honest answer is "this editor
+    // does not know that format", not "this file is invalid".
+    const stray = path.join(editorTestProjectPath(), 'scenes', 'from-the-future.json')
+    fs.writeFileSync(stray, '{ "format": "kernel2d.starfield", "version": 9 }\n')
+
+    try {
+      await select(page, 'scenes/from-the-future.json')
+
+      await expect(note(page)).toContainText('kernel2d.starfield')
+      await expect(page.locator('.inspector__raw')).toContainText('starfield')
+    } finally {
+      fs.rmSync(stray, { force: true })
+    }
   })
 
   test('names a README as something it does not import, and has nothing to tune for it', async ({

@@ -27,7 +27,7 @@ export function AssetMetaProvider({ children }: { children: ReactNode }): ReactE
   const selection = useSelection()
   // Re-asked when the folder changes as well as when the selection does, so a
   // `.meta` edited in a text editor shows up without a reload.
-  const meta = useAssetMeta(selection.path, project.state === 'ready' ? project.tree : null)
+  const meta = useAssetMeta(selection.selectedFilePath, project.state === 'ready' ? project.tree : null)
 
   return <AssetMetaContext.Provider value={meta}>{children}</AssetMetaContext.Provider>
 }

@@ -6,7 +6,20 @@ import {
   type Document,
   type DocumentStore,
 } from '../../editor/store/documents'
-import { defaultMeta, type AssetMeta, type TextureImportSettings } from '../../runtime/formats/meta-schema'
+import {
+  ASSET_META_FORMAT,
+  defaultMeta,
+  type AssetMeta,
+  type TextureImportSettings,
+} from '../../runtime/formats/meta-schema'
+import {
+  SCENE_FORMAT,
+  defaultEntity,
+  defaultScene,
+  spriteOf,
+  type Entity,
+  type Scene,
+} from '../../runtime/formats/scene-schema'
 
 /**
  * The transaction API, on its own.
@@ -23,15 +36,22 @@ import { defaultMeta, type AssetMeta, type TextureImportSettings } from '../../r
 
 const KNIGHT = 'assets/textures/knight.png'
 const SLIME = 'assets/textures/slime.png'
+const LEVEL = 'scenes/level-01.json'
 
 function textureMeta(id: string): AssetMeta {
   return defaultMeta('texture', id)
 }
 
 function textureSettings(document: Document | undefined): TextureImportSettings {
-  const settings = document?.importSettings
-  if (settings === undefined || settings.type !== 'texture') throw new Error('not a texture')
+  if (document === undefined || document.format !== ASSET_META_FORMAT) throw new Error('not import settings')
+  const settings = document.importSettings
+  if (settings.type !== 'texture') throw new Error('not a texture')
   return settings
+}
+
+function asScene(document: Document | undefined): Scene {
+  if (document === undefined || document.format !== SCENE_FORMAT) throw new Error('not a scene')
+  return document
 }
 
 /**
@@ -40,7 +60,7 @@ function textureSettings(document: Document | undefined): TextureImportSettings 
  * lets the store tell a fresh answer from one that set off before its own last
  * write.
  */
-function adopt(store: DocumentStore, path: string, document: AssetMeta): void {
+function adopt(store: DocumentStore, path: string, document: Document): void {
   store.adoptFromDisk(path, document, store.beginRead())
 }
 
@@ -56,6 +76,7 @@ interface Harness {
   failNextWrite: (message: string) => void
   docs: () => Readonly<Record<string, Document>>
   settings: (path: string) => TextureImportSettings
+  scene: (path: string) => Scene
 }
 
 let harness: Harness
@@ -84,6 +105,10 @@ beforeEach(() => {
 
   adopt(store, KNIGHT, textureMeta('1111111111111111'))
   adopt(store, SLIME, textureMeta('2222222222222222'))
+  adopt(store, LEVEL, {
+    ...defaultScene(),
+    entities: [knightEntity('aaaa000000000000', 'Knight'), knightEntity('bbbb000000000000', 'Slime')],
+  })
 
   harness = {
     store,
@@ -97,17 +122,27 @@ beforeEach(() => {
     },
     docs: () => store.reader.getState().docs,
     settings: (path) => textureSettings(store.reader.getState().docs[path]),
+    scene: (path) => asScene(store.reader.getState().docs[path]),
   }
 })
 
+function knightEntity(id: string, name: string): Entity {
+  return {
+    ...defaultEntity(id, name),
+    components: { sprite: { texture: { id: '1111111111111111', path: KNIGHT } } },
+  }
+}
+
 function setFilter(path: string, filter: 'nearest' | 'linear'): void {
   harness.store.editDocument(path, { label: 'Filtering', merge: `${path}#filter` }, (document) => {
+    if (document.format !== ASSET_META_FORMAT) return
     if (document.importSettings.type === 'texture') document.importSettings.filter = filter
   })
 }
 
 function setFrameWidth(path: string, frameWidth: number): void {
   harness.store.editDocument(path, { label: 'Frame width', merge: `${path}#frameWidth` }, (document) => {
+    if (document.format !== ASSET_META_FORMAT) return
     if (document.importSettings.type !== 'texture') return
     document.importSettings.slice = {
       mode: 'grid',
@@ -121,7 +156,51 @@ function setFrameWidth(path: string, frameWidth: number): void {
 
 function setPivotX(path: string, x: number): void {
   harness.store.editDocument(path, { label: 'Pivot', merge: `${path}#pivot.x` }, (document) => {
+    if (document.format !== ASSET_META_FORMAT) return
     if (document.importSettings.type === 'texture') document.importSettings.pivot.x = x
+  })
+}
+
+/**
+ * The four things the Hierarchy does, as the store sees them.
+ *
+ * Written here in the same shape the panel writes them, because the point of
+ * these is that adding and deleting an entity are *edits* like any other. A
+ * tool that reached past the transaction API to create something would look
+ * like it worked and would take undo out with it (editor-kernel G2), and
+ * creating is where the temptation is, because it feels different from editing.
+ */
+function addEntity(path: string, id: string, name: string): void {
+  harness.store.editDocument(path, { label: 'Add entity' }, (document) => {
+    if (document.format !== SCENE_FORMAT) return
+    document.entities.push(defaultEntity(id, name))
+  })
+}
+
+function deleteEntity(path: string, id: string): void {
+  harness.store.editDocument(path, { label: 'Delete entity' }, (document) => {
+    if (document.format !== SCENE_FORMAT) return
+    const at = document.entities.findIndex((entity) => entity.id === id)
+    if (at >= 0) document.entities.splice(at, 1)
+  })
+}
+
+function moveEntity(path: string, id: string, by: number): void {
+  harness.store.editDocument(path, { label: 'Reorder entity' }, (document) => {
+    if (document.format !== SCENE_FORMAT) return
+    const at = document.entities.findIndex((entity) => entity.id === id)
+    const to = at + by
+    if (at < 0 || to < 0 || to >= document.entities.length) return
+    const [moved] = document.entities.splice(at, 1)
+    if (moved !== undefined) document.entities.splice(to, 0, moved)
+  })
+}
+
+function setEntityX(path: string, id: string, x: number): void {
+  harness.store.editDocument(path, { label: 'Position', merge: `${path}#${id}#x` }, (document) => {
+    if (document.format !== SCENE_FORMAT) return
+    const entity = document.entities.find((candidate) => candidate.id === id)
+    if (entity !== undefined) entity.transform.x = x
   })
 }
 
@@ -317,6 +396,7 @@ describe('saving what changed', () => {
     adopt(store, KNIGHT, textureMeta('1111111111111111'))
 
     store.editDocument(KNIGHT, { label: 'Filtering' }, (document) => {
+      if (document.format !== ASSET_META_FORMAT) return
       if (document.importSettings.type === 'texture') document.importSettings.filter = 'linear'
     })
     store.undo()
@@ -391,6 +471,7 @@ describe('the file changing on disk while the editor has it', () => {
     adopt(store, KNIGHT, textureMeta('1111111111111111'))
 
     store.editDocument(KNIGHT, { label: 'Filtering' }, (document) => {
+      if (document.format !== ASSET_META_FORMAT) return
       if (document.importSettings.type === 'texture') document.importSettings.filter = 'linear'
     })
     // The folder re-read arriving mid-keystroke, carrying the file as it was
@@ -458,6 +539,160 @@ describe('the file changing on disk while the editor has it', () => {
 
     expect(harness.settings(KNIGHT).filter).toBe('linear')
     expect(harness.writes).toHaveLength(1)
+  })
+})
+
+/**
+ * A second format in the same store.
+ *
+ * The point of this block is what it does *not* need: not one line of undo,
+ * merging, saving or staleness logic was written for scenes. Everything here
+ * passes because the store holds documents rather than import settings, which
+ * is the whole bet of document-level undo (editor-kernel D7).
+ */
+describe('a scene is a document like any other', () => {
+  it('shares one stack with a texture, ordered by time rather than by kind', () => {
+    setFilter(KNIGHT, 'linear')
+    harness.advance(1_000)
+    setEntityX(LEVEL, 'aaaa000000000000', 200)
+
+    harness.store.undo()
+    expect(harness.scene(LEVEL).entities[0]?.transform.x).toBe(0)
+    expect(harness.settings(KNIGHT).filter).toBe('linear')
+
+    harness.store.undo()
+    expect(harness.settings(KNIGHT).filter).toBe('nearest')
+  })
+
+  it('goes to disk on the same terms, and reversing writes it back', async () => {
+    setEntityX(LEVEL, 'aaaa000000000000', 200)
+    await harness.store.flushSaves()
+
+    expect(harness.writes.map((write) => write.path)).toEqual([LEVEL])
+    expect(asScene(harness.writes[0]?.document).entities[0]?.transform.x).toBe(200)
+
+    harness.store.undo()
+    await harness.store.flushSaves()
+
+    expect(asScene(harness.writes[1]?.document).entities[0]?.transform.x).toBe(0)
+  })
+
+  it('merges a run of keystrokes in one field into one press of Ctrl-Z', () => {
+    setEntityX(LEVEL, 'aaaa000000000000', 2)
+    harness.advance(50)
+    setEntityX(LEVEL, 'aaaa000000000000', 24)
+    harness.advance(50)
+    setEntityX(LEVEL, 'aaaa000000000000', 240)
+
+    harness.store.undo()
+
+    expect(harness.scene(LEVEL).entities[0]?.transform.x).toBe(0)
+    expect(harness.store.undo()).toBe(false)
+  })
+
+  it('never merges the same field across two entities', () => {
+    setEntityX(LEVEL, 'aaaa000000000000', 100)
+    setEntityX(LEVEL, 'bbbb000000000000', 200)
+
+    harness.store.undo()
+
+    expect(harness.scene(LEVEL).entities[1]?.transform.x).toBe(0)
+    expect(harness.scene(LEVEL).entities[0]?.transform.x).toBe(100)
+  })
+
+  it('keeps a component the kernel has never heard of through an edit', () => {
+    const withPatrol: Scene = {
+      ...defaultScene(),
+      entities: [
+        {
+          ...knightEntity('aaaa000000000000', 'Knight'),
+          components: {
+            sprite: { texture: { id: '1111111111111111', path: KNIGHT } },
+            patrolRoute: { waypoints: [{ x: 10, y: 0 }] },
+          },
+        },
+      ],
+    }
+    adopt(harness.store, LEVEL, withPatrol)
+
+    setEntityX(LEVEL, 'aaaa000000000000', 200)
+
+    expect(harness.scene(LEVEL).entities[0]?.components['patrolRoute']).toEqual({
+      waypoints: [{ x: 10, y: 0 }],
+    })
+  })
+})
+
+/**
+ * Adding and deleting through the transaction API and nothing else.
+ *
+ * This is the block worth having, because creating something feels different
+ * from editing it and is where a session is most likely to reach past the API —
+ * and a tool that writes its own inverse is a defect whether or not it appears
+ * to work.
+ */
+describe('adding, deleting and reordering an entity', () => {
+  it('adds one, and one press of Ctrl-Z takes it away again', () => {
+    addEntity(LEVEL, 'cccc000000000000', 'Torch')
+
+    expect(harness.scene(LEVEL).entities.map((entity) => entity.name)).toEqual(['Knight', 'Slime', 'Torch'])
+
+    harness.store.undo()
+
+    expect(harness.scene(LEVEL).entities.map((entity) => entity.name)).toEqual(['Knight', 'Slime'])
+  })
+
+  it('deletes one, and reversing brings it back with everything it had', () => {
+    deleteEntity(LEVEL, 'aaaa000000000000')
+    expect(harness.scene(LEVEL).entities.map((entity) => entity.id)).toEqual(['bbbb000000000000'])
+
+    harness.store.undo()
+
+    const restored = harness.scene(LEVEL).entities[0]
+    expect(restored?.id).toBe('aaaa000000000000')
+    expect(spriteOf(restored as Entity)?.texture.path).toBe(KNIGHT)
+  })
+
+  it('moves one down the list, changing what is drawn in front', () => {
+    moveEntity(LEVEL, 'aaaa000000000000', 1)
+
+    // List order is draw order, so this is the whole of "bring it forward".
+    expect(harness.scene(LEVEL).entities.map((entity) => entity.name)).toEqual(['Slime', 'Knight'])
+
+    harness.store.undo()
+
+    expect(harness.scene(LEVEL).entities.map((entity) => entity.name)).toEqual(['Knight', 'Slime'])
+  })
+
+  it('does nothing at the ends of the list, rather than wrapping around', () => {
+    moveEntity(LEVEL, 'aaaa000000000000', -1)
+    moveEntity(LEVEL, 'bbbb000000000000', 1)
+
+    expect(harness.scene(LEVEL).entities.map((entity) => entity.name)).toEqual(['Knight', 'Slime'])
+    // Nothing changed, so there is nothing to reverse — an undo step that
+    // reverses nothing is a step Ctrl-Z appears to skip.
+    expect(harness.store.peekUndo()).toBeNull()
+  })
+
+  it('writes the file after each of them, the same as any other edit', async () => {
+    addEntity(LEVEL, 'cccc000000000000', 'Torch')
+    await harness.store.flushSaves()
+    expect(asScene(harness.writes.at(-1)?.document).entities).toHaveLength(3)
+
+    deleteEntity(LEVEL, 'cccc000000000000')
+    await harness.store.flushSaves()
+    expect(asScene(harness.writes.at(-1)?.document).entities).toHaveLength(2)
+  })
+
+  it('is a separate step per action, so undo unwinds them one at a time', () => {
+    addEntity(LEVEL, 'cccc000000000000', 'Torch')
+    addEntity(LEVEL, 'dddd000000000000', 'Chest')
+
+    harness.store.undo()
+    expect(harness.scene(LEVEL).entities).toHaveLength(3)
+
+    harness.store.undo()
+    expect(harness.scene(LEVEL).entities).toHaveLength(2)
   })
 })
 

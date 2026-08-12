@@ -4,6 +4,15 @@ import {
   type Slice,
   type TextureImportSettings,
 } from '../../runtime/formats/meta-schema.js'
+import {
+  SCENE_FORMAT,
+  SCENE_VERSION,
+  defaultTransform,
+  serializeScene,
+  type Entity,
+  type Scene,
+} from '../../runtime/formats/scene-schema.js'
+import { sampleAssetId, sampleEntityId } from './ids.js'
 import { PixelCanvas, drawSprite, type Colour } from './png.js'
 import { decay, encodeWav, sine } from './wav.js'
 
@@ -16,12 +25,16 @@ import { decay, encodeWav, sine } from './wav.js'
  * a description), a folder the engine ignores, and a file type nothing
  * recognises.
  *
- * Two things deliberately absent. There is no fake `.psd` or `.aseprite`: a
- * file claiming to be a Photoshop document that is not one is a trap for
- * whoever opens it, and real ones can simply be dropped in. And the scene,
- * prefab and data files carry placeholder contents, because those formats have
- * no schema yet — plausible-looking contents are how a wrong format quietly
- * becomes precedent.
+ * There is no fake `.psd` or `.aseprite`: a file claiming to be a Photoshop
+ * document that is not one is a trap for whoever opens it, and real ones can
+ * simply be dropped in.
+ *
+ * The scenes are real documents now that `SceneSchema` exists. The prefab and
+ * data files are still placeholders that say so in their own contents, because
+ * those formats have no schema yet — plausible-looking contents are how a wrong
+ * format quietly becomes precedent. Both scenes are valid on purpose: a
+ * deliberately broken sample would be a trap for whoever opened it, so the
+ * broken cases are produced by tests against a throwaway copy instead.
  */
 
 export const GENERATED_BY = 'claude-opus-5'
@@ -141,14 +154,113 @@ export function sampleFiles(generatedAt: string): SampleFile[] {
     // --- the folder the engine ignores ------------------------------------
     { path: 'assets/source/README.txt', contents: SOURCE_README, marking: 'sidecar' },
 
-    // --- everything that is not an asset ----------------------------------
+    // --- scenes, which are a real format now ------------------------------
+    {
+      path: LEVEL_ONE,
+      contents: serializeScene(levelOne(generatedAt)),
+      marking: 'inside',
+    },
+    {
+      path: LEVEL_TWO,
+      contents: serializeScene(levelTwo(generatedAt)),
+      marking: 'inside',
+    },
+
+    // --- formats that do not exist yet ------------------------------------
     { path: 'data/items.json', contents: note('Placeholder for the item database. No schema for it exists yet.'), marking: 'inside' },
     { path: 'data/waves.json', contents: note('Placeholder for the wave schedule. No schema for it exists yet.'), marking: 'inside' },
     { path: 'prefabs/enemy-slime.json', contents: note('Placeholder prefab. PrefabSchema does not exist yet — do not treat this shape as the format.'), marking: 'inside' },
-    { path: 'scenes/level-01.json', contents: note('Placeholder scene. SceneSchema does not exist yet — do not treat this shape as the format.'), marking: 'inside' },
-    { path: 'scenes/level-02.json', contents: note('Placeholder scene. SceneSchema does not exist yet — do not treat this shape as the format.'), marking: 'inside' },
     { path: 'project.json', contents: note('Placeholder project settings. The real format lands with the runtime.'), marking: 'inside' },
   ]
+}
+
+// --- the scenes -------------------------------------------------------------
+
+/**
+ * Two small levels, laid out to be looked at.
+ *
+ * Scene space is y-up from the bottom-left corner and there is no camera yet,
+ * so everything sits in the lower-left of a typical panel — a level whose
+ * entities were all off screen would test the Hierarchy and teach the human
+ * nothing.
+ *
+ * The knight and the slime are pivoted at their feet in their import settings,
+ * so placing them at the top edge of the ground strip is enough to make them
+ * stand on it. That is the point being made: nothing in this file says anything
+ * about a pivot.
+ */
+
+const LEVEL_ONE = 'scenes/level-01.json'
+const LEVEL_TWO = 'scenes/level-02.json'
+
+const KNIGHT = 'assets/textures/characters/knight-idle.png'
+const RUN_STRIP = 'assets/textures/characters/knight-run-strip.png'
+const SLIME = 'assets/textures/characters/slime.png'
+const GRASS = 'assets/textures/tiles/tileset-grass.png'
+const CAVE = 'assets/textures/tiles/tileset-cave.png'
+const HEART = 'assets/textures/ui/icon-heart.png'
+const BUTTON = 'assets/textures/ui/button-idle.png'
+
+interface Placement {
+  name: string
+  texture: string
+  x: number
+  y: number
+  rotation?: number
+  scaleX?: number
+  scaleY?: number
+}
+
+/** Entities in draw order: the first is furthest back. */
+function scene(scenePath: string, generatedAt: string, placements: readonly Placement[]): Scene {
+  const entities: Entity[] = placements.map((placement, index) => ({
+    id: sampleEntityId(scenePath, index),
+    name: placement.name,
+    transform: {
+      ...defaultTransform(),
+      x: placement.x,
+      y: placement.y,
+      ...(placement.rotation === undefined ? {} : { rotation: placement.rotation }),
+      ...(placement.scaleX === undefined ? {} : { scaleX: placement.scaleX }),
+      ...(placement.scaleY === undefined ? {} : { scaleY: placement.scaleY }),
+    },
+    components: {
+      // Both halves of the reference, always: the path resolves it and the id
+      // is what notices when the file at that path is no longer the same one
+      // (editor-kernel D5).
+      sprite: { texture: { id: sampleAssetId(placement.texture), path: placement.texture } },
+    },
+  }))
+
+  return {
+    format: SCENE_FORMAT,
+    version: SCENE_VERSION,
+    entities,
+    generatedBy: GENERATED_BY,
+    generatedAt,
+  }
+}
+
+/** A ground strip, two characters standing on it, and a UI icon in front. */
+function levelOne(generatedAt: string): Scene {
+  return scene(LEVEL_ONE, generatedAt, [
+    // One 16px tile stretched into a strip: the ground's top edge lands at y=16.
+    { name: 'Ground', texture: GRASS, x: 160, y: 8, scaleX: 20 },
+    { name: 'Knight', texture: KNIGHT, x: 100, y: 16 },
+    { name: 'Slime', texture: SLIME, x: 200, y: 16 },
+    { name: 'Knight running', texture: RUN_STRIP, x: 272, y: 16 },
+    { name: 'Health icon', texture: HEART, x: 28, y: 180 },
+  ])
+}
+
+/** A second, smaller level, so opening one and then the other is worth doing. */
+function levelTwo(generatedAt: string): Scene {
+  return scene(LEVEL_TWO, generatedAt, [
+    { name: 'Cave floor', texture: CAVE, x: 144, y: 8, scaleX: 18 },
+    { name: 'Slime', texture: SLIME, x: 96, y: 16 },
+    { name: 'Tilted slime', texture: SLIME, x: 176, y: 16, rotation: 20 },
+    { name: 'Continue button', texture: BUTTON, x: 120, y: 140, scaleX: 2, scaleY: 2 },
+  ])
 }
 
 // --- the pixels -----------------------------------------------------------

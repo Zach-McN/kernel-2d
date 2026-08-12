@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
 
@@ -10,6 +9,7 @@ import {
   serializeMeta,
 } from '../../runtime/formats/meta-schema.js'
 import { GENERATED_BY, sampleFiles, type SampleFile } from './content.js'
+import { sampleAssetId } from './ids.js'
 
 /**
  * Writes the sample project into a folder.
@@ -85,16 +85,6 @@ function meta(file: SampleFile, generatedAt: string): string {
     generatedBy: GENERATED_BY,
     generatedAt,
   })
-}
-
-/**
- * Ids derived from the path rather than minted at random, so re-running this
- * generator produces byte-identical output. The sidecar mints random ones for
- * files a human drops in; ids are opaque, so the two ways of making them never
- * have to agree on anything but being unique.
- */
-function sampleAssetId(projectRelativePath: string): string {
-  return createHash('sha256').update(projectRelativePath).digest('hex').slice(0, 16)
 }
 
 function isOurs(absolutePath: string, file: SampleFile): boolean {

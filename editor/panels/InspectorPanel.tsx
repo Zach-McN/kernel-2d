@@ -9,13 +9,16 @@ import {
 import { formatBytes } from '../../sidecar/bytes'
 import type { MetaView } from '../../sidecar/meta-view-schema'
 import type { DirectoryNode, TreeNode } from '../../sidecar/tree-schema'
-import { TYPE_NAMES, basename, describeKind, findNode } from '../shell/asset-kinds'
+import { TYPE_NAMES, basename, couldBeDocument, describeKind, findNode } from '../shell/asset-kinds'
 import { useSelectedAssetMeta } from '../shell/asset-meta-context'
 import { assetRowsFor } from '../shell/asset-rows'
+import { useDocumentAnswer, useOpenScene } from '../shell/open-scene'
 import { useProject } from '../shell/project-context'
+import { useSceneAssets } from '../shell/scene-assets'
 import { useSelection } from '../shell/selection'
 import type { AssetMetaState } from '../shell/useAssetMeta'
-import { useDocument, useSaveFailure } from '../store/open-documents'
+import { useMetaDocument, useSaveFailure } from '../store/open-documents'
+import { EntityInspector } from './EntityInspector'
 import { SaveFailure, TextureSettings } from './TextureSettings'
 
 /**
@@ -34,24 +37,81 @@ import { SaveFailure, TextureSettings } from './TextureSettings'
  * cannot parse.
  */
 export function InspectorPanel(): ReactElement {
-  const project = useProject()
   const selection = useSelection()
-  const tree = project.state === 'ready' ? project.tree : null
-  // Read from the window rather than fetched here: the Viewport needs the same
-  // answer, and two panels each asking would be two answers on two timers
-  // (`editor-ui` U9).
-  const meta = useSelectedAssetMeta()
 
-  if (selection.path === null) {
+  // One panel, two kinds of thing to describe. Branching on the selection union
+  // rather than on a pair of nullable fields is what makes "an entity in a
+  // scene that is not open" an unwritable state rather than one to guard for.
+  if (selection.selected.kind === 'entity') {
+    return <EntityBody scene={selection.selected.scene} entity={selection.selected.entity} />
+  }
+
+  if (selection.selected.kind === 'none') {
     return <Empty>Select a file or folder in the Assets panel to see what it holds.</Empty>
   }
 
-  const node = tree === null ? null : findNode(tree, selection.path)
+  return <FileInspector path={selection.selected.path} />
+}
+
+// --- an entity -------------------------------------------------------------
+
+function EntityBody({ scene, entity }: { scene: string; entity: string }): ReactElement {
+  const open = useOpenScene()
+  const project = useProject()
+  const assets = useSceneAssets()
+
+  if (open.state !== 'open' || open.path !== scene) {
+    return (
+      <Empty>
+        That entity is in <strong>{basename(scene)}</strong>, which is not open.
+      </Empty>
+    )
+  }
+
+  const found = open.scene.entities.find((candidate) => candidate.id === entity)
+
+  if (found === undefined) {
+    return <Empty>That entity is no longer in {basename(scene)}.</Empty>
+  }
+
+  return (
+    <div className="inspector" data-testid="inspector-panel" data-inspecting-entity={found.id}>
+      <header className="inspector__header">
+        <h2 className="inspector__name" data-testid="inspector-name">
+          {found.name}
+        </h2>
+        <p className="inspector__path" data-testid="inspector-path">
+          {scene}
+        </p>
+      </header>
+
+      <EntityInspector
+        scenePath={scene}
+        scene={open.scene}
+        entity={found}
+        tree={project.state === 'ready' ? project.tree : null}
+        assets={assets}
+      />
+    </div>
+  )
+}
+
+// --- a file or a folder ----------------------------------------------------
+
+function FileInspector({ path }: { path: string }): ReactElement {
+  const project = useProject()
+  const tree = project.state === 'ready' ? project.tree : null
+  // Read from the window rather than fetched here: the Texture tab needs the
+  // same answer, and two panels each asking would be two answers on two timers
+  // (`editor-ui` U9).
+  const meta = useSelectedAssetMeta()
+
+  const node = tree === null ? null : findNode(tree, path)
 
   if (node === null) {
     return (
       <Empty>
-        <strong>{basename(selection.path)}</strong> is no longer in the project folder.
+        <strong>{basename(path)}</strong> is no longer in the project folder.
       </Empty>
     )
   }
@@ -100,8 +160,13 @@ function FileBody({ node, meta }: FileBodyProps): ReactElement {
   const view = meta.state === 'ready' ? meta.view : null
   // The document if this window has taken it into the store, falling back to
   // the served answer for the moment in between.
-  const document = useDocument(node.path)
+  const document = useMetaDocument(node.path)
   const settings: AssetMeta | null = document ?? (view !== null && view.status === 'ok' ? view.meta : null)
+
+  // A file the editor might open as a document is a different kind of thing
+  // from a file it imports as an asset: it has no `.meta`, will never have one,
+  // and what it holds is inside it rather than beside it.
+  const isDocument = couldBeDocument(node.name)
 
   return (
     <>
@@ -118,14 +183,89 @@ function FileBody({ node, meta }: FileBodyProps): ReactElement {
         {settings !== null && <Field label="ID" value={settings.id} testId="inspector-id" />}
       </Section>
 
-      {meta.state === 'loading' && <Note>Reading its import settings…</Note>}
-      {meta.state === 'unavailable' && (
+      {isDocument ? (
+        <DocumentBody path={node.path} />
+      ) : (
+        <>
+          {meta.state === 'loading' && <Note>Reading its import settings…</Note>}
+          {meta.state === 'unavailable' && (
+            <Note data-testid="inspector-note">
+              Could not ask the editor service about this file. Is the editor command still running?
+            </Note>
+          )}
+          {view !== null && <MetaBody node={node} view={view} document={document} />}
+        </>
+      )}
+    </>
+  )
+}
+
+/**
+ * What a document holds, for a file the editor opens rather than imports.
+ *
+ * The interesting case is the scene, and what it says is deliberately short: a
+ * scene's properties *are* its entities, and those are the Hierarchy's to list
+ * and the entity inspector's to tune. Repeating them here would be a second
+ * place to read the same thing.
+ */
+function DocumentBody({ path }: { path: string }): ReactElement {
+  const answer = useDocumentAnswer(path)
+  const open = useOpenScene()
+
+  if (answer.state === 'loading') {
+    return (
+      <Section title="Document">
+        <Note>Reading it…</Note>
+      </Section>
+    )
+  }
+
+  if (answer.state === 'unavailable') {
+    return (
+      <Section title="Document">
         <Note data-testid="inspector-note">
           Could not ask the editor service about this file. Is the editor command still running?
         </Note>
+      </Section>
+    )
+  }
+
+  if (answer.view.status === 'unreadable') {
+    return (
+      <Section title="Document">
+        <Note data-testid="inspector-note">
+          {answer.view.problem} It has been left exactly as it is on disk — nothing here rewrites a file it
+          cannot read.
+        </Note>
+        {answer.view.text !== null && <pre className="inspector__raw">{answer.view.text}</pre>}
+      </Section>
+    )
+  }
+
+  if (answer.view.status === 'none') {
+    return (
+      <Section title="Document">
+        <Note data-testid="inspector-note">There is nothing at that path any more.</Note>
+      </Section>
+    )
+  }
+
+  const scene = open.state === 'open' && open.path === path ? open.scene : null
+
+  return (
+    <Section title="Document">
+      <Field label="Format" value="Scene" testId="inspector-document-format" />
+      {scene !== null && (
+        <Field
+          label="Holds"
+          value={`${scene.entities.length} ${scene.entities.length === 1 ? 'entity' : 'entities'}`}
+          testId="inspector-entity-count"
+        />
       )}
-      {view !== null && <MetaBody node={node} view={view} document={document} />}
-    </>
+      <Note data-testid="inspector-note">
+        It is open in the Viewport. Select an entity in the Hierarchy to tune it.
+      </Note>
+    </Section>
   )
 }
 
@@ -217,16 +357,12 @@ function SettingFields({ path, settings }: { path: string; settings: ImportSetti
 // --- saying what a file is -------------------------------------------------
 
 /**
- * The folder a document sits in is what names it. These are the folders in the
- * project layout, and each one's inspector arrives with the format it holds —
- * saying so is more use than "unknown file".
+ * Why a file has no import settings.
+ *
+ * `.json` files never reach here — a file the editor might open as a document
+ * is described by what is inside it rather than by what is missing beside it,
+ * which is `DocumentBody`'s job.
  */
-const DOCUMENT_FOLDERS: Record<string, string> = {
-  scenes: 'A scene. Scenes get their own inspector when the scene format lands.',
-  prefabs: 'A prefab. Prefabs get their own inspector when the prefab format lands.',
-  data: 'A data table. These get the tool that writes them, when the genre needs one.',
-}
-
 function describeMissingMeta(path: string): string {
   const name = basename(path)
 
@@ -234,20 +370,11 @@ function describeMissingMeta(path: string): string {
     return 'This is an import-settings file, and the file it describes is not beside it. It will be cleared out the next time the editor starts.'
   }
 
-  const document = describeDocument(path)
-  if (document !== null) return document
-
   if (assetTypeForName(name) !== null) {
     return 'No import settings yet. One is written within a second of the file appearing — if this stays, check the editor command is still running.'
   }
 
   return 'The editor does not import this kind of file, so it has no settings.'
-}
-
-function describeDocument(path: string): string | null {
-  if (!path.toLowerCase().endsWith('.json')) return null
-  const top = path.includes('/') ? (path.split('/')[0] ?? '') : ''
-  return DOCUMENT_FOLDERS[top] ?? null
 }
 
 // --- small pieces ----------------------------------------------------------

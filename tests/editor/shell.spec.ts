@@ -2,7 +2,7 @@ import { expect, test, type Locator, type Page } from '@playwright/test'
 
 import { EDITOR_TEST_PROJECT_NAME, editorTestProjectDisplayPath } from './test-project.js'
 
-const PANEL_TITLES = ['Viewport', 'Hierarchy', 'Inspector', 'Assets'] as const
+const PANEL_TITLES = ['Viewport', 'Texture', 'Hierarchy', 'Inspector', 'Assets'] as const
 
 test.beforeEach(async ({ page }) => {
   await page.goto('/')
@@ -14,12 +14,12 @@ test.describe('the editor shell', () => {
       await expect(page.getByRole('tab', { name: title, exact: true })).toBeVisible()
     }
 
-    // A panel that has not been built yet says what will live in it.
-    await expect(page.locator('[data-panel="hierarchy"]')).toContainText('the open scene')
-
-    // A panel that has been built shows itself instead.
+    // Every panel has a body now. The Texture tab shares the Viewport's group,
+    // so it is behind it until a texture is selected — which is the one panel
+    // that is not on screen at rest.
     await expect(page.getByTestId('assets-panel')).toBeVisible()
     await expect(page.getByTestId('inspector-panel')).toBeVisible()
+    await expect(page.getByTestId('hierarchy-panel')).toBeVisible()
     await expect(page.getByTestId('viewport-panel')).toBeVisible()
   })
 
@@ -61,7 +61,7 @@ test.describe('the editor shell', () => {
   })
 
   test('panels resize by dragging the divider between them', async ({ page }) => {
-    const hierarchy = page.locator('[data-panel="hierarchy"]')
+    const hierarchy = page.getByTestId('hierarchy-panel')
     const before = await boxOf(hierarchy)
 
     const divider = await dividerRightOf(page, before.x + before.width)

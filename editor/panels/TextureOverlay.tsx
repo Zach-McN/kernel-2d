@@ -18,12 +18,12 @@ import type { Pivot } from '../../runtime/formats/meta-schema'
  * no guides at all, because their whole job is to answer that one question.
  */
 
-interface ViewportOverlayProps {
+interface TextureOverlayProps {
   shown: ShownTexture
   pivot: Pivot
 }
 
-export function ViewportOverlay({ shown, pivot }: ViewportOverlayProps): ReactElement {
+export function TextureOverlay({ shown, pivot }: TextureOverlayProps): ReactElement {
   const { placement } = shown
   const toScreen = (imageX: number, imageY: number): [number, number] => [
     placement.x + imageX * placement.scale,
@@ -48,10 +48,10 @@ export function ViewportOverlay({ shown, pivot }: ViewportOverlayProps): ReactEl
   const uncoveredHeight = shown.uncoveredBottom * placement.scale
 
   return (
-    <svg className="viewport__overlay" data-testid="viewport-overlay" aria-hidden="true">
+    <svg className="viewport__overlay" data-testid="texture-overlay" aria-hidden="true">
       <rect
         className="viewport__bounds"
-        data-testid="viewport-bounds"
+        data-testid="texture-bounds"
         x={imageLeft}
         y={imageTop}
         width={imageWidth}
@@ -68,7 +68,7 @@ export function ViewportOverlay({ shown, pivot }: ViewportOverlayProps): ReactEl
       {uncoveredWidth > 0 && (
         <rect
           className="viewport__uncovered"
-          data-testid="viewport-uncovered-right"
+          data-testid="texture-uncovered-right"
           x={imageLeft + imageWidth - uncoveredWidth}
           y={imageTop}
           width={uncoveredWidth}
@@ -78,7 +78,7 @@ export function ViewportOverlay({ shown, pivot }: ViewportOverlayProps): ReactEl
       {uncoveredHeight > 0 && (
         <rect
           className="viewport__uncovered"
-          data-testid="viewport-uncovered-bottom"
+          data-testid="texture-uncovered-bottom"
           x={imageLeft}
           y={imageTop + imageHeight - uncoveredHeight}
           width={imageWidth - uncoveredWidth}
@@ -95,7 +95,7 @@ export function ViewportOverlay({ shown, pivot }: ViewportOverlayProps): ReactEl
             <rect
               key={`${frame.x},${frame.y}`}
               className="viewport__frame"
-              data-testid="viewport-frame"
+              data-testid="texture-frame"
               data-frame-index={index}
               x={x}
               y={y}
@@ -107,7 +107,7 @@ export function ViewportOverlay({ shown, pivot }: ViewportOverlayProps): ReactEl
 
       <g
         className="viewport__pivot"
-        data-testid="viewport-pivot"
+        data-testid="texture-pivot"
         data-pivot-x={pivotX}
         data-pivot-y={pivotY}
       >

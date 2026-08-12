@@ -2,7 +2,9 @@ import type { DockviewApi, IDockviewPanelProps } from 'dockview-react'
 import type { FunctionComponent, ReactElement } from 'react'
 
 import { AssetsPanel } from '../panels/AssetsPanel'
+import { HierarchyPanel } from '../panels/HierarchyPanel'
 import { InspectorPanel } from '../panels/InspectorPanel'
+import { TexturePanel } from '../panels/TexturePanel'
 import { ViewportPanel } from '../panels/ViewportPanel'
 
 /**
@@ -28,14 +30,31 @@ export interface PanelDefinition {
 const VIEWPORT: PanelDefinition = {
   id: 'viewport',
   title: 'Viewport',
-  blurb: 'The game itself, drawn by the real runtime. Scenes open here, and play mode runs here.',
+  blurb: 'The open scene, drawn by the real runtime. Play mode will run here too.',
   render: ViewportPanel,
+}
+
+/**
+ * The second viewport-shaped panel, and the second live renderer in the window.
+ *
+ * It shares the Viewport's group rather than getting a corner of its own, so
+ * selecting a texture swaps the tab in front and the scene keeps its place
+ * behind it. The count of renderers is bounded by the number of entries in this
+ * file, which is what keeps two of them from turning into a habit — see the note
+ * at the top of `scene-view-context.tsx`.
+ */
+const TEXTURE: PanelDefinition = {
+  id: 'texture',
+  title: 'Texture',
+  blurb: 'The selected texture on its own, with its frames and pivot marked.',
+  render: TexturePanel,
 }
 
 const HIERARCHY: PanelDefinition = {
   id: 'hierarchy',
   title: 'Hierarchy',
-  blurb: 'Everything in the open scene, as a tree you can select, reorder, and nest.',
+  blurb: 'Everything in the open scene, in the order it is drawn.',
+  render: HierarchyPanel,
 }
 
 const INSPECTOR: PanelDefinition = {
@@ -54,6 +73,7 @@ const ASSETS: PanelDefinition = {
 
 export const PANELS = {
   viewport: VIEWPORT,
+  texture: TEXTURE,
   hierarchy: HIERARCHY,
   inspector: INSPECTOR,
   assets: ASSETS,
@@ -73,6 +93,15 @@ export function layOutPanels(api: DockviewApi): void {
   if (api.panels.length > 0) return
 
   api.addPanel({ id: PANELS.viewport.id, component: PANELS.viewport.id, title: PANELS.viewport.title })
+
+  // Behind the Viewport in the same group, so selecting a texture brings it
+  // forward and the scene is still there when the human clicks back.
+  api.addPanel({
+    id: PANELS.texture.id,
+    component: PANELS.texture.id,
+    title: PANELS.texture.title,
+    position: { direction: 'within', referencePanel: PANELS.viewport.id },
+  })
 
   api.addPanel({
     id: PANELS.hierarchy.id,

@@ -1,0 +1,91 @@
+import { z } from 'zod'
+
+import { SCENE_FORMAT, SceneSchema } from '../runtime/formats/scene-schema.js'
+
+/**
+ * The documents this service will read and write, and the answer it gives about
+ * one.
+ *
+ * A `.meta` has its own endpoint and its own view, because it is an annotation
+ * *about* a file rather than a document in its own right — it is addressed by
+ * the path of the thing it annotates, it has orphan rules, and the service
+ * creates one on its own initiative. Nothing in here does any of that. Two
+ * nearly-identical envelopes is a duplication worth watching; the moment a third
+ * arrives, generalise them.
+ */
+
+export const DOCUMENT_VIEW_FORMAT = 'kernel2d.document-view'
+export const DOCUMENT_VIEW_VERSION = 1
+
+/**
+ * The registry: every document format the editor knows, keyed by the `format`
+ * string the document itself carries.
+ *
+ * **This is the one list.** The union type below is derived from it and the
+ * validator that guards a write is looked up in it, so a format cannot be added
+ * to one and forgotten in the other. Keying on the document's own `format`
+ * rather than on the path is what T1's format literal was always for: where a
+ * file happens to sit in the folder tree is a convention, and what it says it is
+ * is a fact.
+ */
+export const DOCUMENT_SCHEMAS = {
+  [SCENE_FORMAT]: SceneSchema,
+} as const
+
+export type EditorDocument = z.infer<(typeof DOCUMENT_SCHEMAS)[keyof typeof DOCUMENT_SCHEMAS]>
+
+/** Every format the editor can write, for saying so in a refusal. */
+export const KNOWN_DOCUMENT_FORMATS: readonly string[] = Object.keys(DOCUMENT_SCHEMAS)
+
+/** The schema for a format string, or undefined when it is not one we know. */
+export function documentSchemaFor(format: unknown): z.ZodType<EditorDocument> | undefined {
+  if (typeof format !== 'string') return undefined
+  return Object.hasOwn(DOCUMENT_SCHEMAS, format)
+    ? DOCUMENT_SCHEMAS[format as keyof typeof DOCUMENT_SCHEMAS]
+    : undefined
+}
+
+/** Any registered document. Used where the *service* has already picked a format. */
+export const EditorDocumentSchema: z.ZodType<EditorDocument> = z.union(Object.values(DOCUMENT_SCHEMAS))
+
+export type DocumentViewStatus =
+  /** A document was found and parsed. */
+  | 'ok'
+  /** There is no file at that path. */
+  | 'none'
+  /** There is a file and it is not something this editor understands. */
+  | 'unreadable'
+
+export interface DocumentView {
+  format: typeof DOCUMENT_VIEW_FORMAT
+  version: typeof DOCUMENT_VIEW_VERSION
+  /** The path that was asked about, project-relative and forward-slashed. */
+  path: string
+  status: DocumentViewStatus
+  document: EditorDocument | null
+  /** One plain sentence saying what is wrong. Only set when `unreadable`. */
+  problem: string | null
+  /**
+   * The file's raw text, so the human can see what is actually in it rather
+   * than only being told it could not be read. Only set when `unreadable`, and
+   * only when the file is small enough to be worth showing.
+   */
+  text: string | null
+}
+
+/**
+ * A scene can reasonably be large — a level with a thousand entities is not a
+ * mistake — so this is generous next to the `.meta` limit. It bounds only the
+ * *unreadable* case, where the text is shipped to a panel to be looked at.
+ */
+export const MAX_SHOWN_DOCUMENT_BYTES = 64 * 1024
+
+export const DocumentViewSchema: z.ZodType<DocumentView> = z.object({
+  format: z.literal(DOCUMENT_VIEW_FORMAT),
+  version: z.literal(DOCUMENT_VIEW_VERSION),
+  path: z.string().min(1),
+  status: z.enum(['ok', 'none', 'unreadable']),
+  document: EditorDocumentSchema.nullable(),
+  problem: z.string().min(1).nullable(),
+  text: z.string().nullable(),
+})

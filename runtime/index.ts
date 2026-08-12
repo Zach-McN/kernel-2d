@@ -36,7 +36,41 @@ export {
   type TextureImportSettings,
 } from './formats/meta-schema'
 
+export {
+  COMPONENT_SCHEMAS,
+  SCENE_FORMAT,
+  SCENE_VERSION,
+  SceneSchema,
+  componentOf,
+  defaultEntity,
+  defaultScene,
+  defaultTransform,
+  isKnownComponentType,
+  serializeScene,
+  spriteOf,
+  unknownComponentTypesOf,
+  type AssetRef,
+  type Entity,
+  type KnownComponentType,
+  type Scene,
+  type SpriteComponent,
+  type Transform,
+} from './formats/scene-schema'
+
 export { framesFor, type FrameRect, type SlicedFrames } from './textures/frames'
+
+export { toScenePoint, toScreenPoint, toScreenRadians, type Point } from './scene/coordinates'
+
+export type { DrawnEntity } from './scene/entity-layer'
+
+export {
+  createSceneView,
+  type SceneRequest,
+  type SceneTexture,
+  type SceneView,
+  type SceneViewOptions,
+  type ShownScene,
+} from './scene/scene-view'
 
 export {
   createTextureView,

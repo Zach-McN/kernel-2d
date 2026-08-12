@@ -1,6 +1,5 @@
+import type { AssetMeta } from '../../runtime/formats/meta-schema'
 import { MetaViewSchema } from '../../sidecar/meta-view-schema'
-
-import type { Document } from './documents'
 
 /**
  * Putting one document back on disk, through the editor service.
@@ -13,7 +12,7 @@ import type { Document } from './documents'
  * The service's own refusals arrive as a sentence meant for a human, so they are
  * carried through unchanged rather than replaced with a status code.
  */
-export async function writeMetaToDisk(path: string, document: Document): Promise<void> {
+export async function writeMetaToDisk(path: string, document: AssetMeta): Promise<void> {
   const response = await fetch(`/api/meta?path=${encodeURIComponent(path)}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },

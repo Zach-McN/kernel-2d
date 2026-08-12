@@ -5,6 +5,7 @@ import path from 'node:path'
 import { pipeline } from 'node:stream/promises'
 
 import { NotFoundError, resolveAssetBytes } from './asset-files.js'
+import { readDocumentView, writeDocumentFor } from './document-files.js'
 import { toFileEventMessage } from './event-schema.js'
 import { createEventFeed, type EventFeed } from './feed.js'
 import { RefusedError, readMetaView, writeMetaFor } from './meta-files.js'
@@ -36,11 +37,18 @@ export interface ServerHandle {
 const HEARTBEAT_MS = 15_000
 
 /**
- * The largest body this service will read. A `.meta` is a handful of settings;
- * anything approaching this is not one, and reading an unbounded body from a
- * socket is how a service is talked into exhausting its own memory.
+ * The largest body this service will read, per kind of thing being written.
+ *
+ * Reading an unbounded body from a socket is how a service is talked into
+ * exhausting its own memory, so both are capped — but they are capped
+ * separately because they are different sizes of thing. A `.meta` is a handful
+ * of settings and anything approaching 64KB is not one. A scene is a level, and
+ * a level with thousands of entities in it is a large file rather than a
+ * mistake, so the cap there is a backstop rather than a statement about what is
+ * reasonable.
  */
-const MAX_BODY_BYTES = 64 * 1024
+const MAX_META_BYTES = 64 * 1024
+const MAX_DOCUMENT_BYTES = 8 * 1024 * 1024
 
 interface ServerContext {
   options: ServerOptions
@@ -116,10 +124,16 @@ async function handleRequest(
   const url = new URL(request.url ?? '/', `http://${context.options.host}`)
   const pathname = url.pathname
 
-  // Reading is open; the one thing that writes is a PUT to a single named set
-  // of import settings, and it is the only non-GET this service answers at all.
+  // Reading is open. Writing is two PUTs and nothing else: one replaces a
+  // single named set of import settings, the other replaces a single named
+  // document. They are the only non-GETs this service answers at all.
   if (request.method === 'PUT' && pathname === '/meta') {
     await handleMetaWrite(context, request, response, url)
+    return
+  }
+
+  if (request.method === 'PUT' && pathname === '/document') {
+    await handleDocumentWrite(context, request, response, url)
     return
   }
 
@@ -158,6 +172,23 @@ async function handleRequest(
       }
       sendJson(response, 500, {
         error: 'Could not read the import settings for that file',
+        detail: error instanceof Error ? error.message : String(error),
+      })
+    }
+    return
+  }
+
+  if (pathname === '/document') {
+    const requested = url.searchParams.get('path') ?? ''
+    try {
+      sendJson(response, 200, await readDocumentView(context.options.projectPath, requested))
+    } catch (error) {
+      if (error instanceof RefusedError) {
+        sendJson(response, 400, { error: error.message, path: requested })
+        return
+      }
+      sendJson(response, 500, {
+        error: 'Could not read the document at that path',
         detail: error instanceof Error ? error.message : String(error),
       })
     }
@@ -250,7 +281,7 @@ async function handleMetaWrite(
 
   let document: unknown
   try {
-    document = JSON.parse(await readBody(request))
+    document = JSON.parse(await readBody(request, MAX_META_BYTES))
   } catch (error) {
     sendJson(response, 400, {
       error: `Those import settings did not arrive as readable JSON: ${(error as Error).message}.`,
@@ -273,18 +304,61 @@ async function handleMetaWrite(
   }
 }
 
-function readBody(request: http.IncomingMessage): Promise<string> {
+/**
+ * The editor asking for one document to be replaced.
+ *
+ * The same shape as the `.meta` write and held to the same discipline: every
+ * refusal is a 400 carrying one plain sentence meant for a human, and nothing on
+ * disk is touched unless the whole document was understood first. What this one
+ * will and will not overwrite is stated in full at the top of
+ * `document-files.ts`, and is not restated here — two copies of a privilege is
+ * how one of them quietly gets wider than the other.
+ */
+async function handleDocumentWrite(
+  context: ServerContext,
+  request: http.IncomingMessage,
+  response: http.ServerResponse,
+  url: URL,
+): Promise<void> {
+  const requested = url.searchParams.get('path') ?? ''
+
+  let document: unknown
+  try {
+    document = JSON.parse(await readBody(request, MAX_DOCUMENT_BYTES))
+  } catch (error) {
+    sendJson(response, 400, {
+      error: `That document did not arrive as readable JSON: ${(error as Error).message}.`,
+      path: requested,
+    })
+    return
+  }
+
+  try {
+    sendJson(response, 200, await writeDocumentFor(context.options.projectPath, requested, document))
+  } catch (error) {
+    if (error instanceof RefusedError) {
+      sendJson(response, 400, { error: error.message, path: requested })
+      return
+    }
+    sendJson(response, 500, {
+      error: 'Could not write the document at that path',
+      detail: error instanceof Error ? error.message : String(error),
+    })
+  }
+}
+
+function readBody(request: http.IncomingMessage, maxBytes: number): Promise<string> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = []
     let size = 0
 
     request.on('data', (chunk: Buffer) => {
       size += chunk.length
-      if (size > MAX_BODY_BYTES) {
+      if (size > maxBytes) {
         // Stop reading rather than keep accepting bytes that will be thrown
         // away: the point of the cap is to bound what is held, not to count it.
         request.destroy()
-        reject(new Error(`import settings are larger than ${MAX_BODY_BYTES} bytes`))
+        reject(new Error(`that is larger than the ${maxBytes} bytes this endpoint accepts`))
         return
       }
       chunks.push(chunk)
@@ -346,7 +420,7 @@ function statusOf(options: ServerOptions): SidecarStatus {
     version: SIDECAR_STATUS_VERSION,
     projectPath: toPosixPath(options.projectPath),
     projectName: path.basename(options.projectPath),
-    endpoints: { tree: '/tree', events: '/events', meta: '/meta', asset: '/asset' },
+    endpoints: { tree: '/tree', events: '/events', meta: '/meta', document: '/document', asset: '/asset' },
   }
 }
 

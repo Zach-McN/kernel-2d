@@ -2,6 +2,7 @@ import { applyPatches, enablePatches, freeze, produceWithPatches, type Draft, ty
 import { createStore } from 'zustand/vanilla'
 
 import type { AssetMeta } from '../../runtime/formats/meta-schema'
+import type { Scene } from '../../runtime/formats/scene-schema'
 
 /**
  * The transaction API: the one door every change to a document goes through,
@@ -32,8 +33,18 @@ enablePatches()
 /**
  * A document as everything outside this module sees it. Reads are ordinary;
  * writes go through the doors above.
+ *
+ * A union rather than one type, and the store itself knows nothing about which
+ * member it is holding: undo is patches over a map of JSON, and every rule in
+ * this file — merging, coalescing, staleness, the save debounce — is the same
+ * whether the thing being edited is a texture's import settings or a level.
+ * That is the whole payoff of document-level undo (editor-kernel D7): the scene
+ * format arrived and not one line of undo was written for it.
+ *
+ * The only place the difference shows is which service endpoint the write goes
+ * to, and that is a one-line branch on `format` in `open-documents.ts`.
  */
-export type Document = AssetMeta
+export type Document = AssetMeta | Scene
 
 export interface DocumentState {
   /** Keyed by the project-relative path of the file the settings belong to. */

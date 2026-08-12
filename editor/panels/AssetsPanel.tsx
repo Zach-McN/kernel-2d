@@ -53,9 +53,9 @@ export function AssetsPanel(): ReactElement {
             row={row}
             depth={0}
             expanded={expanded}
-            selected={selection.path}
+            selected={selection.selectedFilePath}
             onToggle={toggle}
-            onSelect={selection.select}
+            onSelect={selection.selectFile}
           />
         ))}
       </ul>
