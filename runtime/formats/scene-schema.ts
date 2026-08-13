@@ -57,8 +57,14 @@ export const SCENE_VERSION = 1
  * guess: **the path is what resolves the reference, and the id is the witness.**
  * The editor looks the file up by path, then compares the id it finds against
  * the one recorded here — a mismatch means the reference now points at some
- * other file, and it is said out loud rather than drawn silently. Reconciling
- * the pair after a move is a fixup tool's job and does not exist yet.
+ * other file, and it is said out loud rather than drawn silently.
+ *
+ * **A file moved from inside the editor keeps its id**, because its `.meta` moves
+ * with it, so the fixup that follows a rename rewrites `path` and never touches
+ * `id`. That is the whole shape of the repair, and it is why the pair was worth
+ * carrying: an id that changed on every move would make a rename a re-write of
+ * every reference's identity rather than of its address. Where the references
+ * are is `COMPONENT_REFERENCE_FIELDS` below.
  */
 export interface AssetRef {
   id: string
@@ -195,6 +201,25 @@ export function isKnownComponentType(type: string): type is KnownComponentType {
   return Object.hasOwn(COMPONENT_SCHEMAS, type)
 }
 
+/**
+ * Which field of each known component holds a reference to a file.
+ *
+ * **Where a reference lives is a fact about the format, so it is written down
+ * beside the registry rather than inside the tool that follows one.** The editor
+ * fixes up every reference when a file is renamed or moved, and it needs to know
+ * where they are; deriving that by hand in the editor would be a second list that
+ * silently stops matching this one the first time a component type is added. Here,
+ * a genre layer whose component points at a file gets the fixup by adding a line
+ * to this object — the same one line the registry above already costs it.
+ *
+ * A component with no reference in it simply has no entry, which is why this is
+ * partial rather than a full record.
+ */
+export const COMPONENT_REFERENCE_FIELDS: Partial<Record<KnownComponentType, string>> = {
+  sprite: 'texture',
+  prefab: 'source',
+}
+
 export const EntitySchema: z.ZodType<Entity> = z
   .looseObject({
     id: z.string().min(1),
@@ -302,6 +327,32 @@ export function spriteOf(holder: ComponentHolder): SpriteComponent | null {
 /** Which prefab this entity is an instance of, or null if it is not one. */
 export function prefabRefOf(entity: Entity): AssetRef | null {
   return componentOf(entity, 'prefab')?.source ?? null
+}
+
+/**
+ * Every file this entity or prefab points at, in registry order.
+ *
+ * Read straight off the raw component map through `COMPONENT_REFERENCE_FIELDS`
+ * rather than through the typed readers above, so that adding a
+ * reference-bearing component type means editing that map and nothing else.
+ * Anything at a reference field that is not an `AssetRef` is skipped rather than
+ * reported: this answers "what does this point at", and a component the schema
+ * has already accepted cannot be malformed there.
+ */
+export function assetRefsOf(holder: ComponentHolder): AssetRef[] {
+  const refs: AssetRef[] = []
+
+  for (const [type, field] of Object.entries(COMPONENT_REFERENCE_FIELDS)) {
+    if (field === undefined) continue
+
+    const component = holder.components[type]
+    if (component === null || typeof component !== 'object') continue
+
+    const parsed = AssetRefSchema.safeParse((component as Record<string, unknown>)[field])
+    if (parsed.success) refs.push(parsed.data)
+  }
+
+  return refs
 }
 
 /** The component types on this entity or prefab that the kernel has no schema for. */

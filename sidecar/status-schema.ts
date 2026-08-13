@@ -31,6 +31,10 @@ export interface SidecarStatus {
     document: string
     /** Path to one asset's bytes; takes a `path` query parameter. */
     asset: string
+    /** Where a file is moved; takes `path` and `to` query parameters. POST. */
+    move: string
+    /** Where a file is deleted; takes a `path` query parameter. POST. */
+    delete: string
   }
 }
 
@@ -45,5 +49,7 @@ export const SidecarStatusSchema: z.ZodType<SidecarStatus> = z.object({
     meta: z.string().min(1),
     document: z.string().min(1),
     asset: z.string().min(1),
+    move: z.string().min(1),
+    delete: z.string().min(1),
   }),
 })

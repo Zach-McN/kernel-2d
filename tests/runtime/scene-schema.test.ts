@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  COMPONENT_REFERENCE_FIELDS,
   SceneSchema,
+  assetRefsOf,
   componentOf,
   copyEntity,
   defaultEntity,
@@ -268,5 +270,59 @@ describe('what a fresh scene looks like', () => {
     expect(() =>
       SceneSchema.parse({ ...defaultScene(), entities: [defaultEntity('abc123', 'New entity')] }),
     ).not.toThrow()
+  })
+})
+
+/**
+ * Where a reference lives is a fact about the format, and this is the assertion
+ * that keeps `COMPONENT_REFERENCE_FIELDS` honest with the registry beside it.
+ *
+ * The fixup that follows a rename reads its list of places-to-look from that
+ * map. A component type added to the registry and forgotten here is a component
+ * whose reference silently stops being repaired when a file moves — which looks
+ * exactly like working until somebody renames the wrong texture.
+ */
+describe('every file a document points at', () => {
+  it('finds the texture an entity draws', () => {
+    expect(assetRefsOf(knight)).toEqual([
+      { id: 'a3f90011deadbeef', path: 'assets/textures/characters/knight-idle.png' },
+    ])
+  })
+
+  it('finds the prefab an instance is placed from', () => {
+    const instance: Entity = {
+      ...defaultEntity('aa11bb22cc33dd44', 'Slime'),
+      components: { prefab: { source: { id: 'slime-doc-id', path: 'prefabs/slime.json' } } },
+    }
+
+    expect(assetRefsOf(instance)).toEqual([{ id: 'slime-doc-id', path: 'prefabs/slime.json' }])
+  })
+
+  it('reads a prefab the same way it reads an entity, because both hold components', () => {
+    expect(assetRefsOf({ components: knight.components })).toEqual(assetRefsOf(knight))
+  })
+
+  it('finds nothing on an entity that draws nothing', () => {
+    expect(assetRefsOf(defaultEntity('abc123', 'Empty'))).toEqual([])
+  })
+
+  it('says nothing about a component type this kernel has never heard of', () => {
+    // The honest answer: the kernel cannot know that somebody else's component
+    // holds a path. It is reported as unknown elsewhere and left alone here.
+    const patrolling: Entity = {
+      ...defaultEntity('abc123', 'Guard'),
+      components: { patrol: { route: { id: 'route-id', path: 'data/routes/wall.json' } } },
+    }
+
+    expect(assetRefsOf(patrolling)).toEqual([])
+  })
+
+  it('names every component the fixup knows how to follow', () => {
+    // Fails the day a reference-bearing component is added to the registry
+    // without being added here, which is the drift this map exists to prevent.
+    for (const type of Object.keys(COMPONENT_REFERENCE_FIELDS)) {
+      expect(isKnownComponentType(type)).toBe(true)
+    }
+    expect(Object.keys(COMPONENT_REFERENCE_FIELDS).sort()).toEqual(['prefab', 'sprite'])
   })
 })

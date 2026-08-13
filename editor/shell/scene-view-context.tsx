@@ -113,6 +113,14 @@ interface SceneSubjectApi {
   setSubject: (subject: SceneRequest | null, key: string) => void
   /** False while any of this scene's textures is still in the air. */
   setComplete: (complete: boolean) => void
+  /**
+   * A level's file moved, so the view the human left it at moves with it.
+   *
+   * Cameras are keyed by scene path, so without this a renamed level arrives at
+   * a path nothing has ever framed and gets framed again — the level jumps, for
+   * a reason that has nothing to do with looking at it.
+   */
+  renameScene: (from: string, to: string) => void
 }
 
 const SceneViewContext = createContext<SceneViewState | null>(null)
@@ -375,6 +383,13 @@ export function SceneViewProvider({ children }: { children: ReactNode }): ReactE
     () => ({
       setSubject: (request, key) => setSubject(request === null ? null : { request, key }),
       setComplete,
+      renameScene: (from, to) =>
+        setCameras((previous) => {
+          const camera = previous[from]
+          if (camera === undefined || from === to) return previous
+          const { [from]: _moved, ...rest } = previous
+          return { ...rest, [to]: camera }
+        }),
     }),
     [],
   )
@@ -410,6 +425,18 @@ export function useSceneView(): SceneViewState {
   const view = useContext(SceneViewContext)
   if (view === null) throw new Error('useSceneView was called outside the editor shell')
   return view
+}
+
+/**
+ * Told when a level's file moves, so the camera follows it.
+ *
+ * A second hook over the same context rather than a context of its own: there is
+ * one provider holding the cameras, and two things that talk to it imperatively.
+ */
+export function useSceneCameraMoved(): (from: string, to: string) => void {
+  const api = useContext(SceneSubjectContext)
+  if (api === null) throw new Error('useSceneCameraMoved was called outside the editor shell')
+  return api.renameScene
 }
 
 /**

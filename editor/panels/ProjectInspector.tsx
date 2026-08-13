@@ -3,8 +3,9 @@ import { useEffect, useState, type ReactElement } from 'react'
 import { PROJECT_FORMAT, type Project } from '../../runtime/formats/project-schema'
 import { SCENE_FORMAT } from '../../runtime/formats/scene-schema'
 import { DocumentViewSchema } from '../../sidecar/document-view-schema'
-import type { ProjectTree, TreeNode } from '../../sidecar/tree-schema'
-import { basename, couldBeDocument } from '../shell/asset-kinds'
+import type { ProjectTree } from '../../sidecar/tree-schema'
+import { basename } from '../shell/asset-kinds'
+import { documentPathsIn } from '../shell/references'
 import { editDocument } from '../store/open-documents'
 import { Note, Section } from './fields'
 
@@ -229,18 +230,11 @@ async function kindOf(path: string): Promise<Kind> {
  * chosen, which is the file that matters. The settings file itself is left out: a
  * game cannot start on its own settings, and offering it would be offering a
  * mistake.
+ *
+ * The walk itself is `documentPathsIn`, shared with the rename fixup the moment a
+ * second caller wanted it. What is *not* shared is this exclusion, which is about
+ * what a game can start on rather than about which files are documents.
  */
 function documentsIn(tree: ProjectTree, exclude: string): string[] {
-  const found: string[] = []
-
-  const walk = (node: TreeNode): void => {
-    if (node.kind === 'file') {
-      if (couldBeDocument(node.name) && node.path !== exclude) found.push(node.path)
-      return
-    }
-    for (const child of node.children) walk(child)
-  }
-
-  walk(tree.tree)
-  return found
+  return documentPathsIn(tree).filter((path) => path !== exclude)
 }

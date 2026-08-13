@@ -128,6 +128,61 @@ describe('saving a file into the folder while the editor is open', () => {
   })
 })
 
+/**
+ * The rule that makes a rename keep its id, tested where it can actually fail:
+ * against a live watcher.
+ *
+ * A move is two renames — the sidecar, then the file — and "an asset that
+ * appears with no settings gets settings" is listening the whole time. Without
+ * the service standing aside for its own writes, this would usually pass and
+ * occasionally mint a fresh id, which is the worst kind of wrong: the pivot and
+ * the slicing are gone, and every reference in every level is now witnessed by an
+ * id nothing recorded. A test against the functions alone cannot see it, because
+ * there is no watcher in that test to lose the race to.
+ */
+describe('renaming through the editor while the watcher is running', () => {
+  it('keeps the id and the settings, and leaves nothing behind at the old path', async () => {
+    const sidecar = await start()
+
+    const before = JSON.parse(await fs.readFile(project.file('assets/textures/knight.png.meta'), 'utf8')) as {
+      id: string
+    }
+
+    const response = await fetch(
+      `${sidecar.url}/move?path=assets/textures/knight.png&to=assets/textures/hero.png`,
+      { method: 'POST' },
+    )
+    expect(response.status).toBe(200)
+
+    // Past the watcher's write-settling delay, so anything it was going to do
+    // about either half of the rename has had every chance to happen.
+    await delay(600)
+
+    expect(exists('assets/textures/knight.png')).toBe(false)
+    expect(exists('assets/textures/knight.png.meta')).toBe(false)
+
+    const after = JSON.parse(await fs.readFile(project.file('assets/textures/hero.png.meta'), 'utf8')) as {
+      id: string
+    }
+    expect(after.id).toBe(before.id)
+  })
+
+  it('settles rather than feeding itself, the same as every other write here', async () => {
+    const sidecar = await start()
+
+    await fetch(`${sidecar.url}/move?path=assets/textures/knight.png&to=assets/textures/hero.png`, {
+      method: 'POST',
+    })
+    await delay(600)
+
+    const settled = await fs.readdir(project.file('assets/textures'))
+    await delay(600)
+
+    expect(await fs.readdir(project.file('assets/textures'))).toEqual(settled)
+    expect(settled).toEqual(['hero.png', 'hero.png.meta'])
+  })
+})
+
 describe('deleting things while the editor is open', () => {
   it('starts a file over when its settings are deleted but the file is still there', async () => {
     await start()
@@ -145,6 +200,18 @@ describe('deleting things while the editor is open', () => {
     // removal half of a rename as it is to be rubbish, and deleting it there
     // would throw away the id and settings of every file the human renames.
     expect(exists('assets/textures/knight.png.meta')).toBe(true)
+  })
+
+  it('takes the settings with the file when the editor deletes one', async () => {
+    const sidecar = await start()
+
+    const response = await fetch(`${sidecar.url}/delete?path=assets/textures/knight.png`, { method: 'POST' })
+    expect(response.status).toBe(200)
+
+    // Long enough for the removal to have gone round the watcher and back.
+    await delay(600)
+
+    expect(exists('assets/textures/knight.png.meta')).toBe(false)
   })
 
   it('clears that orphan out on the next start, and names it', async () => {

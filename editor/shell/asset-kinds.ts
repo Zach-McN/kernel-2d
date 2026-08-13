@@ -77,3 +77,30 @@ export function findNode(tree: ProjectTree, path: string): TreeNode | null {
 export function basename(path: string): string {
   return path.split('/').at(-1) ?? path
 }
+
+/** The folder a path sits in, or `''` for the top of the project. */
+export function parentOf(path: string): string {
+  return path.split('/').slice(0, -1).join('/')
+}
+
+/**
+ * Every folder in the project, deepest last, for a control that has to offer a
+ * destination.
+ *
+ * The top of the project is `''` and is not in here — it is not a node in the
+ * tree, and a caller that offers it has to word it ("the top of the project")
+ * rather than show an empty option.
+ */
+export function folderPathsIn(tree: ProjectTree): string[] {
+  const found: string[] = []
+
+  const walk = (node: TreeNode): void => {
+    if (node.kind !== 'directory') return
+    // The root's own path is `.`, which is not a folder anybody moves into.
+    if (node.path !== '.') found.push(node.path)
+    for (const child of node.children) walk(child)
+  }
+
+  walk(tree.tree)
+  return found
+}

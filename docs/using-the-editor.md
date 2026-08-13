@@ -8,7 +8,7 @@ It is kept current by the definition of done in `CLAUDE.md`: a session that
 changes what you can do, or how you do it, changes this page in the same commit.
 If this page and the editor disagree, the editor is right and the page is a bug.
 
-Last true as of: **an exported game** (2026-08-12).
+Last true as of: **renaming, moving and deleting files** (2026-08-12).
 
 ---
 
@@ -117,9 +117,46 @@ copying, no renaming. Save a PNG into it from Photoshop and it appears within a
 second. Rename a folder in Explorer and the tree follows.
 
 Every asset gets a small settings file beside it (`knight.png` +
-`knight.png.meta`) holding its import settings. That file is the editor's only
-privilege over art it did not make: it never modifies, moves or renames your
-actual files.
+`knight.png.meta`) holding its import settings. It never changes what is *inside*
+a file it did not make — the only things it will do to one are the three below,
+each of which you asked for by name.
+
+### Renaming, moving and deleting
+
+Select anything in the Assets panel and a row appears above the tree: its name,
+the folder it is in, and a line showing exactly where it is about to end up. Type
+a new name and press **Rename**, or pick another folder and press **Move**. It is
+one operation either way, and the button says which one it will be.
+
+**Everything that pointed at it follows.** Every level and prefab that drew that
+picture keeps drawing it, every level that placed that prefab keeps placing it,
+and if you rename the level the game starts on, the starting-level setting moves
+with it. Nothing tells you a reference broke, because none did.
+
+**A renamed file keeps its import settings and its identity.** The pivot, the
+slicing and the filtering you set travel with it, so nothing is typed twice.
+
+**Folders work the same way**, which is one gesture and a hundred references at
+once: rename `textures` to `art` and every level in the project follows.
+
+**Delete tells you first.** Press **Delete** and it names what still uses the
+file — "knight.png is still used once, in scenes/level-01.json" — and the button
+becomes **Delete anyway**. It never refuses, because deleting something in order
+to replace it is a normal thing to do; it just makes sure you knew. The settings
+file goes with it, so nothing is left stranded.
+
+It will refuse, in a sentence naming the file, whenever doing it would damage
+something:
+
+- a name already taken, and the file that has it is untouched;
+- a folder that is not there — it never creates one;
+- a path outside the project, or a folder moved inside itself;
+- a level, prefab or settings file it cannot read, which would mean it could not
+  follow that file's references — nothing is moved at all until you fix it;
+- `project.json`, which is the name an export looks for.
+
+**Ctrl-Z does not cover any of this**, deliberately. It reverses changes *inside*
+files; it has never made or unmade one.
 
 ### Import settings, per texture
 
@@ -244,6 +281,12 @@ already shows you. The one thing it warns about and carries on with is a referen
 pointing at a file that is no longer the one it was written against: that still
 draws, and swapping one picture for another is something you might have meant.
 
+The "picture whose file is not there" refusal used to be the common one, because
+every rename was a trip to Explorer. Renaming and moving inside the editor
+reconciles the references as it goes, so you should now only reach that refusal by
+moving something outside the editor — or by deleting a picture after being told
+what still used it.
+
 **Exporting twice gives you the same folder.** Nothing changed means nothing
 churns, and anything a previous export left that the game no longer needs is taken
 out rather than left behind. It refuses to write into a folder that holds something
@@ -264,7 +307,12 @@ including adding, deleting and reordering. A whole drag is one press. `Ctrl-Y` o
 `Ctrl-Shift-Z` redoes.
 
 Two things Ctrl-Z deliberately does not cover: panning or zooming (a look, not a
-change), and creating a file (its opposite would be deleting one).
+change), and anything that makes, moves or removes a file. It reverses changes
+*inside* files. Making one has never been undoable because its opposite is
+deleting one, and renaming is left off the same stack for a different reason: it
+would be the one press of Ctrl-Z that could fail — the old name taken again, the
+file gone — and a key that usually works and occasionally reports an error is a
+different key.
 
 ### Saving
 
@@ -292,10 +340,16 @@ the editor takes the change.
   input map, no window size.
 - **A desktop or double-clickable build.** Web only, and served.
 - **A small export.** Nothing is minified, packed or turned into an atlas.
-- **Rename, move or delete files.** Those are still jobs for Explorer. The editor
-  can make a level or a prefab and change what is inside one.
-- **Fix a reference after you move a file.** The editor notices and tells you that
-  a reference now points at a different file; nothing reconciles it for you yet.
+- **Delete a folder.** It can be renamed and moved from the editor; getting rid of
+  one, with everything inside it, is still a job for Explorer.
+- **Rename or delete `project.json`.** It is the name an export looks for, and
+  nothing in the editor will make another one.
+- **Take a rename back with Ctrl-Z.** Rename it back instead; the references
+  follow either way.
+- **Fix up a file you moved in Explorer.** The editor still cannot pair a
+  disappearance with an appearance, so a file moved outside the editor loses its
+  import settings at the next start and leaves its references pointing at where it
+  was. Doing it inside the editor is what avoids both.
 - **Parenting or nesting.** The entity list is flat.
 - **Select more than one thing at a time.**
 - **Rotate or scale handles in the viewport.** Position is the one thing the
@@ -319,6 +373,10 @@ the editor takes the change.
   bottom of the window. Serve the folder instead.
 - **An export refuses** — it names the file and why, and it wrote nothing. Every one
   of those is something the editor can show you; open the level and look.
+- **A rename refuses over a file you were not renaming** — it means that file is a
+  level, prefab or settings file the editor cannot read, so it could not promise to
+  follow its references. Nothing was moved. Open the file it named and fix it, or
+  move it out of the project.
 - **An export says it found editor code** — that is a bug in the editor rather than
   anything about your project. The folder is left there to be looked at. Worth
   reporting.

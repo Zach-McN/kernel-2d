@@ -2,6 +2,7 @@ import path from 'node:path'
 
 import type { SidecarConfig } from './config.js'
 import { createEventFeed } from './feed.js'
+import { isServiceHandling } from './file-operations.js'
 import { formatBanner, formatEvent, formatTimestamp } from './log.js'
 import { ensureMetaFor, ensureMetaForDeletedSidecar, sweepProjectMetas } from './meta-files.js'
 import { isMetaFileName } from '../runtime/formats/meta-schema.js'
@@ -96,11 +97,21 @@ export async function startSidecar(
  * This does not loop, and the reason is worth stating: writing a `.meta`
  * produces an `added` event for a `.meta`, and a `.meta` is not an asset, so
  * the second pass through here does nothing.
+ *
+ * **A file the service is itself moving or deleting is skipped**, and that is
+ * what makes a rename keep its settings rather than nearly keeping them. A move
+ * is two renames — the sidecar, then the file — and in the gap between them the
+ * old path holds a file with no settings beside it, which is exactly the shape
+ * this function exists to fix. Left to timing it would usually lose the race and
+ * occasionally win it, minting a fresh id and throwing away the pivot somebody
+ * set; the rule closes the window instead of shortening it.
  */
 async function keepMetasInStep(projectPath: string, event: FileEvent): Promise<void> {
   if (event.isDirectory) return
 
   const absolute = path.join(projectPath, event.path)
+
+  if (isServiceHandling(absolute)) return
 
   try {
     if (event.kind === 'added') {

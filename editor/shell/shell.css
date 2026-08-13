@@ -175,6 +175,26 @@ body {
   color: var(--shell-bad);
 }
 
+/* Renaming, moving and deleting the selected file. Same shape as the row above
+   it, because it asks the same question about a path — see AssetsPanel.tsx. */
+.assets__move {
+  padding: 6px 12px 10px;
+  border-bottom: 1px solid var(--shell-line);
+}
+
+.assets__move .assets__new-row .control--choice {
+  flex: 1;
+  min-width: 0;
+}
+
+/* What a delete is about to cost, and anything a move could not finish. Neither
+   is a failure — both are the editor saying what it is about to do, or did. */
+.assets__move-uses {
+  margin: 6px 0 0;
+  color: var(--shell-waiting);
+  overflow-wrap: anywhere;
+}
+
 .asset-row__button {
   display: flex;
   align-items: center;

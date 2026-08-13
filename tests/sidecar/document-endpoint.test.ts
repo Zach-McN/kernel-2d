@@ -144,6 +144,38 @@ describe('opening a document', () => {
     })
   })
 
+  /**
+   * The ways a file can fail to be a document are not one situation, and the
+   * answer has to tell them apart because a consumer acts on the difference: the
+   * rename fixup refuses to move a file while a *level* whose references it
+   * would have to repair cannot be read, and must not refuse over a data table
+   * it was never this editor's business to parse.
+   *
+   * Written as a pair, because the negative half is the one a later session
+   * deletes as an oddity (V13) — and the third case below is the one that is
+   * easy to get backwards.
+   */
+  it('does not call a file foreign when it claims one of its own formats', async () => {
+    await withServer(async ({ read }) => {
+      expect((await read('scenes/level-01.json')).foreign).toBe(false)
+    })
+  })
+
+  it('calls a file foreign when it says it is a format this editor never heard of', async () => {
+    await withServer(async ({ read }) => {
+      expect((await read('scenes/from-the-future.json')).foreign).toBe(true)
+    })
+  })
+
+  it('does not call a file foreign when it is not JSON at all, because it might be a level', async () => {
+    await withServer(async ({ read }) => {
+      // The case that decides whether a level somebody mangled by hand stops a
+      // rename or is silently skipped. It has claimed nothing, so nothing may
+      // assume it belongs to somebody else.
+      expect((await read('scenes/broken.json')).foreign).toBe(false)
+    })
+  })
+
   it.each([
     ['a step out of the project folder', '../../secrets.txt'],
     ['an absolute path', '/etc/passwd'],

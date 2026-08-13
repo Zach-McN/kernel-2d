@@ -7,6 +7,7 @@ import { pipeline } from 'node:stream/promises'
 import { NotFoundError, resolveAssetBytes } from './asset-files.js'
 import { createDocumentFor, readDocumentView, writeDocumentFor } from './document-files.js'
 import { toFileEventMessage } from './event-schema.js'
+import { deleteFile, moveFile } from './file-operations.js'
 import { createEventFeed, type EventFeed } from './feed.js'
 import { RefusedError, readMetaView, writeMetaFor } from './meta-files.js'
 import { scanProject } from './scan.js'
@@ -124,14 +125,19 @@ async function handleRequest(
   const url = new URL(request.url ?? '/', `http://${context.options.host}`)
   const pathname = url.pathname
 
-  // Reading is open. Writing is three requests and nothing else: two PUTs that
-  // each replace one named thing, and one POST that makes one document where
-  // there was nothing. They are the only non-GETs this service answers at all.
+  // Reading is open. Writing is five requests and nothing else: two PUTs that
+  // each replace one named thing, one POST that makes one document where there
+  // was nothing, and two POSTs that each do one thing to one named file. They
+  // are the only non-GETs this service answers at all.
   //
-  // Creating has its own verb rather than being a mode of the PUT, and the
-  // reason is worth knowing before adding a fourth: kept apart, the create
-  // refuses when anything is there and the replace refuses when nothing is, so
-  // a confused caller gets a sentence instead of a destroyed level.
+  // Every one of them is its own route rather than a mode of another, and the
+  // reason is worth knowing before adding a sixth: kept apart, the create
+  // refuses when anything is there, the replace refuses when nothing is, the
+  // move refuses when the destination is taken and the delete never touches a
+  // folder — so a confused caller gets a sentence instead of a destroyed level.
+  // The whole of what each will and will not do is stated at the top of
+  // `document-files.ts` and `file-operations.ts` and is not restated here; two
+  // copies of a privilege is how one of them quietly gets wider than the other.
   if (request.method === 'PUT' && pathname === '/meta') {
     await handleMetaWrite(context, request, response, url)
     return
@@ -144,6 +150,16 @@ async function handleRequest(
 
   if (request.method === 'POST' && pathname === '/document') {
     await handleDocumentWrite(context, request, response, url, 'create')
+    return
+  }
+
+  if (request.method === 'POST' && pathname === '/move') {
+    await handleFileOperation(context, response, url, 'move')
+    return
+  }
+
+  if (request.method === 'POST' && pathname === '/delete') {
+    await handleFileOperation(context, response, url, 'delete')
     return
   }
 
@@ -360,6 +376,45 @@ async function handleDocumentWrite(
   }
 }
 
+/**
+ * The editor asking for one file to be moved, or one to be deleted.
+ *
+ * No body at all: both requests are entirely described by the paths they name,
+ * and a body would be a place for a caller to put something this service would
+ * then have to decide whether to believe. Every refusal is a 400 carrying one
+ * plain sentence, because it is shown to a human against the file they picked.
+ *
+ * The two are separate routes for D22's reason, and the reason survives being
+ * restated: kept apart, neither can do the other's job however confused the
+ * caller is.
+ */
+async function handleFileOperation(
+  context: ServerContext,
+  response: http.ServerResponse,
+  url: URL,
+  intent: 'move' | 'delete',
+): Promise<void> {
+  const requested = url.searchParams.get('path') ?? ''
+  const destination = url.searchParams.get('to') ?? ''
+
+  try {
+    const change =
+      intent === 'move'
+        ? await moveFile(context.options.projectPath, requested, destination)
+        : await deleteFile(context.options.projectPath, requested)
+    sendJson(response, 200, change)
+  } catch (error) {
+    if (error instanceof RefusedError) {
+      sendJson(response, 400, { error: error.message, path: requested })
+      return
+    }
+    sendJson(response, 500, {
+      error: intent === 'move' ? 'Could not move that file' : 'Could not delete that file',
+      detail: error instanceof Error ? error.message : String(error),
+    })
+  }
+}
+
 function readBody(request: http.IncomingMessage, maxBytes: number): Promise<string> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = []
@@ -433,7 +488,15 @@ function statusOf(options: ServerOptions): SidecarStatus {
     version: SIDECAR_STATUS_VERSION,
     projectPath: toPosixPath(options.projectPath),
     projectName: path.basename(options.projectPath),
-    endpoints: { tree: '/tree', events: '/events', meta: '/meta', document: '/document', asset: '/asset' },
+    endpoints: {
+      tree: '/tree',
+      events: '/events',
+      meta: '/meta',
+      document: '/document',
+      asset: '/asset',
+      move: '/move',
+      delete: '/delete',
+    },
   }
 }
 

@@ -17,17 +17,28 @@ import { relativePosixPath } from './paths.js'
  * Documents the editor opens and puts back — scenes today, prefabs and data
  * tables as those formats arrive.
  *
- * This is where the service's write privilege lives, and the whole of it is four
- * lines (editor-kernel D22, widening D17), each one a sentence:
+ * Two of the six lines of the service's write privilege live here (editor-kernel
+ * D22, widening D17); the move and the delete are in `file-operations.ts`, and
+ * the `.meta` rules are in `meta-files.ts`. The whole of it, each line a
+ * sentence:
  *
  *   - of its own accord, creates a `.meta` when an asset has none, and deletes
  *     a stranded one at startup;
- *   - creates one file the editor names, when there is nothing at that path and
- *     the document is valid in a format this editor knows;
- *   - replaces the whole contents of one file the editor names, when that file
- *     already exists and the document is valid and of the format already there;
+ *   - **creates one file the editor names, when there is nothing at that path
+ *     and the document is valid in a format this editor knows;**
+ *   - **replaces the whole contents of one file the editor names, when that file
+ *     already exists and the document is valid and of the format already there;**
+ *   - moves one file or folder the editor names to one path the editor names,
+ *     when there is nothing at the destination — taking a `.meta` with the file
+ *     it annotates;
+ *   - deletes one file the editor names, and the `.meta` beside it;
  *   - never modifies anything else, and never changes a file on its own
  *     initiative.
+ *
+ * Six lines hold together because every one of them has the same shape: **the
+ * editor names a path and one thing happens to it; the service never picks a
+ * path itself, and never touches a second file except the `.meta` belonging to
+ * the first.** That is the sentence a seventh line has to fit inside.
  *
  * **Creating and replacing are two separate requests, and that is the load-
  * bearing decision here.** The obvious design is one write with a flag, or one
@@ -85,22 +96,22 @@ export async function readDocumentView(projectPath: string, requestedPath: strin
     // A folder reads as EISDIR on Linux and EPERM/EISDIR elsewhere; either way
     // there is no document there, which is the same answer as nothing at all.
     if (code === 'ENOENT' || code === 'EISDIR' || code === 'EPERM') {
-      return view(shownPath, { status: 'none' })
+      return view(shownPath, { status: 'none', foreign: false })
     }
     throw error
   }
 
-  const unreadable = (problem: string): DocumentView =>
-    view(shownPath, {
+  const read = parseDocument(raw)
+  if (!read.ok) {
+    return view(shownPath, {
       status: 'unreadable',
-      problem,
+      foreign: read.foreign,
+      problem: read.problem,
       text: Buffer.byteLength(raw, 'utf8') <= MAX_SHOWN_DOCUMENT_BYTES ? raw : null,
     })
+  }
 
-  const read = parseDocument(raw)
-  if (!read.ok) return unreadable(read.problem)
-
-  return view(shownPath, { status: 'ok', document: read.document })
+  return view(shownPath, { status: 'ok', foreign: false, document: read.document })
 }
 
 /**
@@ -218,7 +229,10 @@ function parseSupplied(document: unknown): EditorDocument {
   return parsed.data
 }
 
-type ParseResult = { ok: true; document: EditorDocument } | { ok: false; problem: string }
+type ParseResult =
+  | { ok: true; document: EditorDocument }
+  /** `foreign` is whether the file said it belongs to something other than this editor. */
+  | { ok: false; foreign: boolean; problem: string }
 
 /**
  * Text on disk to a document, or the reason it is not one.
@@ -234,7 +248,10 @@ function parseDocument(raw: string): ParseResult {
   try {
     value = JSON.parse(raw)
   } catch (error) {
-    return { ok: false, problem: `This file is not valid JSON: ${(error as Error).message}.` }
+    // Not JSON at all, so it claims nothing and this editor recognises nothing.
+    // Not JSON at all, so it has claimed nothing — and a file that claims
+    // nothing might be one of this editor's own, mangled by hand.
+    return { ok: false, foreign: false, problem: `This file is not valid JSON: ${(error as Error).message}.` }
   }
 
   const format = (value as { format?: unknown } | null)?.format
@@ -242,6 +259,7 @@ function parseDocument(raw: string): ParseResult {
   if (schema === undefined) {
     return {
       ok: false,
+      foreign: true,
       problem:
         typeof format === 'string'
           ? `This editor does not know the format "${format}". It knows ${KNOWN_DOCUMENT_FORMATS.join(', ')}.`
@@ -251,7 +269,13 @@ function parseDocument(raw: string): ParseResult {
 
   const parsed = schema.safeParse(value)
   if (!parsed.success) {
-    return { ok: false, problem: `This ${String(format)} is not one this editor can read — ${firstIssue(parsed.error)}.` }
+    return {
+      // Ours and broken, which is the only one of the three that is a bug in
+      // something rather than a file this editor has no business judging.
+      foreign: false,
+      ok: false,
+      problem: `This ${String(format)} is not one this editor can read — ${firstIssue(parsed.error)}.`,
+    }
   }
 
   return { ok: true, document: parsed.data }
@@ -259,13 +283,15 @@ function parseDocument(raw: string): ParseResult {
 
 function view(
   shownPath: string,
-  parts: Partial<Omit<DocumentView, 'format' | 'version' | 'path'>> & Pick<DocumentView, 'status'>,
+  parts: Partial<Omit<DocumentView, 'format' | 'version' | 'path'>> &
+    Pick<DocumentView, 'status' | 'foreign'>,
 ): DocumentView {
   return {
     format: DOCUMENT_VIEW_FORMAT,
     version: DOCUMENT_VIEW_VERSION,
     path: shownPath,
     status: parts.status,
+    foreign: parts.foreign,
     document: parts.document ?? null,
     problem: parts.problem ?? null,
     text: parts.text ?? null,

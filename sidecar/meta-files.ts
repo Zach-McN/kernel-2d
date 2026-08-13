@@ -23,10 +23,13 @@ import { scanProject } from './scan.js'
 import type { ProjectTree, TreeNode } from './tree-schema.js'
 
 /**
- * The sidecar's `.meta` files on disk — the only place in this service that
- * writes into a human's project folder.
+ * The sidecar's `.meta` files on disk — the one thing in this service that
+ * writes into a human's project folder *of its own accord*, rather than because
+ * the editor named a file.
  *
- * The write privilege is exactly this, and nothing here may widen it:
+ * This file's share of the write privilege is exactly this, and nothing here may
+ * widen it (the rest of the six lines is in `document-files.ts` and
+ * `file-operations.ts`):
  *
  *   - of its own accord, creates a `.meta` when an asset file has none, and
  *     deletes a stranded one at startup;
@@ -123,6 +126,15 @@ export interface SweepReport {
  * system reports a rename as a removal followed by an addition (editor-kernel
  * G7): deleting on the removal half would throw away the settings of every file
  * the human renames, mid-gesture. Doing it at startup keeps that window shut.
+ *
+ * **That reasoning now covers less ground than it did, and the part it no longer
+ * covers is the part that used to hurt.** A rename made *inside the editor* is
+ * one request that moves the file and its sidecar together
+ * (`file-operations.ts`), so it never produces an orphan and never loses an id —
+ * this rule is not what saves it, and the watcher does not have to guess. What is
+ * left here is renames made in Explorer, where the two events genuinely are all
+ * the operating system offers, and where a settings file is still lost at the
+ * next start. That cost is now paid only by people working outside the tool.
  *
  * Running before the watcher starts is deliberate too. Creating a few hundred
  * sidecars with the watcher already listening would produce a few hundred

@@ -76,6 +76,29 @@ export interface DocumentView {
   /** The path that was asked about, project-relative and forward-slashed. */
   path: string
   status: DocumentViewStatus
+  /**
+   * True when this file is readable JSON that has **positively said it is not
+   * one of this editor's documents** — a data table, a placeholder, something a
+   * newer editor wrote. False for everything else, including a file this editor
+   * could not read at all.
+   *
+   * The three cases behind one flag, because the difference between them is only
+   * cheap to work out here, where the registry is:
+   *
+   *   - readable, and claims a format this editor knows → **not foreign**,
+   *     whether it parsed or is malformed;
+   *   - readable, and claims a format this editor does not know, or claims none
+   *     → **foreign**, and it is not broken; nothing should describe it as such;
+   *   - not JSON at all → **not foreign**, because a file that says nothing about
+   *     itself might be one of this editor's own documents that somebody mangled,
+   *     and guessing otherwise is the guess that loses work.
+   *
+   * The consumer is the rename fixup: it refuses to move a file while a *level*
+   * whose references it would have to repair cannot be read, and it must not
+   * refuse over a data table that could never have held one. Every other reader
+   * wants the sentence, which all three cases already have.
+   */
+  foreign: boolean
   document: EditorDocument | null
   /** One plain sentence saying what is wrong. Only set when `unreadable`. */
   problem: string | null
@@ -99,6 +122,7 @@ export const DocumentViewSchema: z.ZodType<DocumentView> = z.object({
   version: z.literal(DOCUMENT_VIEW_VERSION),
   path: z.string().min(1),
   status: z.enum(['ok', 'none', 'unreadable']),
+  foreign: z.boolean(),
   document: EditorDocumentSchema.nullable(),
   problem: z.string().min(1).nullable(),
   text: z.string().nullable(),
