@@ -1,7 +1,9 @@
 .claude/settings.local.json
 
-# Junction/symlink to the sibling gamedev-skills repo — lives in its own repo
+# Junctions/symlinks to the sibling gamedev-skills repo — it lives in its own repo,
+# and both of these reach that one copy rather than holding a second.
 .claude/skills
+.agents/skills
 
 node_modules/
 dist/

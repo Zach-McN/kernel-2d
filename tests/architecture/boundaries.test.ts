@@ -30,12 +30,21 @@ const RUNTIME = path.join(REPO_ROOT, 'runtime')
 /** Throwaway projects the browser suite builds; not source, and not always present. */
 const TEST_SCRATCH = path.join(REPO_ROOT, 'tests', '.tmp')
 
-/** Not source: dependencies, build output, tooling, and the junctioned skill library. */
+/**
+ * Not source: dependencies, build output, and tooling.
+ *
+ * `.claude` and `.agents` are both junctions to the `gamedev-skills` repo, and both
+ * have to be here. A directory walk cannot tell a junction from a folder — it
+ * reports a directory and recurses — so leaving either out would walk this test
+ * straight out of the repo and into the library, where the vendored Phaser types
+ * are `.ts` files it would then hold to the kernel's own import rules.
+ */
 const NOT_SOURCE: ReadonlySet<string> = new Set([
   'node_modules',
   'dist',
   '.git',
   '.claude',
+  '.agents',
   'playwright-report',
   'test-results',
 ])
