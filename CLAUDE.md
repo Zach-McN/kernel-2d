@@ -47,7 +47,7 @@ Two distinct structures are in play. **This repo** is the editor software. A **g
 | `sidecar/` | The Node background process that owns the disk: chokidar file watching, `.meta` generation, JSON read/write API, static asset serving. Development-only, never ships. |
 | `scripts/` | Development entry points and their settings — `npm run editor` lives here, along with the editor window's host/port knobs. Never ships. |
 | `tests/` | Vitest unit tests and Playwright browser tests. Sample data lives in `tests/fixtures/` — never in a real content folder. |
-| `docs/` | The feasibility report; `using-the-editor.md`, the human's page of what the editor can do and how to run it; genre specs as they're written. |
+| `docs/` | The feasibility report, and `using-the-editor.md` — the human's page of what the editor can do and how to run it. **Genre specs do not live here**: a spec belongs to a game, so it is `games/<name>/docs/GENRE-SPEC.md`, and G5 is checked against that file. |
 
 Plus root-level `CLAUDE.md`, `.gitattributes`, `package.json`, and the symlink to the `gamedev-skills` library.
 
@@ -60,6 +60,7 @@ Plus root-level `CLAUDE.md`, `.gitattributes`, `package.json`, and the symlink t
 | `prefabs/` | Reusable entity templates. Define an enemy once, place it fifty times by reference; editing the prefab updates every instance. |
 | `data/` | Genre-specific tables that aren't scenes or entities: wave schedules, item databases, dialogue, economy curves. This is what bespoke genre tools write to. |
 | `src/` | Gameplay code for *this specific game*, AI-written: `components/` for data schemas (Health, Velocity, AttackPattern), `systems/` for behavior (MovementSystem, CombatSystem). Distinct from the kernel's `runtime/`, which is the reusable engine. |
+| `docs/` | `GENRE-SPEC.md`, the human's plain-language fence around this game: what it is, what the player does, and the game's nouns. Nothing is built for a game unless a noun in its spec justifies it (`genre-spinup` G5). |
 | `project.json` | Project settings: startup scene, input map, window size. |
 
 The split to hold in mind: **in this repo, everything is AI's. In a game folder, `src/` is AI's and the rest is the human's** — with AI-generated content permitted there under the marking rules above.

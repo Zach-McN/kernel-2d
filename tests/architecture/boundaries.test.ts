@@ -27,6 +27,19 @@ import { describe, expect, it } from 'vitest'
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const RUNTIME = path.join(REPO_ROOT, 'runtime')
 
+/** Throwaway projects the browser suite builds; not source, and not always present. */
+const TEST_SCRATCH = path.join(REPO_ROOT, 'tests', '.tmp')
+
+/** Not source: dependencies, build output, tooling, and the junctioned skill library. */
+const NOT_SOURCE: ReadonlySet<string> = new Set([
+  'node_modules',
+  'dist',
+  '.git',
+  '.claude',
+  'playwright-report',
+  'test-results',
+])
+
 /** Folders the runtime may not reach into, and why each one must not ship. */
 const FORBIDDEN = [
   { folder: 'editor', because: 'the editor never ships inside a game' },
@@ -40,6 +53,17 @@ function runtimeFiles(directory = RUNTIME): string[] {
     const absolute = path.join(directory, entry)
     if (statSync(absolute).isDirectory()) return runtimeFiles(absolute)
     return absolute.endsWith('.ts') ? [absolute] : []
+  })
+}
+
+/** Every TypeScript file in the repo — all four layers, plus the config at the root. */
+function kernelFiles(directory = REPO_ROOT): string[] {
+  return readdirSync(directory).flatMap((entry) => {
+    if (NOT_SOURCE.has(entry)) return []
+    const absolute = path.join(directory, entry)
+    if (absolute === TEST_SCRATCH) return []
+    if (statSync(absolute).isDirectory()) return kernelFiles(absolute)
+    return /\.tsx?$/.test(entry) ? [absolute] : []
   })
 }
 
@@ -107,5 +131,58 @@ describe('the runtime stands on its own', () => {
     }
 
     expect([...external].filter((name) => !allowed.has(name))).toEqual([])
+  })
+})
+
+/**
+ * The kernel is the application; a game folder is a document it opens. The arrow
+ * points one way — `games/tower-defense/` imports nothing from here, and nothing
+ * here imports from it — and that is what lets one installation open many games,
+ * and lets a game folder hold no engine at all.
+ *
+ * `genre-spinup` predicted this as "one line in boundaries.test.ts": another entry
+ * in `FORBIDDEN` above, named `games`. **That line could never have fired**, and
+ * the reason generalises. The check above resolves a specifier and takes the first
+ * segment of its path *relative to the repo root*; for anything outside the repo
+ * that segment is `..`, never a folder name. `games/` is a sibling of this repo,
+ * not a folder in it, so it is invisible to a test written that way.
+ *
+ * So the invariant is stated as what it actually is — **no relative import escapes
+ * the repo** — which is stronger than naming one sibling, catches the next sibling
+ * nobody has thought of, and holds when `kernel-2d` is cloned somewhere with no
+ * `games/` next to it at all. A test that named `games/` would have had to assert
+ * the folder exists to avoid W9's vacuous pass, and would then go red for anyone
+ * who cloned this repo on its own.
+ *
+ * It scans all four layers rather than just `runtime/`, because this one is about
+ * the repo boundary rather than the shipping boundary: an editor panel reaching
+ * into a game folder is the same mistake and would not show up above.
+ */
+describe('the kernel stays inside its own repo', () => {
+  const files = kernelFiles()
+
+  it('has files to check, so a green result means something', () => {
+    // W9. The walk starts at the repo root, so a rename cannot quietly empty it —
+    // but a bad ignore entry could, and that failure is silent by nature.
+    expect(files.length).toBeGreaterThan(50)
+  })
+
+  it('never imports from a game folder, or anywhere else outside this repo', () => {
+    const offenders: string[] = []
+
+    for (const file of files) {
+      for (const specifier of importsIn(readFileSync(file, 'utf8'))) {
+        // Package imports are the business of the test above; this one is only
+        // about relative paths, which are the only way to walk out of the repo.
+        if (!specifier.startsWith('.')) continue
+
+        const resolved = path.resolve(path.dirname(file), specifier)
+        if (path.relative(REPO_ROOT, resolved).startsWith('..')) {
+          offenders.push(`${path.relative(REPO_ROOT, file)} imports ${specifier}`)
+        }
+      }
+    }
+
+    expect(offenders).toEqual([])
   })
 })

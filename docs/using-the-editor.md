@@ -8,7 +8,7 @@ It is kept current by the definition of done in `CLAUDE.md`: a session that
 changes what you can do, or how you do it, changes this page in the same commit.
 If this page and the editor disagree, the editor is right and the page is a bug.
 
-Last true as of: **time passing in a running level** (2026-08-13).
+Last true as of: **the first game folder, `games/tower-defense`** (2026-08-13).
 
 ---
 
@@ -86,6 +86,20 @@ The `kernel-2d` folder is the application; a game folder is the document it
 opens. Nothing is copied into your game folder except the content you author —
 no engine, no dependencies, no repository. You can keep several game folders
 anywhere and open each with the same command.
+
+**Your first real game folder is `../games/tower-defense`**, and it is a different
+thing from the sample. The sample is a scratch folder full of generated content to
+try the editor against; the game folder is yours, it is its own repository, and its
+`docs/GENRE-SPEC.md` is the document that decides what gets built in it. Open it the
+same way:
+
+```bash
+npm run editor -- ../games/tower-defense
+```
+
+It is empty on purpose — no levels, no art yet — so the Assets panel shows the folders
+and `project.json` says no starting level has been chosen. That is the correct state,
+not a fault.
 
 An export goes the other way and is the one thing that does copy: it writes a new
 folder holding a copy of the parts of your game it needs, plus the engine. It
