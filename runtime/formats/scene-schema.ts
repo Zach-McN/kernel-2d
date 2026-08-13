@@ -114,6 +114,29 @@ export interface PrefabComponent {
   source: AssetRef
 }
 
+/**
+ * Turns this entity as time passes, at a rate the level sets.
+ *
+ * **The first component in this registry that is about behaviour rather than
+ * appearance, and the only one the kernel ships.** It exists because the update
+ * loop needed a real consumer before any game existed to provide one: machinery
+ * with no consumer is machinery nobody has exercised, and a seam shaped against
+ * an imagined consumer is the failure `genre-spinup` S1 is about. So one
+ * behaviour, chosen to be the smallest thing that is unmistakably moving.
+ *
+ * It is scaffolding and is expected to leave. When a game folder's own code can
+ * supply systems, this and `runtime/game/systems/spin.ts` come out together and
+ * nothing else in the kernel changes — which is the check that the seam was
+ * drawn in the right place.
+ *
+ * Degrees per second, counter-clockwise, matching `Transform.rotation` exactly:
+ * a rate expressed in the same unit and the same direction as the thing it
+ * changes is a rate nobody has to convert.
+ */
+export interface SpinComponent {
+  degreesPerSecond: number
+}
+
 export interface Entity {
   /** Unique within the scene; generated once and never changed. */
   id: string
@@ -173,6 +196,13 @@ export const PrefabComponentSchema: z.ZodType<PrefabComponent> = z.looseObject({
   source: AssetRefSchema,
 })
 
+export const SpinComponentSchema: z.ZodType<SpinComponent> = z.looseObject({
+  // Finite rather than merely a number: a rate of `Infinity` or `NaN` reaches
+  // the transform on the first step and turns a sprite into something the
+  // renderer cannot place, with nothing on screen saying which field did it.
+  degreesPerSecond: z.number().finite(),
+})
+
 /**
  * The component types this kernel understands, and the schema for each.
  *
@@ -193,6 +223,7 @@ export const PrefabComponentSchema: z.ZodType<PrefabComponent> = z.looseObject({
 export const COMPONENT_SCHEMAS = {
   sprite: SpriteComponentSchema,
   prefab: PrefabComponentSchema,
+  spin: SpinComponentSchema,
 } as const
 
 export type KnownComponentType = keyof typeof COMPONENT_SCHEMAS
@@ -322,6 +353,18 @@ export function componentOf<K extends KnownComponentType>(
 
 export function spriteOf(holder: ComponentHolder): SpriteComponent | null {
   return componentOf(holder, 'sprite')
+}
+
+/**
+ * How fast this entity turns, or null if it does not.
+ *
+ * Read at the point of use like every other component, so a rate somebody typed
+ * into a text editor as a string is *absent* rather than a crash inside a system
+ * running sixty times a second — which is the one place a thrown error is
+ * genuinely hard to trace back to the file that caused it.
+ */
+export function spinOf(holder: ComponentHolder): SpinComponent | null {
+  return componentOf(holder, 'spin')
 }
 
 /** Which prefab this entity is an instance of, or null if it is not one. */

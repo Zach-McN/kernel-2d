@@ -180,7 +180,11 @@ describe('what it says out loud', () => {
   })
 
   it('has a sentence for a match and for a refusal', () => {
-    expect(describeComparison({ kind: 'same', count: 3 })).toBe('Drawn exactly as the editing view had it.')
+    // "Started", not "is drawn": the level moves from here, so a caption
+    // claiming it still matches the editing view would be wrong within a frame.
+    expect(describeComparison({ kind: 'same', count: 3 })).toBe(
+      'Started exactly as the editing view had it.',
+    )
     expect(describeComparison({ kind: 'same', count: 0 })).toContain('Nothing to draw')
     expect(describeComparison({ kind: 'unavailable', why: 'the view moved while it was running' })).toBe(
       'Cannot be checked against the editing view: the view moved while it was running.',

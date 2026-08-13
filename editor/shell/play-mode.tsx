@@ -37,6 +37,15 @@ import { useSceneView } from './scene-view-context'
  * `.meta` and not in `project.json`, so stopping and closing the editor leaves no
  * trace that it ever happened.
  *
+ * **Time is not here either, and that is the division worth knowing.** This
+ * decides *which* level is running and hands over the request; what happens to it
+ * once it is running belongs to `runtime/game/`, which ships. The clock, the
+ * systems and the copy they mutate are started by
+ * `editor/shell/running-level.ts` and stopped by it, and neither this file nor
+ * anything else in the editor can reach into a running level to move something.
+ * So Stop is still one state change: the copy is dropped and there is nothing to
+ * put back.
+ *
  * **Pressing Play finishes the save before it reads the file.** The editor has
  * no save button — a change is written after a short quiet period (D18) — so a
  * level played a fifth of a second after a drag would otherwise run the version
@@ -65,7 +74,9 @@ export type PlayState =
       problems: LoadProblem[]
       /**
        * The editing view's own report, from the instant before Play was pressed.
-       * What the running picture is checked against.
+       * What the running picture is checked against **on its first frame**, and
+       * on no frame after that — a level that is running moves, and the editing
+       * view does not.
        */
       baseline: ShownScene
     }

@@ -3,6 +3,7 @@ import type { ReactElement } from 'react'
 import {
   SCENE_FORMAT,
   prefabRefOf,
+  spinOf,
   spriteOf,
   unknownComponentTypesOf,
   type AssetRef,
@@ -78,6 +79,13 @@ export function EntityInspector({
   const source = prefabRefOf(entity)
   const unknown = unknownComponentTypesOf(entity)
   const problem = drawn === null ? undefined : assets.problems[drawn.texture.path]
+
+  // The entity's own turn rate, and the one it would actually turn at. Same
+  // pair as the sprite above, for the same reason: an instance can inherit one
+  // from its prefab, and the field has to be about the number this entity
+  // carries rather than about a number typing into it would silently override.
+  const spin = spinOf(entity)
+  const inheritedSpin = spin === null ? spinOf(resolved) : null
 
   return (
     <>
@@ -171,6 +179,39 @@ export function EntityInspector({
         </Row>
 
         <Note>y counts upward from the bottom-left corner of the viewport.</Note>
+      </Section>
+
+      <Section title="Spin">
+        <Row label="Rate">
+          <NumberField
+            testId="entity-spin-control"
+            title="Degrees per second, counter-clockwise. Only while the level is running."
+            value={spin?.degreesPerSecond ?? 0}
+            step={15}
+            onCommit={(rate) =>
+              change('spin', 'Spin', (target) => {
+                // Nought and "does not turn" are the same thing to look at, so
+                // the component goes away rather than every entity somebody
+                // clicked on acquiring a rate of nothing. A level stays a
+                // description of what is in it.
+                if (rate === 0) delete target.components['spin']
+                else target.components['spin'] = { degreesPerSecond: rate }
+              })
+            }
+          />
+        </Row>
+
+        {inheritedSpin !== null && (
+          <Note data-testid="entity-spin-inherited">
+            This one turns at {inheritedSpin.degreesPerSecond}°/s because its prefab says so. Typing a rate
+            here gives this placement its own, and it stops following the prefab.
+          </Note>
+        )}
+
+        <Note>
+          Nothing turns while you are editing. Press Play to see it, and Stop to put it back where the file
+          has it.
+        </Note>
       </Section>
 
       {source === null ? (

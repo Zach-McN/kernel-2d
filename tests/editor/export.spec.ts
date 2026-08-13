@@ -30,6 +30,12 @@ import { editorTestProjectPath } from './test-project.js'
  * agree exactly, and the instrument that says so has its own tests
  * (`tests/instruments/drawn-comparison.test.ts`).
  *
+ * **Both sides of that comparison are now the frame the level *started* on**, because
+ * both sides are running and two moving pictures sampled at two unrelated instants
+ * would agree about nothing. Each publishes its starting frame under the name it
+ * already had — `data-game-units` here, `data-scene-units` in the editor — and where
+ * each has got to since sits beside it under a different one.
+ *
  * The rest is what the human asked to be able to check: that the folder holds no
  * editor, that it works from anywhere, and that a page opened off the disk says so
  * rather than going blank.
@@ -68,6 +74,30 @@ test('the exported page draws the starting level, with nothing missing', async (
 
   // Nothing to say means nothing said: the sentence only appears when there is one.
   await expect(page.locator('#say')).toBeHidden()
+})
+
+test('the exported folder runs the level rather than only drawing it', async ({ page }) => {
+  /*
+   * The other half of "the same data, through the same runtime code": the folder
+   * somebody is handed has a clock in it. Level one's health icon turns, so the
+   * picture moves away from the frame it started on — and `data-game-units` is
+   * deliberately still that starting frame, which is what keeps the comparison
+   * below exact now that there is something to compare.
+   */
+  await openExportedGame(page)
+  const host = gameHost(page)
+
+  await expect.poll(async () => Number(await host.getAttribute('data-game-steps'))).toBeGreaterThan(30)
+
+  const started = await host.getAttribute('data-game-units')
+  const now = await host.getAttribute('data-game-units-now')
+  expect(now).not.toBe(started)
+
+  // And it keeps going, rather than having moved once and stopped.
+  await expect.poll(async () => host.getAttribute('data-game-units-now')).not.toBe(now)
+
+  // The starting frame is a fact about the level and does not move with it.
+  await expect(host).toHaveAttribute('data-game-units', started ?? '')
 })
 
 test('the exported game draws the level exactly as play mode draws it', async ({ page }) => {

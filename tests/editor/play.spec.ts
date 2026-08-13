@@ -23,6 +23,14 @@ import { editorTestProjectPath } from './test-project.js'
  * by the same renderer through the same camera, and every entity landed in the
  * same place at the same size. A divergence between the two halves has nowhere
  * to hide in that.
+ *
+ * **It is now a statement about one frame**, and every assertion of it in this
+ * file means "the level *started* where the file says". A running level moves —
+ * level one's health icon turns — so the two pictures diverge on purpose a
+ * sixtieth of a second later, and a check that kept comparing them would report
+ * the game working as a fault. The three attributes that keep the pair honest
+ * are `data-scene-units` (the frame it started on), `data-play-units` (where it
+ * has got to) and `data-play-steps` (how many fixed steps that took).
  */
 
 const LEVEL_ONE = 'scenes/level-01.json'
@@ -60,13 +68,30 @@ async function stop(page: Page): Promise<void> {
   await expect(viewport(page)).toHaveAttribute('data-play-state', 'stopped')
 }
 
+/** Waits until the running level has taken at least this many fixed steps. */
+async function stepsPast(page: Page, steps: number): Promise<void> {
+  await expect
+    .poll(async () => Number(await viewport(page).getAttribute('data-play-steps')))
+    .toBeGreaterThanOrEqual(steps)
+}
+
 function projectFile(relative: string): string {
   return path.join(editorTestProjectPath(), relative.replaceAll('/', path.sep))
 }
 
-/** Every file the editor could write, and what is in it right now. */
+/**
+ * Every file the editor could write, and what is in it right now — the bytes
+ * *and* the modification time (`editor-verification` V12).
+ *
+ * The timestamp is not belt and braces. A write of identical bytes leaves the
+ * contents equal and the time moved, and "the editor rewrote my level with the
+ * same contents" is still the editor writing to a file it promised not to touch —
+ * it churns git, and it is the shape a bug here would most likely take.
+ */
 function snapshotProject(): Map<string, string> {
-  return new Map(editableFiles().map((file) => [file, fs.readFileSync(file, 'utf8')]))
+  return new Map(
+    editableFiles().map((file) => [file, `${fs.statSync(file).mtimeMs} ${fs.readFileSync(file, 'utf8')}`]),
+  )
 }
 
 async function typeInto(page: Page, testId: string, text: string): Promise<void> {
@@ -104,6 +129,18 @@ test.describe('pressing Play', () => {
     await expect(page.getByTestId('play-comparison')).toContainText('exactly as the editing view')
   })
 
+  test('says the same thing about the start long after the level has moved on', async ({ page }) => {
+    // The one that would have gone red if the comparison had been left comparing
+    // a running level with a standing-still one. Two seconds of simulated time
+    // is a hundred and twenty steps and half a turn of the health icon.
+    await openScene(page, LEVEL_ONE)
+    await play(page)
+    await stepsPast(page, 120)
+
+    await expect(viewport(page)).toHaveAttribute('data-play-match', 'same')
+    await expect(page.getByTestId('play-comparison')).toContainText('Started exactly')
+  })
+
   test('draws a prefab instance from the prefab it points at', async ({ page }) => {
     // Criterion 3, and the sharper half of it: the level names only a reference,
     // so a runtime that did not follow it would draw two fewer things — which is
@@ -133,6 +170,83 @@ test.describe('pressing Play', () => {
   })
 })
 
+// --- time passes -----------------------------------------------------------
+
+test.describe('a level that is running', () => {
+  test('moves, while the frame it started on stays where it was', async ({ page }) => {
+    await openScene(page, LEVEL_ONE)
+    await play(page)
+    await stepsPast(page, 1)
+
+    // Two pictures of one level, and the whole point of publishing both: this
+    // one is the frame the comparison above is about.
+    const started = await viewport(page).getAttribute('data-scene-units')
+    const firstMoved = await viewport(page).getAttribute('data-play-units')
+    expect(firstMoved).not.toBe('')
+
+    // It carries on turning. Read by polling rather than after a sleep, because
+    // what is being waited for is a change and not a duration (V5).
+    await expect
+      .poll(async () => viewport(page).getAttribute('data-play-units'))
+      .not.toBe(firstMoved)
+
+    await expect(viewport(page)).toHaveAttribute('data-scene-units', started ?? '')
+  })
+
+  test('turns the entity the level said turns, and leaves the others alone', async ({ page }) => {
+    /*
+     * The sharp version of "something moves": only the health icon carries a
+     * spin, so a runner that turned everything, or that turned nothing, both
+     * fail here — and the second is what a level drawn once rather than run
+     * would look like.
+     */
+    await openScene(page, LEVEL_ONE)
+    await play(page)
+    // A quarter turn at 90°/s, which is well past any tolerance.
+    await stepsPast(page, 60)
+
+    const started = boundsById(await viewport(page).getAttribute('data-scene-units'))
+    const now = boundsById(await viewport(page).getAttribute('data-play-units'))
+
+    const moved = [...now.keys()].filter((id) => started.get(id) !== now.get(id))
+    expect(moved).toHaveLength(1)
+
+    // And it is the one the Hierarchy calls the health icon.
+    await stop(page)
+    await row(page, 'Health icon').click()
+    await expect(page.getByTestId('entity-id')).toHaveText(moved[0] ?? '')
+  })
+
+  test('stands perfectly still while you are editing', async ({ page }) => {
+    /*
+     * The negative half, anchored on a positive event rather than on a sleep
+     * (`editor-verification` V6). A level is played first purely to find out how
+     * many steps this machine gets through in a given stretch — so the stretch
+     * the editing view is then watched over is known to be long enough for
+     * motion to have shown up if there were any.
+     */
+    await openScene(page, LEVEL_ONE)
+    await play(page)
+    await stepsPast(page, 60)
+    await stop(page)
+
+    await expect(viewport(page)).toHaveAttribute('data-play-units', '')
+    await expect(viewport(page)).toHaveAttribute('data-play-steps', '')
+
+    const editing = await viewport(page).getAttribute('data-scene-units')
+    // The same wall-clock stretch that produced sixty steps a moment ago.
+    await page.waitForTimeout(1000)
+
+    expect(await viewport(page).getAttribute('data-scene-units')).toBe(editing)
+  })
+})
+
+/** Each entity's drawn rectangle, keyed by id, out of one of the units attributes. */
+function boundsById(units: string | null): Map<string, string> {
+  const drawn = JSON.parse(units ?? '[]') as Array<{ id: string; bounds: unknown }>
+  return new Map(drawn.map((entity) => [entity.id, JSON.stringify(entity.bounds)]))
+}
+
 // --- acceptance 4: Stop puts me back ---------------------------------------
 
 test.describe('pressing Stop', () => {
@@ -149,13 +263,38 @@ test.describe('pressing Stop', () => {
     await expect(viewport(page)).not.toHaveAttribute('data-scene-scale', framed ?? '')
 
     const before = await camera(page)
+    const editing = await viewport(page).getAttribute('data-scene-units')
+
     await play(page)
+    // Stopped from a level that has genuinely moved, which is the only version
+    // of this test worth running now: stopping a level that never moved cannot
+    // tell you whether anything was put back.
+    await stepsPast(page, 60)
     await stop(page)
 
     await expect(viewport(page)).toHaveAttribute('data-scene-showing', LEVEL_ONE)
     await expect(page.getByTestId('inspector-panel')).toHaveAttribute('data-inspecting-entity', /.+/)
     await expect(row(page, 'Knight')).toHaveAttribute('data-selected', 'true')
     expect(await camera(page)).toEqual(before)
+    // Every sprite back at the angle the file has it, because the level that was
+    // turning was a copy and the copy has been dropped.
+    await expect(viewport(page)).toHaveAttribute('data-scene-units', editing ?? '')
+  })
+
+  test('puts the turning entity back at the angle the file gives it', async ({ page }) => {
+    // The same claim read off the Inspector rather than off the picture: the
+    // number a human would look at, which never moved because the document
+    // never moved.
+    await openScene(page, LEVEL_ONE)
+    await row(page, 'Health icon').click()
+    await expect(page.getByTestId('entity-rotation-control')).toHaveValue('0')
+
+    await play(page)
+    await stepsPast(page, 60)
+    await stop(page)
+
+    await expect(page.getByTestId('entity-rotation-control')).toHaveValue('0')
+    await expect(page.getByTestId('entity-spin-control')).toHaveValue('90')
   })
 
   test('cannot be driven off course by the camera, because the camera is frozen', async ({ page }) => {
@@ -255,6 +394,17 @@ test('writes nothing at all while a level is running', async ({ page }) => {
   const before = snapshotProject()
 
   await play(page)
+  /*
+   * Run until the level has genuinely moved before pressing anything.
+   *
+   * This is what the test is for now. A running level mutates entities sixty
+   * times a second, and the only thing standing between that and somebody's file
+   * is that the entities being mutated are a copy — so the version of this test
+   * that plays a level which never moves is testing the *editor's* controls and
+   * nothing about the runner. Level one's health icon turns, so by here a
+   * hundred and twenty transforms have been written to something.
+   */
+  await stepsPast(page, 120)
 
   // Every way the editor has of changing a level is out of reach — `inert` is
   // what the human sees, and the transaction API refusing is what makes it true
@@ -280,9 +430,14 @@ test('writes nothing at all while a level is running', async ({ page }) => {
 // --- the pictures ---------------------------------------------------------
 
 test('a picture of a level running, and of the editor it came back to', async ({ page }) => {
-  await openScene(page, LEVEL_TWO)
+  // Level one rather than level two, because a picture of a level running is
+  // only worth looking at if the level is doing something: the health icon is
+  // caught part-way through a turn here, and the second picture is it back at
+  // the angle the file gives it.
+  await openScene(page, LEVEL_ONE)
   await play(page)
   await expect(page.getByTestId('play-comparison')).toBeVisible()
+  await stepsPast(page, 30)
   await page.screenshot({ path: 'test-results/play-running.png', fullPage: false })
 
   await stop(page)

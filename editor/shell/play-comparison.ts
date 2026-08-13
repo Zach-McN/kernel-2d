@@ -1,7 +1,25 @@
 import type { DrawnEntity, ShownScene } from '../../runtime'
 
 /**
- * Checking that the running level looks like the one that was being edited.
+ * Checking that the running level *started* as the one that was being edited.
+ *
+ * **What this promises, and what it deliberately stopped promising.** Before the
+ * runtime had a clock, a running level stood still, so comparing it with the
+ * editing view was a statement that held for as long as it ran. It is now a
+ * statement about **one frame**: the level as the runtime drew it before any
+ * system had moved anything. After that frame the two pictures diverge on
+ * purpose — one is a level playing and the other is a level being edited — and a
+ * check that carried on comparing them would report the game working as a fault.
+ *
+ * That is a narrower claim and it is still the load-bearing one, because it is
+ * the claim about the two *loaders*: everything this was ever able to catch is a
+ * disagreement about what the file contains, and every one of those is visible on
+ * the first frame. What it can no longer catch is a system that is wrong, which
+ * it was never able to catch and which belongs to whoever writes the system.
+ *
+ * The ordering that makes it true is not in this file: nothing starts the clock
+ * until the renderer has drawn the running level and this comparison has a
+ * picture to be about (`editor/shell/running-level.ts`).
  *
  * `editor-kernel` D2 claims the editor's preview "cannot lie" because there is
  * only one renderer. That was true of the *renderer* and never checked of
@@ -142,17 +160,19 @@ export function describeComparison(comparison: PlayComparison): string {
     return `Cannot be checked against the editing view: ${comparison.why}.`
   }
 
+  // "Started" rather than "is drawn": the level moves from here, and a caption
+  // claiming it still matches the editing view would be wrong within a frame.
   if (comparison.kind === 'same') {
     return comparison.count === 0
       ? 'Nothing to draw, exactly as in the editing view.'
-      : `Drawn exactly as the editing view had it.`
+      : `Started exactly as the editing view had it.`
   }
 
   const { differences } = comparison
   const count = differences.length === 1 ? '1 difference' : `${differences.length} differences`
   // Every one of them, not the first: a caption that says "and 4 others" is a
   // caption that hides the four somebody needs.
-  return `${count} from the editing view — ${differences.map((one) => one.detail).join('; ')}.`
+  return `${count} from the editing view when it started — ${differences.map((one) => one.detail).join('; ')}.`
 }
 
 function near(a: number, b: number): boolean {

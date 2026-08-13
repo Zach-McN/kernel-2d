@@ -3,6 +3,7 @@ import path from 'node:path'
 
 import { expect, test, type Page } from '@playwright/test'
 
+import { restoreProjectAfterEach } from './restore-project.js'
 import { selectAsset as select } from './select-asset.js'
 import { editorTestProjectPath } from './test-project.js'
 
@@ -13,6 +14,8 @@ import { editorTestProjectPath } from './test-project.js'
  * where there is nothing to tune are ordinary, and a panel that goes blank for
  * them is indistinguishable from one that has broken.
  */
+
+restoreProjectAfterEach()
 
 test.beforeEach(async ({ page }) => {
   await page.goto('/')
@@ -135,6 +138,92 @@ test.describe('the Inspector', () => {
 
     await select(page, 'assets/textures/characters/slime.png')
     await expect(page.getByTestId('inspector-name')).toHaveText('slime.png')
+  })
+})
+
+// --- the one thing that is about behaviour rather than appearance ----------
+
+test.describe('an entity’s turn rate', () => {
+  const LEVEL_ONE = 'scenes/level-01.json'
+
+  async function selectEntity(page: Page, name: string): Promise<void> {
+    await select(page, LEVEL_ONE)
+    await page
+      .getByTestId('hierarchy-panel')
+      .locator('[data-entity-id]')
+      .filter({ hasText: name })
+      .first()
+      .click()
+  }
+
+  function levelFile(): string {
+    return path.join(editorTestProjectPath(), 'scenes', 'level-01.json')
+  }
+
+  /**
+   * The turn rate one named entity carries on disk, or null.
+   *
+   * Read out of the level rather than searched for as text, because level one
+   * has an entity that turns in it already — a plain "does the file mention a
+   * rate" would be answered by the health icon whichever entity was being
+   * edited, and would pass while testing nothing.
+   */
+  function spinInFile(name: string): number | null {
+    const level = JSON.parse(fs.readFileSync(levelFile(), 'utf8')) as {
+      entities: Array<{ name: string; components: { spin?: { degreesPerSecond: number } } }>
+    }
+    const entity = level.entities.find((one) => one.name === name)
+    return entity?.components.spin?.degreesPerSecond ?? null
+  }
+
+  test('shows the rate the level gives it, and nothing for an entity that does not turn', async ({
+    page,
+  }) => {
+    await selectEntity(page, 'Health icon')
+    await expect(page.getByTestId('entity-spin-control')).toHaveValue('90')
+
+    await selectEntity(page, 'Knight')
+    // Nought and "does not turn" are the same thing to look at, which is what
+    // lets one field cover both without a checkbox beside it.
+    await expect(page.getByTestId('entity-spin-control')).toHaveValue('0')
+  })
+
+  test('writes a rate to the file, and Ctrl-Z takes it back', async ({ page }) => {
+    await selectEntity(page, 'Knight')
+    const field = page.getByTestId('entity-spin-control')
+    await field.click()
+    await field.press('ControlOrMeta+a')
+    await field.pressSequentially('45', { delay: 20 })
+
+    await expect.poll(() => spinInFile('Knight')).toBe(45)
+
+    // No undo code was written for this field. It is on the one stack because
+    // every write in the editor goes through the transaction API
+    // (`editor-kernel` D7), and this is the evidence rather than the claim.
+    // One press for the whole run of keystrokes, because the merge key carries
+    // the entity and the field.
+    await page.keyboard.press('ControlOrMeta+z')
+    await expect(field).toHaveValue('0')
+    await expect.poll(() => spinInFile('Knight')).toBeNull()
+
+    // And the entity nobody touched still turns — the undo put back one field
+    // of one entity rather than a level.
+    expect(spinInFile('Health icon')).toBe(90)
+  })
+
+  test('takes the component out of the level when the rate goes back to nought', async ({ page }) => {
+    // A level stays a description of what is in it: an entity somebody clicked
+    // on and thought better of does not end up carrying a rate of nothing.
+    await selectEntity(page, 'Health icon')
+    const field = page.getByTestId('entity-spin-control')
+    await field.click()
+    await field.press('ControlOrMeta+a')
+    await field.pressSequentially('0', { delay: 20 })
+
+    await expect.poll(() => spinInFile('Health icon')).toBeNull()
+    // The rest of the entity is exactly as it was: this took a component out,
+    // it did not rewrite a level.
+    expect(fs.readFileSync(levelFile(), 'utf8')).toContain('icon-heart.png')
   })
 })
 

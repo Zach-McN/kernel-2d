@@ -256,6 +256,11 @@ interface Placement {
   rotation?: number
   scaleX?: number
   scaleY?: number
+  /**
+   * Degrees per second while the level is running. The one thing in this sample
+   * that is about behaviour rather than about where something sits.
+   */
+  spin?: number
 }
 
 /** Entities in draw order: the first is furthest back. */
@@ -279,7 +284,7 @@ function scene(scenePath: string, generatedAt: string, placements: readonly Plac
     // here as well would look identical the day it was generated and stop
     // following the prefab the day after, which is the whole point of placing
     // one by reference.
-    components: reference(placement),
+    components: componentsFor(placement),
   }))
 
   return {
@@ -288,6 +293,13 @@ function scene(scenePath: string, generatedAt: string, placements: readonly Plac
     entities,
     generatedBy: GENERATED_BY,
     generatedAt,
+  }
+}
+
+function componentsFor(placement: Placement): Record<string, unknown> {
+  return {
+    ...reference(placement),
+    ...(placement.spin === undefined ? {} : { spin: { degreesPerSecond: placement.spin } }),
   }
 }
 
@@ -325,7 +337,21 @@ function slimePrefab(generatedAt: string): Prefab {
   }
 }
 
-/** A ground strip, two characters standing on it, and a UI icon in front. */
+/**
+ * A ground strip, two characters standing on it, and a UI icon in front.
+ *
+ * The health icon turns, and it is the only thing in the sample that does
+ * anything at all when the level runs. It is here so that pressing Play, and
+ * opening an exported folder, are both immediately obviously different from
+ * looking at a picture — the same reason the slime is placed from a prefab
+ * rather than drawn twice. One turn every four seconds: unmistakable, and slow
+ * enough not to be irritating in a window somebody leaves open.
+ *
+ * It is on the *starting* level on purpose, because that is the one an export
+ * ships, and on an entity that was already here rather than a new one, because a
+ * demonstration that changes what a level contains is a demonstration that has
+ * moved on from being one.
+ */
 function levelOne(generatedAt: string): Scene {
   return scene(LEVEL_ONE, generatedAt, [
     // One 16px tile stretched into a strip: the ground's top edge lands at y=16.
@@ -333,7 +359,7 @@ function levelOne(generatedAt: string): Scene {
     { name: 'Knight', texture: KNIGHT, x: 100, y: 16 },
     { name: 'Slime', texture: SLIME, x: 200, y: 16 },
     { name: 'Knight running', texture: RUN_STRIP, x: 272, y: 16 },
-    { name: 'Health icon', texture: HEART, x: 28, y: 180 },
+    { name: 'Health icon', texture: HEART, x: 28, y: 180, spin: 90 },
   ])
 }
 

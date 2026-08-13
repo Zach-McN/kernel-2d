@@ -1,4 +1,6 @@
 import { PROJECT_FORMAT, ProjectSchema } from '../formats/project-schema'
+import { runLevel } from '../game/run-level'
+import { BUILT_IN_SYSTEMS } from '../game/systems/index'
 import { framing } from '../scene/coordinates'
 import { inSceneUnits, type DrawnInScene } from '../scene/drawn-in-scene'
 import { describeLoadProblem, loadScene, type LoadProblem, type ProjectReader } from '../scene/load-scene'
@@ -19,10 +21,16 @@ import { createSceneView, type SceneRequest, type ShownScene } from '../scene/sc
  * It ships. So it may not import the editor, the filesystem service, the scripts or
  * the tests, and `tests/architecture/boundaries.test.ts` fails if it ever does.
  *
- * **What this deliberately is not.** It is not a game loop: there is no update, no
- * input and no physics yet, so "running" means the level has been opened and drawn.
- * It is not a scene manager: there is one startup level and no way to reach a
- * second. Both arrive with the first real game, and neither is faked here.
+ * **It runs, and that is the same runner the editor's Play button uses.** The level
+ * is drawn, framed, and then handed to `runLevel` with the same systems — so the
+ * folder somebody is given and the picture in the editor are the same game in the
+ * strong sense, not merely the same drawing. Time here is Phaser's ticker cut into
+ * fixed steps, exactly as it is there.
+ *
+ * **What this deliberately is still not.** It is not input: nothing responds to a
+ * key or a pointer, so a level runs and nobody plays it yet. It is not a scene
+ * manager: there is one startup level and no way to reach a second. It is not
+ * physics. Each of those arrives with the first real game, and none is faked here.
  *
  * **The page says what went wrong, in the runtime's own words.** `describeLoadProblem`
  * has always lived in the runtime precisely so a shipped game can say it cannot find
@@ -43,10 +51,18 @@ const BUILD = 1
 const PROJECT_FILE = 'project.json'
 
 export interface GameHandle {
-  /** What the renderer drew, or null while nothing has been drawn yet. */
+  /** What the renderer drew most recently, or null while nothing has been drawn yet. */
   shown: () => ShownScene | null
-  /** The level's picture in its own units — the same report the editor publishes. */
+  /**
+   * The level's picture in its own units, **as it was first drawn** — the same
+   * report the editor publishes for a level that has just started, and the one
+   * the two are compared through.
+   */
   drawn: () => DrawnInScene[]
+  /** Where the level has got to since, in the same units. */
+  drawnNow: () => DrawnInScene[]
+  /** Fixed steps run since the level started. */
+  steps: () => number
   /** References the level could not resolve. It runs regardless. */
   problems: () => LoadProblem[]
 }
@@ -62,10 +78,24 @@ export async function startGame(host: HTMLElement): Promise<GameHandle> {
 
   let shown: ShownScene | null = null
   let problems: LoadProblem[] = []
+  /**
+   * The level as it was first drawn, kept for the life of the page.
+   *
+   * Separate from `shown` because the two answer different questions the moment
+   * anything moves, and it is the *starting* picture that is comparable with
+   * anything else: the editor's play mode publishes the frame a level started on
+   * for the same reason, and a comparison between two moving pictures taken at
+   * two unrelated instants would be a test of nothing (`editor-verification`
+   * V26).
+   */
+  let started: DrawnInScene[] = []
+  let steps = 0
 
   const handle: GameHandle = {
     shown: () => shown,
-    drawn: () => (shown === null ? [] : inSceneUnits(shown)),
+    drawn: () => started,
+    drawnNow: () => (shown === null ? [] : inSceneUnits(shown)),
+    steps: () => steps,
     problems: () => problems,
   }
 
@@ -80,7 +110,7 @@ export async function startGame(host: HTMLElement): Promise<GameHandle> {
    */
 
   const report = (state: GameState, scene: string | null): void => {
-    describe(host, state, scene, shown, problems.length)
+    describe(host, state, scene, shown, started, steps, problems.length)
   }
 
   report('loading', null)
@@ -145,6 +175,12 @@ export async function startGame(host: HTMLElement): Promise<GameHandle> {
 
   await draw(level.request)
 
+  // The starting picture, taken here: the level is drawn and framed, and nothing
+  // has moved yet because nothing has been started yet. One line below is where
+  // that stops being true, and the order of these two is the whole of why this
+  // page's report can be checked against the editor's.
+  started = shown === null ? [] : inSceneUnits(shown)
+
   /*
    * A resized window re-frames the level.
    *
@@ -165,6 +201,33 @@ export async function startGame(host: HTMLElement): Promise<GameHandle> {
 
   report('drawn', startupScene)
   say(caption(level.request, shown, problems), problems.length > 0)
+
+  /*
+   * And then time starts.
+   *
+   * The same runner and the same systems the editor's Play button uses, over a
+   * copy of the level this page just read. There is nothing to stop it: a shipped
+   * game runs until the tab closes, and Phaser's ticker stops on its own when the
+   * tab is hidden, so a backgrounded game neither burns a core nor comes back to
+   * an hour of catching up.
+   *
+   * The page is told ten times a second rather than sixty, on the same reasoning
+   * as the editor: writing attributes is describing the picture, not producing
+   * it. Every frame is drawn; not every frame is announced.
+   */
+  runLevel({
+    entities: level.request.scene.entities,
+    systems: BUILT_IN_SYSTEMS,
+    onFrame: view.onFrame,
+    draw: (moved) => {
+      const redrawn = view.redraw(moved)
+      if (redrawn !== null) shown = redrawn
+    },
+    watch: (state) => {
+      steps = state.steps
+      report('drawn', startupScene)
+    },
+  })
 
   return handle
 }
@@ -274,23 +337,33 @@ function caption(request: SceneRequest, shown: ShownScene | null, problems: Load
  * the same report under the same shape as the editor's `data-scene-units`: the two are
  * meant to be compared, and two hooks of different shapes would mean somebody
  * converting one of them, which is the second derivation this whole arrangement exists
- * to avoid.
+ * to avoid. Both mean **the frame the level started on**, on both sides of the export,
+ * which is what keeps them comparable now that a level moves.
+ *
+ * `data-game-units-now` is where it has got to, and `data-game-steps` is how many fixed
+ * steps it took. Those two are how "this folder is running, not merely drawn" is read
+ * from outside the page — by a test, and by a human wondering whether what they are
+ * looking at is frozen.
  */
 function describe(
   host: HTMLElement,
   state: GameState,
   scene: string | null,
   shown: ShownScene | null,
+  started: readonly DrawnInScene[],
+  steps: number,
   problems: number,
 ): void {
-  const drawn = shown === null ? [] : inSceneUnits(shown)
+  const now = shown === null ? [] : inSceneUnits(shown)
 
   host.dataset['gameState'] = state
   host.dataset['gameScene'] = scene ?? ''
-  host.dataset['gameDrawn'] = String(drawn.filter((entity) => entity.bounds !== null).length)
+  host.dataset['gameDrawn'] = String(now.filter((entity) => entity.bounds !== null).length)
   host.dataset['gameProblems'] = String(problems)
   host.dataset['gameScale'] = shown === null ? '' : String(shown.camera.scale)
-  host.dataset['gameUnits'] = shown === null ? '' : JSON.stringify(drawn)
+  host.dataset['gameUnits'] = shown === null ? '' : JSON.stringify(started)
+  host.dataset['gameUnitsNow'] = shown === null ? '' : JSON.stringify(now)
+  host.dataset['gameSteps'] = String(steps)
 }
 
 /** The host's own box, in CSS pixels, never zero. */

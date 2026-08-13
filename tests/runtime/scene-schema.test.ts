@@ -11,6 +11,7 @@ import {
   defaultTransform,
   isKnownComponentType,
   serializeScene,
+  spinOf,
   spriteOf,
   unknownComponentTypesOf,
   type Entity,
@@ -46,6 +47,16 @@ const slime: Entity = {
   },
 }
 
+const heart: Entity = {
+  id: '0011223344556677',
+  name: 'Health icon',
+  transform: { x: 28, y: 180, rotation: 0, scaleX: 1, scaleY: 1 },
+  components: {
+    sprite: { texture: { id: 'cafe0011babe2233', path: 'assets/textures/ui/icon-heart.png' } },
+    spin: { degreesPerSecond: 90 },
+  },
+}
+
 const scene: Scene = {
   format: 'kernel2d.scene',
   version: 1,
@@ -60,6 +71,7 @@ describe('a scene survives a round trip', () => {
     ['an empty scene', defaultScene()],
     ['one an AI produced', generated],
     ['an entity with no components at all', { ...scene, entities: [defaultEntity('abc123', 'Empty')] }],
+    ['an entity that turns while the level runs', { ...scene, entities: [heart] }],
   ])('reads back identical for %s', (_description, value) => {
     expect(SceneSchema.parse(JSON.parse(JSON.stringify(value)))).toEqual(value)
   })
@@ -176,6 +188,24 @@ describe('a scene rejects what it should', () => {
       }),
     ).toThrow()
   })
+
+  it('refuses a turn rate that is not a number, because a system would run it sixty times a second', () => {
+    expect(() =>
+      SceneSchema.parse({ ...scene, entities: [{ ...heart, components: { spin: { degreesPerSecond: '90' } } }] }),
+    ).toThrow()
+  })
+
+  it.each([Infinity, -Infinity, NaN])('refuses a turn rate of %p', (rate) => {
+    // Not pedantry: any of these reaches the transform on the first step and
+    // leaves a sprite the renderer cannot place, with nothing on screen naming
+    // the field that did it.
+    expect(() =>
+      SceneSchema.parse({
+        ...scene,
+        entities: [{ ...heart, components: { spin: { degreesPerSecond: rate } } }],
+      }),
+    ).toThrow()
+  })
 })
 
 describe('reading a component', () => {
@@ -190,7 +220,13 @@ describe('reading a component', () => {
 
   it('knows which types it has a schema for', () => {
     expect(isKnownComponentType('sprite')).toBe(true)
+    expect(isKnownComponentType('spin')).toBe(true)
     expect(isKnownComponentType('patrolRoute')).toBe(false)
+  })
+
+  it('hands back a turn rate, and null for an entity that does not turn', () => {
+    expect(spinOf(heart)?.degreesPerSecond).toBe(90)
+    expect(spinOf(knight)).toBeNull()
   })
 })
 

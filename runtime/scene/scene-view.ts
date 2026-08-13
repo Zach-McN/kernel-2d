@@ -117,6 +117,38 @@ export interface SceneView {
    * Panning and zooming are a redraw, never a reload.
    */
   restage: (camera: Camera) => ShownScene | null
+  /**
+   * Draws the scene already loaded with its entities as they are *now*, at
+   * whatever camera is current, fetching and uploading nothing.
+   *
+   * This is what a running level redraws through. It is deliberately not
+   * `show` with a rebuilt request: `show` fetches bytes, and a level that
+   * re-fetched its textures sixty times a second would be a level that
+   * stuttered for reasons nobody could see. It is deliberately not `restage`
+   * either — that one is about the camera moving while the level stands still,
+   * and this is the exact opposite.
+   *
+   * The entities replace the ones the current request carried, so a resize or a
+   * pan afterwards draws where things have got to rather than where they
+   * started.
+   */
+  redraw: (entities: readonly Entity[]) => ShownScene | null
+  /**
+   * Calls back once per rendered frame with the milliseconds since the last
+   * one, and answers with the way to stop. **The engine's own ticker is the one
+   * tick source in the kernel**, so nothing here starts a `requestAnimationFrame`
+   * of its own: a second timing source would be a second answer to "how much
+   * time passed", and the two would disagree the first time a browser throttled
+   * a background tab. It also means a hidden tab stops the simulation for free,
+   * because Phaser stops stepping.
+   *
+   * The delta handed over is Phaser's, which is already smoothed and capped
+   * (`TimeStep.delta`), so it feeds an accumulator without being tidied first.
+   *
+   * Nothing subscribes while the editor is editing, which is the whole of why
+   * nothing moves in edit mode.
+   */
+  onFrame: (tick: (elapsedMs: number) => void) => () => void
   /** Draws nothing at all. */
   clear: () => void
   destroy: () => void
@@ -247,6 +279,23 @@ export async function createSceneView(options: SceneViewOptions): Promise<SceneV
       return draw(current, registered(current))
     },
 
+    redraw: (entities) => {
+      if (current === null) return null
+      // A new request object rather than an assignment into the old one: the
+      // request handed to `show` belongs to whoever built it, and a running
+      // level writing into it would change an object the editor is comparing
+      // by value — which would restart the very level that is running.
+      current = { ...current, scene: { ...current.scene, entities: [...entities] } }
+      return draw(current, registered(current))
+    },
+
+    onFrame: (tick) => {
+      stage.frames.add(tick)
+      return () => {
+        stage.frames.delete(tick)
+      }
+    },
+
     show: async (request) => {
       const mine = (sequence += 1)
 
@@ -344,15 +393,23 @@ function undrawableIn(
 }
 
 /**
- * The stage: an empty scene that owns the entity layer.
+ * The stage: an empty scene that owns the entity layer, and the one place in
+ * the kernel that hears the engine's clock.
  *
- * `create` is not declared on Phaser's `Scene`, so it carries no `override`
- * keyword — it is a hook the framework calls by name rather than a method being
- * replaced (phaser4-runtime G4).
+ * The two hooks are spelled differently on purpose. `create` is **not** declared
+ * on Phaser's `Scene`, so it carries no `override` — it is a hook the framework
+ * calls by name (phaser4-runtime G4). `update` **is** declared, so it must carry
+ * `override` under `noImplicitOverride`. Exactly opposite, on the same class,
+ * and the compiler's message names the keyword rather than the cause either way.
  */
 class SceneStage extends Phaser.Scene {
   private readonly announceReady: (stage: SceneStage) => void
   private layer: EntityLayer | null = null
+  /**
+   * Who wants to hear about frames. Empty whenever nothing is running, which is
+   * the whole of "nothing moves in edit mode" — there is no flag to get wrong.
+   */
+  readonly frames = new Set<(elapsedMs: number) => void>()
 
   constructor(announceReady: (stage: SceneStage) => void) {
     super('scene-view')
@@ -362,6 +419,13 @@ class SceneStage extends Phaser.Scene {
   create(): void {
     this.layer = createEntityLayer(this)
     this.announceReady(this)
+  }
+
+  override update(_time: number, delta: number): void {
+    // Copied before iterating: a subscriber that unsubscribes from inside its
+    // own callback — which is exactly what a level that stops itself would do —
+    // would otherwise be modifying the set being walked.
+    for (const tick of [...this.frames]) tick(delta)
   }
 
   get entities(): EntityLayer {

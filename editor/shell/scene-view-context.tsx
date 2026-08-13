@@ -17,6 +17,7 @@ import {
   toSceneRect,
   zoomAbout,
   type Camera,
+  type Entity,
   type Point,
   type Rect,
   type SceneRequest,
@@ -95,6 +96,26 @@ export type SceneViewState =
       frameAll: () => void
       /** Frame one entity, named by id. Does nothing if it is not on screen. */
       frameEntity: (entityId: string) => void
+      /**
+       * The renderer's own two hands for a level that is *running*, passed
+       * through untouched: draw the entities as they are now, and hear about
+       * frames.
+       *
+       * They are handed out raw rather than wrapped in something that runs a
+       * level, because running one is not this provider's job — the loop and
+       * the systems ship inside the game (`editor-kernel` D1), and the editor's
+       * whole part in it is to start one and stop it
+       * (`editor/shell/running-level.ts`).
+       *
+       * **Neither of them touches the state above.** `shown` stays the picture
+       * the renderer last reported *to React*, which while a level is running is
+       * the frame it started on — that is deliberate, and it is what the play
+       * comparison is a statement about. A running level redrawing through React
+       * would be sixty renders a second of a panel whose job is to describe the
+       * picture rather than to produce it.
+       */
+      redraw: (entities: readonly Entity[]) => ShownScene | null
+      onFrame: (tick: (elapsedMs: number) => void) => () => void
     }
 
 /**
@@ -376,6 +397,11 @@ export function SceneViewProvider({ children }: { children: ReactNode }): ReactE
       zoom,
       frameAll,
       frameEntity,
+      // The renderer's own methods, which live as long as the renderer does —
+      // so a level that is running is not restarted by this object being
+      // rebuilt around it every time the picture changes.
+      redraw: view.redraw,
+      onFrame: view.onFrame,
     }
   }, [bootProblem, view, shown, shownFor, problem, measure, pan, zoom, frameAll, frameEntity])
 

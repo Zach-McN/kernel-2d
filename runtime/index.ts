@@ -2,9 +2,11 @@
  * The runtime, as everything outside it sees it.
  *
  * This is the layer that ships inside an exported game: the renderer, the
- * formats it loads, and the meaning of the settings those formats carry. The
- * editor imports it as a library and embeds it (editor-kernel D2), which is
- * what makes the editor's preview the actual game rather than a drawing of it.
+ * formats it loads, the meaning of the settings those formats carry, and — since
+ * time started passing — the update loop and the systems it runs. The editor
+ * imports it as a library and embeds it (editor-kernel D2), which is what makes
+ * the editor's preview the actual game rather than a drawing of it. The editor
+ * starts and stops a running level; it never drives one.
  *
  * The direction of the arrow is the whole point and it is asserted by
  * `tests/runtime/boundaries.test.ts`: the editor may import the runtime, and
@@ -49,6 +51,7 @@ export {
   isKnownComponentType,
   prefabRefOf,
   serializeScene,
+  spinOf,
   spriteOf,
   unknownComponentTypesOf,
   type AssetRef,
@@ -57,6 +60,7 @@ export {
   type KnownComponentType,
   type PrefabComponent,
   type Scene,
+  type SpinComponent,
   type SpriteComponent,
   type Transform,
 } from './formats/scene-schema'
@@ -132,3 +136,17 @@ export {
   type TextureView,
   type TextureViewOptions,
 } from './preview/texture-view'
+
+export { MAX_STEPS_PER_FRAME, STEP_MS, createLoop, type Loop, type LoopOptions } from './game/loop'
+
+export { stepSystems, type System } from './game/system'
+
+export { BUILT_IN_SYSTEMS, spinSystem } from './game/systems/index'
+
+export {
+  NOTIFY_EVERY_MS,
+  runLevel,
+  type RunLevelOptions,
+  type RunState,
+  type RunningLevel,
+} from './game/run-level'

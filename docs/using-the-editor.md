@@ -8,7 +8,7 @@ It is kept current by the definition of done in `CLAUDE.md`: a session that
 changes what you can do, or how you do it, changes this page in the same commit.
 If this page and the editor disagree, the editor is right and the page is a bug.
 
-Last true as of: **renaming, moving and deleting files** (2026-08-12).
+Last true as of: **time passing in a running level** (2026-08-13).
 
 ---
 
@@ -178,7 +178,23 @@ last row is drawn in front.
 - **Assets panel** → *New scene* / *New prefab*, with a name and a folder.
 - **Hierarchy** → add, duplicate, delete, and move a row back or forward.
 - **Viewport** → click to select, drag to move.
-- **Inspector** → name, position, rotation, scale, and which texture it draws.
+- **Inspector** → name, position, rotation, scale, spin, and which texture it draws.
+
+### Spin — the one thing an entity can *do*
+
+The Inspector has a **Spin** field: degrees per second, counter-clockwise, the
+same unit and direction as Rotation just above it. Set it and the entity turns
+while the level is running. `0` means it does not turn, and setting it back to
+`0` takes the setting out of the file rather than leaving a nought behind.
+
+Nothing turns while you are editing — press **Play** to see it, **Stop** to put
+it back. The sample project's health icon is set to `90`, a quarter turn a
+second, so that pressing Play does something visible the first time you try it.
+
+**This is scaffolding and it is meant to leave.** It is here so that the update
+loop has something real driving it before there is a game to drive it, and the
+day your game's own code can supply behaviour, Spin goes and takes its field
+with it. Do not build a level around it.
 
 ### Prefabs
 
@@ -213,16 +229,27 @@ exactly where you were: same level, same selection, same camera.
 
 - A change made a moment before you press Play is in what runs; there is no save
   button and you do not need one.
-- The bar tells you whether the running level matches what the editor was showing
-  you, and names any difference in pixels.
+- **Time passes.** Anything with a spin turns, and keeps turning, until you stop.
 - A level that cannot be fully loaded — a prefab that is gone, broken import
   settings, a missing picture — says so in a sentence and runs the rest.
 - While it is running the rest of the editor is dimmed and read-only, and nothing
   is written to your files at all.
 
-**Nothing moves yet.** There is no input, no update loop and no physics; "run"
-means loaded and drawn by the runtime rather than by the editor. Motion arrives
-with the first game.
+**What is running is a copy.** Everything that moves is moving in a copy the
+runtime made when you pressed Play, so nothing a level does while it runs can
+reach your file. Stop throws the copy away, which is why everything is back at
+the angle and the position the file gives it, every time and immediately.
+
+**The bar's "started exactly as the editing view had it" is about the first
+frame**, and that is deliberate. It is checking that the runtime read your level
+the same way the editor did — which is a question about the *file*, and one that
+is answered before anything has moved. A second later the running level and the
+editing view disagree, because one of them is playing. If the two ever disagree
+at the start, the bar names every difference in pixels.
+
+**Nothing responds to you yet.** There is no input: no keys, no clicks, nothing
+a player could do. A level runs; nobody plays it. There is no collision and no
+sound either. Those arrive with the first game.
 
 ### Which level the game starts on
 
@@ -250,6 +277,11 @@ level actually reaches — that level, every prefab it places from, every pictur
 those draw, and the import settings beside each of them. Your levels and art are
 in there as the same files they are in your project, at the same paths, so you can
 open the folder and read it.
+
+**It runs the same way Play does.** The folder is not a picture of your level: it
+opens the file, draws it and then starts the same clock the editor's Play button
+starts, from the same files, through the same code. Anything with a spin turns
+there too.
 
 It deliberately leaves out everything the starting level does not reach: your
 `assets/source` originals, the audio nothing plays yet, the levels you have not
@@ -327,9 +359,17 @@ the editor takes the change.
 
 ## What it cannot do yet
 
-- **Anything that moves.** No input, no update loop, no collision. The only thing
-  an entity can have is a picture. An exported game is your level, drawn, and
-  nothing happens in it.
+- **Anything a player can do.** No input at all: no keys, no mouse, no touch.
+  A level runs and things in it move, but nobody plays it. This is the next big
+  gap and it is waiting on the game design, because what the first verb is is a
+  question about the game rather than about the editor.
+- **Behaviour of your own.** Spin is the only thing an entity can do, and it
+  exists to prove the update loop works rather than to be useful. Writing your
+  own behaviour means putting code in your game folder, and nothing yet loads it
+  — that is the piece the first game starts with.
+- **Collision, gravity or physics.** Two sprites in the same place are two
+  sprites in the same place.
+- **Sound.** The sample has audio files in it and nothing plays them.
 - **Choose which levels go in an export.** There is one starting level and the
   export takes what it reaches. Nothing yet gets you from one level to another, so
   there is nothing else for an export to include.

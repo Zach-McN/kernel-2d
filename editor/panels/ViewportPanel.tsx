@@ -7,6 +7,7 @@ import { entityAt, onScreen } from '../shell/drawn-entities'
 import { useOpenScene, type OpenSceneState } from '../shell/open-scene'
 import { comparePictures, describeComparison, type PlayComparison } from '../shell/play-comparison'
 import { usePlayMode, type PlayState } from '../shell/play-mode'
+import { useRunningLevel } from '../shell/running-level'
 import { describeProblem, problemsIn, useSceneAssets } from '../shell/scene-assets'
 import { describePrefabProblem, prefabProblemsIn, useResolvedScene } from '../shell/scene-prefabs'
 import { useDrawScene, useSceneView, type SceneViewState } from '../shell/scene-view-context'
@@ -36,15 +37,18 @@ import { SceneOverlay, describeScene } from './SceneOverlay'
  * window does, never reaches the document, and never reaches the scene file —
  * so Ctrl-Z after a pan reverses the last thing that was *changed*.
  *
- * **Play mode is a change of subject and nothing else.** The renderer, the
- * canvas and the camera are all the same objects; the only difference is that
- * the request comes from `runtime/scene/load-scene.ts` — which opened the file
- * itself — instead of from the editor's own resolution of it. That is what makes
- * Stop free: there is nothing to tear down, because nothing was built. Three
- * things follow, and each is one line below: the gestures go off, so the camera
- * cannot move and the two pictures stay comparable; the framing effect is told
- * the picture is incomplete, so a running level can never re-frame the editing
- * view; and the selection outline is not drawn over a running game.
+ * **Play mode is a change of subject, plus a clock.** The renderer, the canvas
+ * and the camera are all the same objects; what differs is that the request
+ * comes from `runtime/scene/load-scene.ts` — which opened the file itself —
+ * instead of from the editor's own resolution of it, and that once that picture
+ * is on screen the runtime starts stepping a copy of it (`../shell/running-level.ts`).
+ * Stop is still free: the copy is dropped, and the editing resolution has been
+ * kept up to date behind the running picture the whole time. Four things follow,
+ * and each is one line below: the gestures go off, so the camera cannot move and
+ * the two pictures stay comparable; the framing effect is told the picture is
+ * incomplete, so a running level can never re-frame the editing view; the
+ * selection outline is not drawn over a running game; and the clock cannot start
+ * until the picture the comparison is about has been drawn.
  */
 export function ViewportPanel(): ReactElement {
   const selection = useSelection()
@@ -98,6 +102,12 @@ export function ViewportPanel(): ReactElement {
     running !== null && view.state === 'ready' && view.shownFor === running.request ? current : null
   const comparison = usePlayComparison(running, playing, open)
 
+  // Time starts here, and only once the picture above exists — so the level is
+  // compared with the editing view on the frame it started, before any system
+  // has moved anything. Everything after that frame is the runtime's, drawn
+  // straight to the canvas without passing through React.
+  const runningLevel = useRunningLevel(running?.request.scene.entities ?? null, playing !== null)
+
   const selected = selection.selected.kind === 'entity' ? selection.selected.entity : null
   const ready = view.state === 'ready' ? view : null
 
@@ -133,8 +143,13 @@ export function ViewportPanel(): ReactElement {
       // different framing. In level units the two agree exactly, which is what
       // makes "the folder I shipped draws what the editor drew" checkable rather
       // than eyeballed. One shared function, on the renderer's own report
-      // (`runtime/scene/drawn-in-scene.ts`). It carries whichever picture is
-      // current, so it describes the running level while one is running.
+      // (`runtime/scene/drawn-in-scene.ts`).
+      //
+      // While a level is running this is the frame it **started** on, and that is
+      // the useful half of the pair rather than a limitation: it is the picture
+      // the comparison against the editing view is about, and the one an exported
+      // game's own starting picture is checked against. Where the level has got
+      // to since is next door, in `data-play-units`.
       data-scene-units={current === null ? '' : JSON.stringify(inSceneUnits(current))}
       // The camera as it was asked for. The sub-pixel nudge the renderer adds on
       // top is presentation and is deliberately not here; `drawnWith` on the
@@ -150,6 +165,13 @@ export function ViewportPanel(): ReactElement {
       data-play-match={comparison?.kind ?? ''}
       data-play-differences={comparison?.kind === 'different' ? String(comparison.differences.length) : ''}
       data-play-problems={running === null ? '' : String(running.problems.length)}
+      // Where the running level has got to, in its own units, and how many steps
+      // it took to get there. Updated ten times a second while the picture itself
+      // is drawn sixty — the editor describes a running level, it does not drive
+      // one. Empty whenever nothing is running, which is also how "nothing moves
+      // in edit mode" is read from the outside.
+      data-play-units={runningLevel === null ? '' : JSON.stringify(runningLevel.units)}
+      data-play-steps={runningLevel === null ? '' : String(runningLevel.steps)}
     >
       <Stage host={host} view={view} grab={grabOf(gestures)}>
         {/* No editor marks over a running game. */}
