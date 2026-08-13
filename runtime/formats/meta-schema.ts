@@ -20,10 +20,16 @@ import { z } from 'zod'
  * fixes the direction — the shared module owns the vocabulary and the Node
  * module imports it — so the sidecar and the editor both reach in here.
  *
- * One consequence worth keeping: this file has no relative imports of its own,
- * and must not gain any. It is compiled by two TypeScript projects with
- * different resolution rules (editor-ui U4), and a relative import would have
- * to carry a `.js` extension for one of them and no extension for the other.
+ * This file happens to have no relative imports of its own. That is a fact
+ * about it today and **not** a constraint on it: an earlier version of this
+ * comment said it must never gain any, on the grounds that two TypeScript
+ * projects with different resolution rules (editor-ui U4) could not agree on
+ * how to spell one. That was recorded without ever being tried, and it is
+ * false — measured 2026-08-12. The `./x.js` spelling resolves under bundler
+ * resolution, under NodeNext, and in Vite at runtime, so one spelling
+ * satisfies both projects. The *extensionless* spelling is the one that only
+ * works on one side. If this file ever needs another format's vocabulary, it
+ * may import it, written `./x.js` (text-formats T14).
  */
 
 export const ASSET_META_FORMAT = 'kernel2d.asset-meta'
