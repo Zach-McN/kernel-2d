@@ -193,28 +193,99 @@ test.describe('a level that is running', () => {
     await expect(viewport(page)).toHaveAttribute('data-scene-units', started ?? '')
   })
 
-  test('turns the entity the level said turns, and leaves the others alone', async ({ page }) => {
+  test('moves exactly the two entities the level asked to move, and nothing else', async ({ page }) => {
     /*
-     * The sharp version of "something moves": only the health icon carries a
-     * spin, so a runner that turned everything, or that turned nothing, both
-     * fail here — and the second is what a level drawn once rather than run
-     * would look like.
+     * The sharp version of "something moves", and it is now sharp about two
+     * different things at once.
+     *
+     * The health icon turns, read by the engine's own `spin`. The slime walks,
+     * read by a system in the **project's** `src/systems/` from a component the
+     * engine has never heard of. Three sprites carry neither and must not move.
+     *
+     * So this is where the seam that loads a game's code is proved end to end: a
+     * runner that moved everything, or nothing, or only the icon — which is what
+     * a project's code failing to compile in would look like — each fail here.
      */
     await openScene(page, LEVEL_ONE)
     await play(page)
-    // A quarter turn at 90°/s, which is well past any tolerance.
+    // A quarter turn at 90°/s and a quarter of the slime's walk. Well past any
+    // tolerance for both.
     await stepsPast(page, 60)
 
     const started = boundsById(await viewport(page).getAttribute('data-scene-units'))
     const now = boundsById(await viewport(page).getAttribute('data-play-units'))
 
     const moved = [...now.keys()].filter((id) => started.get(id) !== now.get(id))
-    expect(moved).toHaveLength(1)
+    expect(moved).toHaveLength(2)
 
-    // And it is the one the Hierarchy calls the health icon.
+    // And they are the two the Hierarchy names, identified by the ids that moved
+    // rather than by position — the picture cannot tell you *why* something moved,
+    // so the assertion has to be about which entity it was.
     await stop(page)
+    const movedIds = new Set(moved)
+
     await row(page, 'Health icon').click()
-    await expect(page.getByTestId('entity-id')).toHaveText(moved[0] ?? '')
+    const icon = await page.getByTestId('entity-id').textContent()
+    await row(page, 'Slime').click()
+    const slime = await page.getByTestId('entity-id').textContent()
+
+    expect(movedIds).toEqual(new Set([icon, slime]))
+  })
+
+  test('runs the project’s own system, and stops when the project stops asking for it', async ({ page }) => {
+    /*
+     * The decision this feature turns on: **pressing Play re-reads the game's
+     * code.** Editing a system hot-replaces the module the editor reads its list
+     * from, so Stop and Play is enough — the open level, the selection and the
+     * camera all survive, and nothing reloads.
+     *
+     * Proved by taking the behaviour away rather than adding one: a slime that
+     * stops walking cannot be a stale picture, a caching accident or a coincidence
+     * of timing. Only the icon is left turning.
+     *
+     * The file is put back by hand. The shared restore covers what the *editor*
+     * can write — `.json` and `.meta` — and a source file is neither
+     * (`editor-verification` V14).
+     */
+    const systemFile = projectFile('src/systems/patrol.ts')
+    const original = fs.readFileSync(systemFile, 'utf8')
+
+    try {
+      await openScene(page, LEVEL_ONE)
+      await play(page)
+      await stepsPast(page, 60)
+      expect(movedCount(await pictures(page))).toBe(2)
+      await stop(page)
+
+      // The same system, asked to move nothing.
+      fs.writeFileSync(systemFile, original.replace('entity.transform.x +=', 'entity.transform.x += 0 *'))
+
+      /*
+       * Polled around a whole Play/Stop cycle rather than waited for with a
+       * sleep. What is being waited on is the dev server noticing the file and
+       * replacing the module — a duration nobody should hard-code — and each
+       * attempt is a real run of the level, so the first one that reports a single
+       * moving entity is the answer (V5).
+       */
+      await expect
+        .poll(
+          async () => {
+            await play(page)
+            await stepsPast(page, 60)
+            const count = movedCount(await pictures(page))
+            await stop(page)
+            return count
+          },
+          { timeout: 20_000 },
+        )
+        .toBe(1)
+
+      // Nothing reloaded on the way: the level is still open and still the one
+      // that was open, which is the half of this decision a human notices.
+      await expect(viewport(page)).toHaveAttribute('data-scene-showing', LEVEL_ONE)
+    } finally {
+      fs.writeFileSync(systemFile, original)
+    }
   })
 
   test('stands perfectly still while you are editing', async ({ page }) => {
@@ -245,6 +316,25 @@ test.describe('a level that is running', () => {
 function boundsById(units: string | null): Map<string, string> {
   const drawn = JSON.parse(units ?? '[]') as Array<{ id: string; bounds: unknown }>
   return new Map(drawn.map((entity) => [entity.id, JSON.stringify(entity.bounds)]))
+}
+
+interface Pictures {
+  /** The frame the level started on. */
+  started: Map<string, string>
+  /** Where it has got to since. */
+  now: Map<string, string>
+}
+
+async function pictures(page: Page): Promise<Pictures> {
+  return {
+    started: boundsById(await viewport(page).getAttribute('data-scene-units')),
+    now: boundsById(await viewport(page).getAttribute('data-play-units')),
+  }
+}
+
+/** How many entities are somewhere other than where they started. */
+function movedCount(pair: Pictures): number {
+  return [...pair.now.keys()].filter((id) => pair.started.get(id) !== pair.now.get(id)).length
 }
 
 // --- acceptance 4: Stop puts me back ---------------------------------------

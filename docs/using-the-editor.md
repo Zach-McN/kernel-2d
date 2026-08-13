@@ -8,7 +8,7 @@ It is kept current by the definition of done in `CLAUDE.md`: a session that
 changes what you can do, or how you do it, changes this page in the same commit.
 If this page and the editor disagree, the editor is right and the page is a bug.
 
-Last true as of: **the first game folder, `games/tower-defense`** (2026-08-13).
+Last true as of: **your game's own code running** (2026-08-13).
 
 ---
 
@@ -28,8 +28,9 @@ npm run sample-project -- ../my-game
 ```
 
 That writes sample content: pixel art, a sprite sheet, two levels, a prefab
-placed twice, and import settings beside every asset. It prints how many files it
-wrote and names any it left alone.
+placed twice, import settings beside every asset, and — in `src/systems/` — two
+lines of the project's own game code, so there is a working example of behaviour
+to read. It prints how many files it wrote and names any it left alone.
 
 Safe to re-run: it refuses to touch any file that does not carry its generated
 marker, and produces identical bytes each time, so re-running never churns the
@@ -194,7 +195,34 @@ last row is drawn in front.
 - **Viewport** → click to select, drag to move.
 - **Inspector** → name, position, rotation, scale, spin, and which texture it draws.
 
-### Spin — the one thing an entity can *do*
+### Your game's own code
+
+**A game's behaviour lives in its own folder**, in `src/systems/`, and the editor
+compiles it in. There is no engine to install and nothing to configure: put the
+code there and it runs.
+
+One file decides what runs, `src/systems/index.ts`, and it lists the systems in
+the order they should happen. **The engine runs nothing you have not listed** — a
+project with no `src/systems/index.ts` has no behaviour at all, and a level in it
+sits still. That is the honest state rather than a fault.
+
+A *system* is a rule handed everything in the running level and how much time just
+passed. The sample's own one walks the slime along the ground and starts it over,
+and it reads a `patrol` component the engine has never heard of — which is the
+point worth knowing: **your levels can carry data of your own, and your code can
+read it.** Nothing has to be added to the editor for that to work.
+
+**Pressing Play re-reads your code.** Edit a system, press **Stop** and **Play**,
+and the new behaviour runs. The page does not reload, and the level you have open,
+what you had selected and where the camera was all survive. This is the one thing
+in the editor that does not update on its own within a second, and it is that way
+on purpose — code changing under a running level mid-frame is worse than pressing
+a button.
+
+An exported folder is built the same way from the same files, so what you see
+behind Play is what somebody you hand the folder gets.
+
+### Spin — the engine's own example
 
 The Inspector has a **Spin** field: degrees per second, counter-clockwise, the
 same unit and direction as Rotation just above it. Set it and the entity turns
@@ -202,13 +230,16 @@ while the level is running. `0` means it does not turn, and setting it back to
 `0` takes the setting out of the file rather than leaving a nought behind.
 
 Nothing turns while you are editing — press **Play** to see it, **Stop** to put
-it back. The sample project's health icon is set to `90`, a quarter turn a
-second, so that pressing Play does something visible the first time you try it.
+it back. The sample project's health icon is set to `90`, a quarter turn a second.
 
-**This is scaffolding and it is meant to leave.** It is here so that the update
-loop has something real driving it before there is a game to drive it, and the
-day your game's own code can supply behaviour, Spin goes and takes its field
-with it. Do not build a level around it.
+**It turns because the sample asked for it.** Spin comes with the engine, but the
+engine does not impose it: the sample's `src/systems/index.ts` imports it by name
+and lists it alongside its own system. Delete that line and the icon stops.
+
+**It is still scaffolding and it is still meant to leave.** It was here so the
+update loop had something driving it before there was a game to drive it. Now that
+there is, Spin and its field go together — nothing depends on them any more, which
+is exactly the state that makes removing them safe. Do not build a level around it.
 
 ### Prefabs
 
@@ -243,7 +274,9 @@ exactly where you were: same level, same selection, same camera.
 
 - A change made a moment before you press Play is in what runs; there is no save
   button and you do not need one.
-- **Time passes.** Anything with a spin turns, and keeps turning, until you stop.
+- **Time passes**, and your project's own systems are what make it do anything.
+  In the sample that is the health icon turning and the slime walking, and both
+  keep going until you stop.
 - A level that cannot be fully loaded — a prefab that is gone, broken import
   settings, a missing picture — says so in a sentence and runs the rest.
 - While it is running the rest of the editor is dimmed and read-only, and nothing
@@ -377,10 +410,12 @@ the editor takes the change.
   A level runs and things in it move, but nobody plays it. This is the next big
   gap and it is waiting on the game design, because what the first verb is is a
   question about the game rather than about the editor.
-- **Behaviour of your own.** Spin is the only thing an entity can do, and it
-  exists to prove the update loop works rather than to be useful. Writing your
-  own behaviour means putting code in your game folder, and nothing yet loads it
-  — that is the piece the first game starts with.
+- **Write or edit code from inside the editor.** Your game's systems are files in
+  `src/`, edited in a text editor. The editor compiles them and re-reads them when
+  you press Play; it does not show them to you or let you change them.
+- **See a system's data in the Inspector.** A component the engine does not know —
+  like the sample's `patrol` — is named there but cannot be edited. Setting one up
+  means typing it into the level file, or a tool built for it later.
 - **Collision, gravity or physics.** Two sprites in the same place are two
   sprites in the same place.
 - **Sound.** The sample has audio files in it and nothing plays them.

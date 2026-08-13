@@ -1,13 +1,8 @@
 import { useEffect, useState } from 'react'
 
-import {
-  BUILT_IN_SYSTEMS,
-  inSceneUnits,
-  runLevel,
-  type DrawnInScene,
-  type Entity,
-  type ShownScene,
-} from '../../runtime'
+import { currentSystems } from 'virtual:game-systems'
+
+import { inSceneUnits, runLevel, type DrawnInScene, type Entity, type ShownScene } from '../../runtime'
 import { useSceneView } from './scene-view-context'
 
 /**
@@ -33,6 +28,13 @@ import { useSceneView } from './scene-view-context'
  * there is no level to restore, no store to roll back, and nothing on disk that
  * moved. The editor's own resolution of the same level has been kept up to date
  * behind the running picture the whole time, so Stop is one state change.
+ *
+ * **The systems are asked for when Play starts, never captured at import.** They
+ * come from the project's own `src/systems/`, compiled in by `scripts/game-code.ts`,
+ * and editing one hot-replaces that module rather than reloading the page. Reading
+ * the list here — inside the effect, at the moment a level starts — is the whole of
+ * why Stop and Play is enough to see a change, and why the open level, the
+ * selection and the camera survive an edit to the game's code.
  */
 
 export interface RunningPicture {
@@ -75,7 +77,7 @@ export function useRunningLevel(entities: readonly Entity[] | null, ready: boole
 
     const level = runLevel({
       entities,
-      systems: BUILT_IN_SYSTEMS,
+      systems: currentSystems(),
       onFrame,
       draw: (moved) => {
         latest = redraw(moved)

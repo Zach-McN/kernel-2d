@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url'
 import { build } from 'vite'
 
 import { toPosixPath } from '../../sidecar/paths.js'
+import { gameCode } from '../game-code.js'
 import { isSearchableName, markersIn, type MarkerHit } from './editor-markers.js'
 import {
   EXPORT_MANIFEST_FILE,
@@ -84,7 +85,7 @@ export async function writeExport(options: WriteOptions): Promise<WriteReport> {
 
   // Step 2. Anything a previous build emitted is cleared first, so a renamed chunk
   // cannot linger — but only within the folder we have just established is ours.
-  const generated = await buildPage(outPath, previous)
+  const generated = await buildPage(outPath, previous, projectPath)
 
   // Step 3.
   for (const file of plan.files) copyInto(projectPath, outPath, file)
@@ -137,7 +138,11 @@ export async function writeExport(options: WriteOptions): Promise<WriteReport> {
  *   - **`logLevel: 'warn'`.** The command prints its own report; Rollup's box in the
  *     middle of it is noise.
  */
-async function buildPage(outPath: string, previous: ExportManifest | null): Promise<string[]> {
+async function buildPage(
+  outPath: string,
+  previous: ExportManifest | null,
+  projectPath: string,
+): Promise<string[]> {
   // Only what a build produced, and only inside a folder already established as
   // ours: a chunk that has been renamed since the last export would otherwise stay
   // for ever, listed by nothing and served to whoever opens the folder.
@@ -151,6 +156,11 @@ async function buildPage(outPath: string, previous: ExportManifest | null): Prom
     // the folder can be moved anywhere or served from a subfolder of a host.
     base: './',
     logLevel: 'warn',
+    // The game's own systems, compiled in from the project folder by the same
+    // plugin the editor's dev server uses. The source of what runs here and the
+    // source of what runs behind the Play button are one file, which is the only
+    // reason the two can be expected to behave the same.
+    plugins: [gameCode({ projectPath })],
     build: {
       outDir: outPath,
       emptyOutDir: false,

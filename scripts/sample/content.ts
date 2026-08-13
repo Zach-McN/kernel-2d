@@ -57,10 +57,14 @@ export interface SampleFile {
   path: string
   contents: Buffer | string
   /**
-   * `json` files carry their provenance inside themselves; everything else
-   * gets it in a `.meta` sidecar beside it, per the marking rules.
+   * How this file says an AI produced it, per the marking rules.
+   *
+   * `json` files carry their provenance inside themselves; source files carry it
+   * in a comment, because a `.ts` has nowhere structural to put one and a `.meta`
+   * beside it would be the asset pipeline annotating something that is not an
+   * asset; everything else gets it in a `.meta` sidecar.
    */
-  marking: 'inside' | 'sidecar'
+  marking: 'inside' | 'comment' | 'sidecar'
   /**
    * Import settings for the generated `.meta`, where this sample has something
    * to say beyond the defaults. Omitted means defaults, which is most files.
@@ -193,10 +197,113 @@ export function sampleFiles(generatedAt: string): SampleFile[] {
       marking: 'inside',
     },
 
+    // --- the project's own code, which is a real thing now ----------------
+    { path: 'src/systems/patrol.ts', contents: patrolSource(generatedAt), marking: 'comment' },
+    { path: 'src/systems/index.ts', contents: systemsSource(generatedAt), marking: 'comment' },
+
     // --- formats that do not exist yet ------------------------------------
     { path: 'data/items.json', contents: note('Placeholder for the item database. No schema for it exists yet.'), marking: 'inside' },
     { path: 'data/waves.json', contents: note('Placeholder for the wave schedule. No schema for it exists yet.'), marking: 'inside' },
   ]
+}
+
+// --- the project's own code -------------------------------------------------
+
+/**
+ * The sample's own system, as a file in the sample's own folder.
+ *
+ * It is here to be the thing the kernel cannot be: a project supplying behaviour
+ * from `src/`, compiled into the editor's Play and into an export by the same
+ * plugin. Until this existed, the only system anywhere was the kernel's `spin`,
+ * and the seam that loads a game's code had nothing real going through it.
+ *
+ * Written as text rather than copied from a file on disk because everything else
+ * in this generator is: one list of what the sample is, in one place, and no
+ * second folder of source-that-is-really-content to keep in step with it.
+ */
+function patrolSource(generatedAt: string): string {
+  return `/**
+ * Walking to a point and starting again, at the rate the level asked for.
+ *
+ * This project's own behaviour, in this project's own folder. The editor's Play
+ * button and an exported folder both run it, from this file, through the same
+ * compile — there is no second copy anywhere.
+ *
+ * The \`patrol\` component is this project's, not the engine's: the level format
+ * carries components it has never heard of, so a game can keep data of its own in
+ * a level and read it here. Nothing was added to the kernel to make this work.
+ *
+ * generatedBy: ${GENERATED_BY} (${generatedAt})
+ */
+import type { Entity, System } from 'kernel-2d/runtime'
+
+export const patrolSystem: System = {
+  id: 'patrol',
+
+  step: (entities, dtSeconds) => {
+    for (const entity of entities) {
+      const walk = patrolOf(entity)
+      // A component that is missing or malformed means "this does not walk",
+      // never a throw: a system runs sixty times a second, and a fault in here is
+      // the hardest kind to trace back to the file that caused it.
+      if (walk === null) continue
+
+      entity.transform.x += walk.unitsPerSecond * dtSeconds
+      if (entity.transform.x > walk.toX) entity.transform.x = walk.fromX
+    }
+  },
+}
+
+interface Patrol {
+  unitsPerSecond: number
+  fromX: number
+  toX: number
+}
+
+function patrolOf(entity: Entity): Patrol | null {
+  const component: unknown = entity.components['patrol']
+  if (typeof component !== 'object' || component === null) return null
+
+  const { unitsPerSecond, fromX, toX } = component as Record<string, unknown>
+  if (!isNumber(unitsPerSecond) || !isNumber(fromX) || !isNumber(toX)) return null
+
+  return { unitsPerSecond, fromX, toX }
+}
+
+function isNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value)
+}
+`
+}
+
+/**
+ * The list the project runs, and the one place its order is decided.
+ *
+ * It lists `spinSystem` by name, and that is the demonstration rather than a
+ * convenience: the kernel no longer runs its own demo inside anybody's game, so
+ * the sample's health icon turns because this file asked for it. Import it and it
+ * turns; delete the line and it stops.
+ */
+function systemsSource(generatedAt: string): string {
+  return `/**
+ * Every system this project runs, in the order it runs them.
+ *
+ * The engine runs nothing a project has not listed here, so this file is the
+ * whole answer to "what moves when I press Play". Order is list order: nothing
+ * sorts it or works out dependencies.
+ *
+ * \`spinSystem\` comes from the engine and is listed like anything else — which is
+ * the point. It is scaffolding the kernel offers rather than behaviour it
+ * imposes, and this line is the only reason the health icon turns.
+ *
+ * generatedBy: ${GENERATED_BY} (${generatedAt})
+ */
+import { spinSystem, type System } from 'kernel-2d/runtime'
+
+import { patrolSystem } from './patrol'
+
+export const systems: readonly System[] = [spinSystem, patrolSystem]
+`
 }
 
 /**
@@ -257,10 +364,17 @@ interface Placement {
   scaleX?: number
   scaleY?: number
   /**
-   * Degrees per second while the level is running. The one thing in this sample
-   * that is about behaviour rather than about where something sits.
+   * Degrees per second while the level is running. Read by the engine's own
+   * `spin`, which this project opts into in `src/systems/index.ts`.
    */
   spin?: number
+  /**
+   * Walks right at this rate and starts again on reaching `toX`. Read by the
+   * project's *own* system, from a component the engine has never heard of —
+   * which is the half of "behaviour" that belongs to a game rather than to a
+   * kernel.
+   */
+  patrol?: { unitsPerSecond: number; fromX: number; toX: number }
 }
 
 /** Entities in draw order: the first is furthest back. */
@@ -300,6 +414,7 @@ function componentsFor(placement: Placement): Record<string, unknown> {
   return {
     ...reference(placement),
     ...(placement.spin === undefined ? {} : { spin: { degreesPerSecond: placement.spin } }),
+    ...(placement.patrol === undefined ? {} : { patrol: placement.patrol }),
   }
 }
 
@@ -340,24 +455,23 @@ function slimePrefab(generatedAt: string): Prefab {
 /**
  * A ground strip, two characters standing on it, and a UI icon in front.
  *
- * The health icon turns, and it is the only thing in the sample that does
- * anything at all when the level runs. It is here so that pressing Play, and
- * opening an exported folder, are both immediately obviously different from
- * looking at a picture — the same reason the slime is placed from a prefab
- * rather than drawn twice. One turn every four seconds: unmistakable, and slow
- * enough not to be irritating in a window somebody leaves open.
+ * **Two things move, and they move for different reasons.** The health icon turns,
+ * read by the engine's own `spin`; the slime walks, read by a system in this
+ * project's `src/` from a component the engine has never heard of. Between them
+ * they are the whole of the seam that loads a game's code, on the one level an
+ * export ships, visible the first time anybody presses Play.
  *
- * It is on the *starting* level on purpose, because that is the one an export
- * ships, and on an entity that was already here rather than a new one, because a
+ * Both are on entities that were already here rather than on new ones, because a
  * demonstration that changes what a level contains is a demonstration that has
- * moved on from being one.
+ * moved on from being one. One turn every four seconds and a four-second walk:
+ * unmistakable, and slow enough not to be irritating in a window left open.
  */
 function levelOne(generatedAt: string): Scene {
   return scene(LEVEL_ONE, generatedAt, [
     // One 16px tile stretched into a strip: the ground's top edge lands at y=16.
     { name: 'Ground', texture: GRASS, x: 160, y: 8, scaleX: 20 },
     { name: 'Knight', texture: KNIGHT, x: 100, y: 16 },
-    { name: 'Slime', texture: SLIME, x: 200, y: 16 },
+    { name: 'Slime', texture: SLIME, x: 200, y: 16, patrol: { unitsPerSecond: 24, fromX: 200, toX: 296 } },
     { name: 'Knight running', texture: RUN_STRIP, x: 272, y: 16 },
     { name: 'Health icon', texture: HEART, x: 28, y: 180, spin: 90 },
   ])

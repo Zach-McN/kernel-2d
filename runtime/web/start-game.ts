@@ -1,6 +1,6 @@
 import { PROJECT_FORMAT, ProjectSchema } from '../formats/project-schema'
 import { runLevel } from '../game/run-level'
-import { BUILT_IN_SYSTEMS } from '../game/systems/index'
+import type { System } from '../game/system'
 import { framing } from '../scene/coordinates'
 import { inSceneUnits, type DrawnInScene } from '../scene/drawn-in-scene'
 import { describeLoadProblem, loadScene, type LoadProblem, type ProjectReader } from '../scene/load-scene'
@@ -73,7 +73,15 @@ export interface GameHandle {
  */
 type GameState = 'loading' | 'drawn' | 'failed'
 
-export async function startGame(host: HTMLElement): Promise<GameHandle> {
+/**
+ * The systems this game runs, handed in rather than reached for.
+ *
+ * The same shape as `runLevel`'s own argument and for the same reason: a game's
+ * systems come from the game's folder, and this file has no business knowing how
+ * that folder is found or compiled. The page next door composes the two, which
+ * keeps every question about *where code comes from* out of the thing that runs it.
+ */
+export async function startGame(host: HTMLElement, systems: readonly System[]): Promise<GameHandle> {
   const say = sayInto(host)
 
   let shown: ShownScene | null = null
@@ -217,7 +225,7 @@ export async function startGame(host: HTMLElement): Promise<GameHandle> {
    */
   runLevel({
     entities: level.request.scene.entities,
-    systems: BUILT_IN_SYSTEMS,
+    systems,
     onFrame: view.onFrame,
     draw: (moved) => {
       const redrawn = view.redraw(moved)

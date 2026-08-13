@@ -100,6 +100,38 @@ test('the exported folder runs the level rather than only drawing it', async ({ 
   await expect(host).toHaveAttribute('data-game-units', started ?? '')
 })
 
+test('the exported folder runs the project’s own code, not just the engine’s', async ({ page }) => {
+  /*
+   * The far end of the seam that loads a game's `src/`.
+   *
+   * The editor's Play button compiles the project's systems in through
+   * `scripts/game-code.ts`; so does this folder, through the same plugin, in a
+   * build with no dev server anywhere near it. If the export had quietly shipped
+   * only the engine's systems, the health icon would still turn here and
+   * everything would *look* right — so the assertion has to be that **two**
+   * entities move, and that one of them is the slime, which nothing in the kernel
+   * knows how to move.
+   *
+   * This is the check that the two build paths did not become two answers
+   * (`editor-kernel` D2's failure with a new fuse).
+   */
+  await openExportedGame(page)
+  const host = gameHost(page)
+
+  await expect.poll(async () => Number(await host.getAttribute('data-game-steps'))).toBeGreaterThan(60)
+
+  const bounds = (units: string | null): Map<string, string> => {
+    const drawn = JSON.parse(units ?? '[]') as Array<{ id: string; bounds: unknown }>
+    return new Map(drawn.map((entity) => [entity.id, JSON.stringify(entity.bounds)]))
+  }
+
+  const started = bounds(await host.getAttribute('data-game-units'))
+  const now = bounds(await host.getAttribute('data-game-units-now'))
+  const moved = [...now.keys()].filter((id) => started.get(id) !== now.get(id))
+
+  expect(moved).toHaveLength(2)
+})
+
 test('the exported game draws the level exactly as play mode draws it', async ({ page }) => {
   /*
    * The precondition, made explicit rather than assumed: both sides have to be pictures

@@ -88,8 +88,28 @@ function meta(file: SampleFile, generatedAt: string): string {
 }
 
 function isOurs(absolutePath: string, file: SampleFile): boolean {
-  if (file.marking === 'inside') return hasMarker(absolutePath)
-  return fs.existsSync(metaPathFor(absolutePath)) && hasMarker(metaPathFor(absolutePath))
+  switch (file.marking) {
+    case 'inside':
+      return hasMarker(absolutePath)
+    // Source files cannot carry the marking as JSON and must not carry it in a
+    // `.meta` — a settings file beside a `.ts` would be the asset pipeline
+    // annotating something that is not an asset, and it would show up in the
+    // Assets panel as one. So the marker is a comment, and finding it is a text
+    // search rather than a parse.
+    case 'comment':
+      return marksItself(absolutePath)
+    case 'sidecar':
+      return fs.existsSync(metaPathFor(absolutePath)) && hasMarker(metaPathFor(absolutePath))
+  }
+}
+
+/** The marker as a source file carries it: in a comment, not in a structure. */
+function marksItself(absolutePath: string): boolean {
+  try {
+    return fs.readFileSync(absolutePath, 'utf8').includes('generatedBy')
+  } catch {
+    return false
+  }
 }
 
 function hasMarker(jsonPath: string): boolean {

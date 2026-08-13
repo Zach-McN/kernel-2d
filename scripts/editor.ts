@@ -1,6 +1,6 @@
 import { createServer, type ViteDevServer } from 'vite'
 
-import { PORT_ENV_VAR, resolveConfig } from '../sidecar/config.js'
+import { PORT_ENV_VAR, PROJECT_ENV_VAR, resolveConfig } from '../sidecar/config.js'
 import { startSidecar } from '../sidecar/start.js'
 import { shouldOpenBrowser } from './editor-server.js'
 
@@ -32,6 +32,13 @@ const config = result.config
 // The editor talks to the sidecar through Vite's proxy, so the browser never
 // needs to know this port. Vite does, and this is how it is told.
 process.env[PORT_ENV_VAR] = String(config.port)
+
+// And the same for the project folder, which Vite needs for a different reason:
+// the game's own code is compiled into the preview from there. Written back as
+// the resolved, symlink-free path this command already worked out, so the config
+// and the filesystem service are looking at the same folder rather than at two
+// spellings of it.
+process.env[PROJECT_ENV_VAR] = config.projectPath
 
 let editor: ViteDevServer
 try {
