@@ -152,6 +152,15 @@ export {
   type RunningLevel,
 } from './game/run-level'
 
-export { INPUT_ENTITY_ID, inputEntity, pressedIn, writePressed } from './game/input'
+export {
+  INPUT_ENTITY_ID,
+  NOTHING,
+  clickedIn,
+  inputEntity,
+  pressedIn,
+  writeInput,
+  type InputSample,
+  type ScenePoint,
+} from './game/input'
 
 export { collectKeys, type KeyCollector } from './web/keyboard'

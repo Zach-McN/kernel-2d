@@ -1,5 +1,5 @@
 import type { Entity } from '../formats/scene-schema.js'
-import { inputEntity, writePressed } from './input.js'
+import { NOTHING, inputEntity, writeInput, type InputSample } from './input.js'
 import { createLoop, type LoopOptions } from './loop.js'
 import { stepSystems, type System } from './system.js'
 
@@ -63,16 +63,18 @@ export interface RunLevelOptions {
   /** Draws the level as it is now. Called only on a frame where at least one step ran. */
   draw: (entities: readonly Entity[]) => void
   /**
-   * The keys pressed since last asked, as `KeyboardEvent.code` values — asked
-   * once per frame that runs a step, and forgotten by the asker once answered.
+   * The player since last asked — keys as `KeyboardEvent.code` values, clicks
+   * as scene-unit points already converted by the host that has the camera —
+   * asked once per frame that runs a step, and forgotten by the asker once
+   * answered.
    *
-   * Optional because a test driving systems needs no keyboard, and absent means
+   * Optional because a test driving systems needs no player, and absent means
    * absent: no input entity joins the level at all. When present, the runner
-   * injects the carrier (`input.ts`) and hands each batch of presses to exactly
-   * one step — the first step of the frame that drained them, so a press is
+   * injects the carrier (`input.ts`) and hands each batch to exactly one step —
+   * the first step of the frame that drained it, so a press or a click is
    * acted on once however many catch-up steps that frame runs.
    */
-  input?: () => string[]
+  input?: () => InputSample
   /**
    * Told how the run is going, no more often than `notifyEveryMs` of simulated
    * time. Optional, because a shipped game has nobody to tell.
@@ -128,7 +130,7 @@ export function runLevel(options: RunLevelOptions): RunningLevel {
       // frames at a high refresh rate run no steps — draining on one of those
       // would throw a press away between steps.
       if (carrier !== null && drain !== undefined) {
-        writePressed(carrier, firstStepOfFrame ? drain() : [])
+        writeInput(carrier, firstStepOfFrame ? drain() : NOTHING)
         firstStepOfFrame = false
       }
       stepSystems(options.systems, entities, dtSeconds)

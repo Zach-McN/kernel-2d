@@ -112,7 +112,12 @@ export function ViewportPanel(): ReactElement {
   // compared with the editing view on the frame it started, before any system
   // has moved anything. Everything after that frame is the runtime's, drawn
   // straight to the canvas without passing through React.
-  const runningLevel = useRunningLevel(running?.request.scene.entities ?? null, playing !== null)
+  const runningLevel = useRunningLevel(
+    running?.request.scene.entities ?? null,
+    playing !== null,
+    host,
+    playing,
+  )
 
   const selected = selection.selected.kind === 'entity' ? selection.selected.entity : null
   const ready = view.state === 'ready' ? view : null

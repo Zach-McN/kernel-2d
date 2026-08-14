@@ -22,6 +22,15 @@ import type { Entity } from '../formats/scene-schema.js'
  * nothing reads would be a guess about the second game (`genre-spinup` S1).
  * The day a game holds a key to aim is the day this grows, shaped by that game.
  *
+ * **Clicks arrive in scene units, and that is the load-bearing choice.** A
+ * system knows nothing of cameras, canvases or pixels — entities stand in
+ * scene coordinates, so a click a system can compare against them must arrive
+ * already converted, by the host that has the camera (the editor's play mode,
+ * an exported page — each using the renderer's own report, so a click means
+ * the same spot in both). `clicked` holds the points put down since the
+ * previous step, same one-step discipline as presses. It arrived the way the
+ * keyboard did: demanded by a real consumer, tower-defense's build-during-play.
+ *
  * The entity never touches a file. A running level is a copy that is thrown
  * away at Stop, and this entity exists only inside that copy — so the `input`
  * component is run-only vocabulary, in no schema and no registry, exactly like
@@ -32,22 +41,36 @@ import type { Entity } from '../formats/scene-schema.js'
 
 export const INPUT_ENTITY_ID = 'run#input'
 
+/** A point in scene units, exactly as an entity's transform speaks them. */
+export interface ScenePoint {
+  x: number
+  y: number
+}
+
+/** One step's worth of the player: what went down since the previous one. */
+export interface InputSample {
+  pressed: readonly string[]
+  clicked: readonly ScenePoint[]
+}
+
+export const NOTHING: InputSample = { pressed: [], clicked: [] }
+
 /**
  * The carrier, ready to join a running level — or a test's fixture list, which
  * is the other place input comes from and the reason this is exported.
  */
-export function inputEntity(pressed: readonly string[] = []): Entity {
+export function inputEntity(pressed: readonly string[] = [], clicked: readonly ScenePoint[] = []): Entity {
   return {
     id: INPUT_ENTITY_ID,
     name: 'Input',
     transform: { x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1 },
-    components: { input: { pressed: [...pressed] } },
+    components: { input: { pressed: [...pressed], clicked: [...clicked] } },
   }
 }
 
-/** What this step was handed. Replaces, never appends: a press belongs to one step. */
-export function writePressed(carrier: Entity, pressed: readonly string[]): void {
-  carrier.components['input'] = { pressed: [...pressed] }
+/** What this step was handed. Replaces, never appends: input belongs to one step. */
+export function writeInput(carrier: Entity, sample: InputSample): void {
+  carrier.components['input'] = { pressed: [...sample.pressed], clicked: [...sample.clicked] }
 }
 
 /**
@@ -60,13 +83,29 @@ export function writePressed(carrier: Entity, pressed: readonly string[]): void 
  * reader in a game folder).
  */
 export function pressedIn(entities: readonly Entity[]): readonly string[] {
-  const carrier = entities.find((entity) => entity.id === INPUT_ENTITY_ID)
-  if (carrier === undefined) return []
-
-  const component: unknown = carrier.components['input']
-  if (typeof component !== 'object' || component === null) return []
-
-  const pressed: unknown = (component as { pressed?: unknown }).pressed
+  const pressed: unknown = fieldOf(entities, 'pressed')
   if (!Array.isArray(pressed)) return []
   return pressed.filter((code): code is string => typeof code === 'string')
+}
+
+/** The scene points clicked since the previous step, or nothing — same grounds. */
+export function clickedIn(entities: readonly Entity[]): readonly ScenePoint[] {
+  const clicked: unknown = fieldOf(entities, 'clicked')
+  if (!Array.isArray(clicked)) return []
+  return clicked.filter(
+    (point): point is ScenePoint =>
+      typeof point === 'object' &&
+      point !== null &&
+      typeof (point as { x?: unknown }).x === 'number' &&
+      typeof (point as { y?: unknown }).y === 'number',
+  )
+}
+
+function fieldOf(entities: readonly Entity[], field: 'pressed' | 'clicked'): unknown {
+  const carrier = entities.find((entity) => entity.id === INPUT_ENTITY_ID)
+  if (carrier === undefined) return undefined
+
+  const component: unknown = carrier.components['input']
+  if (typeof component !== 'object' || component === null) return undefined
+  return (component as Record<string, unknown>)[field]
 }

@@ -32,4 +32,13 @@ export { stepSystems, type System } from './system.js'
 
 export { BUILT_IN_SYSTEMS, spinSystem } from './systems/index.js'
 
-export { INPUT_ENTITY_ID, inputEntity, pressedIn, writePressed } from './input.js'
+export {
+  INPUT_ENTITY_ID,
+  NOTHING,
+  clickedIn,
+  inputEntity,
+  pressedIn,
+  writeInput,
+  type InputSample,
+  type ScenePoint,
+} from './input.js'

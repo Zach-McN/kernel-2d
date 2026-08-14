@@ -2,7 +2,8 @@ import { PROJECT_FORMAT, ProjectSchema } from '../formats/project-schema'
 import { runLevel } from '../game/run-level'
 import { collectKeys } from './keyboard'
 import type { System } from '../game/system'
-import { framing } from '../scene/coordinates'
+import { framing, toScenePoint } from '../scene/coordinates'
+import type { ScenePoint } from '../game/input'
 import { inSceneUnits, type DrawnInScene } from '../scene/drawn-in-scene'
 import { describeLoadProblem, loadScene, type LoadProblem, type ProjectReader } from '../scene/load-scene'
 import { fitStep } from '../scene/scale-steps'
@@ -226,13 +227,28 @@ export async function startGame(host: HTMLElement, systems: readonly System[]): 
    * as the editor: writing attributes is describing the picture, not producing
    * it. Every frame is drawn; not every frame is announced.
    */
+  // The same keyboard collector the editor's play mode wires, and the same
+  // click conversion — against the renderer's own report — so a key or a click
+  // means the same thing in a shipped folder as it does behind the Play button.
+  const keys = collectKeys(window)
+  let clicked: ScenePoint[] = []
+  view.canvas.addEventListener('pointerdown', (event) => {
+    if (event.button !== 0 || shown === null) return
+    const box = view.canvas.getBoundingClientRect()
+    clicked.push(
+      toScenePoint({ x: event.clientX - box.left, y: event.clientY - box.top }, shown.drawnWith, shown.canvasSize),
+    )
+  })
+
   runLevel({
     entities: level.request.scene.entities,
     systems,
     onFrame: view.onFrame,
-    // The same collector the editor's play mode wires, so a key means the same
-    // thing in a shipped folder as it does behind the Play button.
-    input: collectKeys(window).drain,
+    input: () => {
+      const sample = { pressed: keys.drain(), clicked }
+      clicked = []
+      return sample
+    },
     draw: (moved) => {
       const redrawn = view.redraw(moved)
       if (redrawn !== null) shown = redrawn

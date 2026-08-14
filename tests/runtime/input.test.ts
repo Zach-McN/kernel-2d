@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { defaultEntity, type Entity } from '../../runtime/formats/scene-schema'
-import { inputEntity, pressedIn, writePressed } from '../../runtime/game/input'
+import { clickedIn, inputEntity, pressedIn, writeInput } from '../../runtime/game/input'
 import { STEP_MS } from '../../runtime/game/loop'
 import { runLevel } from '../../runtime/game/run-level'
 import type { System } from '../../runtime/game/system'
@@ -64,8 +64,18 @@ describe('reading input off a level', () => {
 
   it('replaces rather than appends when written to, because a press belongs to one step', () => {
     const carrier = inputEntity(['Space'])
-    writePressed(carrier, ['KeyA'])
+    writeInput(carrier, { pressed: ['KeyA'], clicked: [] })
     expect(pressedIn([carrier])).toEqual(['KeyA'])
+  })
+
+  it('answers the clicks the carrier holds, in scene units as given', () => {
+    expect(clickedIn([inputEntity([], [{ x: 120, y: 56 }])])).toEqual([{ x: 120, y: 56 }])
+  })
+
+  it('answers no clicks for a carrier somebody mangled', () => {
+    const mangled = inputEntity()
+    mangled.components['input'] = { clicked: [{ x: 'here' }] }
+    expect(clickedIn([mangled])).toEqual([])
   })
 })
 
@@ -83,7 +93,7 @@ describe('the runner feeding input', () => {
       input: () => {
         const pressed = queued
         queued = []
-        return pressed
+        return { pressed, clicked: [] }
       },
     })
 
@@ -103,7 +113,7 @@ describe('the runner feeding input', () => {
       systems: [ears.system],
       onFrame: frames.onFrame,
       draw: () => {},
-      input: () => ['Space'],
+      input: () => ({ pressed: ['Space'], clicked: [] }),
     })
 
     // One big frame buys three steps (plus a millisecond so float rounding
@@ -136,7 +146,7 @@ describe('the runner feeding input', () => {
       systems: [],
       onFrame: frames.onFrame,
       draw: () => {},
-      input: () => [],
+      input: () => ({ pressed: [], clicked: [] }),
     })
     frames.frame(STEP_MS)
 

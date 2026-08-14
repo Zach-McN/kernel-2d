@@ -491,8 +491,15 @@ defense, the spacebar calls the next wave. Typing in a panel's text field is
 still typing, and pressing Stop gives the keyboard back to the editor. An
 exported folder hears the same keys the same way.
 
-**Clicks do not reach the game yet.** There is no pointer input, no collision
-and no sound. Each arrives when a game needs it, exactly as the keyboard did.
+**Clicks on the picture belong to the game too.** While a level runs, a click
+on the viewport is handed to the game's code at the spot in the level you
+clicked — in the tower defense, clicking a buildable pad buys a tower there.
+The editing gestures are off during play, so there is nothing for a click to
+collide with; Stop gives the mouse back to the editor. An exported folder
+hears the same clicks the same way.
+
+**There is still no collision and no sound.** Each arrives when a game needs
+it, exactly as the keyboard and the pointer did.
 
 ### Which level the game starts on
 

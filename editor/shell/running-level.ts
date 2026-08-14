@@ -1,8 +1,17 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import { currentSystems } from 'virtual:game-systems'
 
-import { collectKeys, inSceneUnits, runLevel, type DrawnInScene, type Entity, type ShownScene } from '../../runtime'
+import {
+  collectKeys,
+  inSceneUnits,
+  runLevel,
+  toScenePoint,
+  type DrawnInScene,
+  type Entity,
+  type ScenePoint,
+  type ShownScene,
+} from '../../runtime'
 import { useSceneView } from './scene-view-context'
 
 /**
@@ -55,13 +64,31 @@ export interface RunningPicture {
  *   Copied by the runner, so what is passed here is never touched.
  * @param ready whether the renderer has drawn this exact level. Until it has,
  *   nothing starts.
+ * @param host the element the picture sits in, for the pointer. Clicks on it
+ *   while the level runs are converted to scene units against the renderer's
+ *   own latest report — the same camera that drew the frame being clicked —
+ *   and handed to the game. Falls back to the started frame's report for a
+ *   click landed before the first step has drawn.
+ * @param started the report of the frame the level started on, the fallback
+ *   above.
  */
-export function useRunningLevel(entities: readonly Entity[] | null, ready: boolean): RunningPicture | null {
+export function useRunningLevel(
+  entities: readonly Entity[] | null,
+  ready: boolean,
+  host: React.RefObject<HTMLElement | null>,
+  started: ShownScene | null,
+): RunningPicture | null {
   const view = useSceneView()
   const redraw = view.state === 'ready' ? view.redraw : null
   const onFrame = view.state === 'ready' ? view.onFrame : null
 
   const [picture, setPicture] = useState<RunningPicture | null>(null)
+
+  // Read through a ref so a new report object cannot restart the level — the
+  // effect below owns the run, and its dependencies are the things that mean
+  // "a different run", which a redrawn starting frame is not.
+  const startedRef = useRef(started)
+  startedRef.current = started
 
   useEffect(() => {
     if (entities === null || !ready || redraw === null || onFrame === null) return
@@ -82,11 +109,35 @@ export function useRunningLevel(entities: readonly Entity[] | null, ready: boole
      */
     let latest: ShownScene | null = null
 
+    // The pointer belongs to the game too: the editing gestures are off while a
+    // level runs, so a click on the picture can only mean the player. Converted
+    // here and not in the game, because this is where the camera is.
+    let clicked: ScenePoint[] = []
+    const surface = host.current
+    const onPointerDown = (event: PointerEvent): void => {
+      if (event.button !== 0 || surface === null) return
+      const report = latest ?? startedRef.current
+      if (report === null) return
+      const box = surface.getBoundingClientRect()
+      clicked.push(
+        toScenePoint(
+          { x: event.clientX - box.left, y: event.clientY - box.top },
+          report.drawnWith,
+          report.canvasSize,
+        ),
+      )
+    }
+    surface?.addEventListener('pointerdown', onPointerDown)
+
     const level = runLevel({
       entities,
       systems: currentSystems(),
       onFrame,
-      input: keys.drain,
+      input: () => {
+        const sample = { pressed: keys.drain(), clicked }
+        clicked = []
+        return sample
+      },
       draw: (moved) => {
         latest = redraw(moved)
       },
@@ -100,11 +151,12 @@ export function useRunningLevel(entities: readonly Entity[] | null, ready: boole
     })
 
     return () => {
+      surface?.removeEventListener('pointerdown', onPointerDown)
       keys.stop()
       level.stop()
       setPicture(null)
     }
-  }, [entities, ready, redraw, onFrame])
+  }, [entities, ready, redraw, onFrame, host])
 
   return picture
 }
