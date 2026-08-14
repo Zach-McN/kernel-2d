@@ -312,12 +312,66 @@ body {
   background-color: var(--shell-raised);
 }
 
-/* --- the assets tree ---------------------------------------------------- */
+/* --- the assets browser -------------------------------------------------- */
 
+/*
+ * A column that does not scroll: the bar keeps its place at the top, the
+ * controls are a footer, and each half of the split scrolls on its own. One
+ * scroller for the whole panel would mean walking down the tree carried the
+ * grid off the top.
+ */
 .assets {
+  display: flex;
+  flex-direction: column;
   height: 100%;
+  overflow: hidden;
+}
+
+/*
+ * The controls get a fixed share of the panel and scroll inside it, so what
+ * they hold cannot change the size of the browser above them.
+ *
+ * That is the whole point rather than tidiness: their contents change with the
+ * selection — the rename row is not there until something is selected — and a
+ * browser that resized when they did would move every tile out from under the
+ * pointer between the two halves of a double-click. See AssetsPanel.tsx.
+ *
+ * A share and a ceiling rather than a number of pixels: the number would be a
+ * guess about a font (UG10), and either half alone is wrong — a proportion
+ * wastes a big panel, a fixed height swallows a small one.
+ */
+.assets__tools {
+  flex: none;
+  height: min(40%, 150px);
+  overflow: auto;
+  border-top: 1px solid var(--shell-line);
+}
+
+.assets__body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.assets__pane {
+  min-width: 0;
   overflow: auto;
   padding: 4px 0 12px;
+}
+
+.assets__pane--tree {
+  flex: 1 1 auto;
+}
+
+.assets__pane--grid {
+  flex: 1 1 auto;
+}
+
+/* Side by side, the tree is the narrower half: it is being pointed at rather
+   than read, and the tiles are what the eye is on. */
+.assets[data-view='split'] .assets__pane--tree {
+  flex: 0 0 40%;
+  border-right: 1px solid var(--shell-line);
 }
 
 .assets__tree {
@@ -337,7 +391,8 @@ body {
 }
 
 .assets__stale {
-  margin: 0 0 4px;
+  flex: none;
+  margin: 0;
   padding: 6px 12px;
   background: rgba(250, 88, 83, 0.12);
   border-bottom: 1px solid rgba(250, 88, 83, 0.35);
@@ -347,7 +402,6 @@ body {
 /* Making a level: the name, the button, and the path it is about to create. */
 .assets__new {
   padding: 6px 12px 10px;
-  border-bottom: 1px solid var(--shell-line);
 }
 
 .assets__new-row {
@@ -375,7 +429,7 @@ body {
    it, because it asks the same question about a path — see AssetsPanel.tsx. */
 .assets__move {
   padding: 6px 12px 10px;
-  border-bottom: 1px solid var(--shell-line);
+  border-top: 1px solid var(--shell-line);
 }
 
 .assets__move .assets__new-row .control--choice {
@@ -466,6 +520,225 @@ body {
 .asset-row__badge--orphan {
   background: rgba(255, 196, 68, 0.14);
   color: var(--shell-waiting);
+}
+
+/* --- where you are, and how you are looking at it ------------------------ */
+
+/*
+ * A fixed height whatever is in it. The two views put different things in the
+ * left half, and a strip that grew a row when the breadcrumb appeared would
+ * shorten the folder underneath it at the moment the human changed view (UG8).
+ */
+.assets__bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 6px 0 10px;
+  border-bottom: 1px solid var(--shell-line);
+}
+
+.assets__bar-filler {
+  flex: 1;
+}
+
+.breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-family: var(--shell-mono);
+  font-size: 11px;
+}
+
+.breadcrumb__crumb {
+  flex: 0 1 auto;
+  min-width: 0;
+  padding: 2px 4px;
+  border: 0;
+  border-radius: var(--shell-radius-sm);
+  background: none;
+  color: var(--shell-text-dim);
+  font: inherit;
+  cursor: default;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.breadcrumb__crumb:hover {
+  background: var(--shell-raised);
+  color: var(--shell-text);
+}
+
+/* Where you are is the current one, so it wears the accent and does not give up
+   its room to the folders above it. */
+.breadcrumb__crumb[data-current='true'] {
+  flex-shrink: 0;
+  max-width: 60%;
+  color: var(--shell-accent);
+}
+
+.breadcrumb__step {
+  flex: none;
+  color: var(--shell-text-dim);
+  opacity: 0.6;
+}
+
+.assets__settings {
+  position: relative;
+  flex: none;
+}
+
+.assets__cog {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--shell-radius-sm);
+  background: none;
+  color: var(--shell-text-dim);
+  cursor: default;
+}
+
+.assets__cog:hover,
+.assets__cog[aria-expanded='true'] {
+  background: var(--shell-raised);
+  color: var(--shell-text);
+}
+
+.assets__menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 5;
+  min-width: 210px;
+  padding: 4px;
+  border: 1px solid var(--shell-line);
+  border-radius: var(--shell-radius);
+  background: var(--shell-surface);
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.5);
+}
+
+.assets__menu-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  width: 100%;
+  padding: 5px 6px;
+  border: 0;
+  border-radius: var(--shell-radius-sm);
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: default;
+}
+
+.assets__menu-item:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.assets__menu-item[aria-checked='true'] {
+  background: var(--shell-accent-wash);
+}
+
+.assets__menu-tick {
+  flex: none;
+  width: 12px;
+  color: var(--shell-accent);
+  line-height: 17px;
+}
+
+.assets__menu-words {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.assets__menu-label {
+  line-height: 17px;
+}
+
+.assets__menu-blurb {
+  color: var(--shell-text-dim);
+  font-size: 11px;
+  line-height: 15px;
+}
+
+/* --- the icon view ------------------------------------------------------- */
+
+.asset-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(88px, 1fr));
+  gap: 2px;
+  margin: 0;
+  padding: 6px;
+  list-style: none;
+}
+
+.asset-tile__button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  width: 100%;
+  padding: 8px 4px 6px;
+  border: 0;
+  border-radius: var(--shell-radius);
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: default;
+}
+
+.asset-tile__button:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+/*
+ * Selection stated twice, the way a row states it (U32) — a wash across the
+ * tile and a line around it. A tile has no leading edge to put a bar down, so
+ * the outline is what the bar was.
+ */
+.asset-tile__button[data-selected='true'] {
+  background: var(--shell-accent-wash);
+  box-shadow: inset 0 0 0 1px var(--shell-accent);
+}
+
+.asset-tile__icon {
+  flex: none;
+  color: var(--shell-text-dim);
+  line-height: 0;
+}
+
+.asset-tile__button[data-kind='directory'] .asset-tile__icon {
+  color: var(--shell-text);
+}
+
+/* Two lines, then an ellipsis. The whole name is on the tile's tooltip. */
+.asset-tile__name {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  font-size: 11px;
+  line-height: 14px;
+  text-align: center;
+}
+
+.assets__gone {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 0 16px 12px;
 }
 
 /* --- the inspector ------------------------------------------------------- */

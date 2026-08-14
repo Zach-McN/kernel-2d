@@ -159,7 +159,9 @@ export function layOutPanels(api: DockviewApi): void {
     component: PANELS.assets.id,
     title: PANELS.assets.title,
     position: { direction: 'below', referencePanel: PANELS.viewport.id },
-    initialHeight: 220,
+    // Tall enough for two rows of tiles under the controls: the icon view is a
+    // grid, and a strip one row high is a list with pictures on it.
+    initialHeight: 320,
   })
 
   api.getPanel(PANELS.viewport.id)?.focus()

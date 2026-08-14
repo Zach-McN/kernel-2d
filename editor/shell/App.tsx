@@ -3,6 +3,7 @@ import { useEffect } from 'react'
 import type { ReactElement } from 'react'
 
 import { StatusStrip } from './StatusStrip'
+import { AssetBrowsingProvider } from './asset-browsing'
 import { AssetMetaProvider } from './asset-meta-context'
 import { LayoutProvider, useLayout } from './layout-context'
 import { OpenSceneProvider } from './open-scene'
@@ -46,7 +47,9 @@ import { ViewportProvider } from './viewport-context'
  *
  * How a press in the picture places things sits next to selection and depends on
  * nothing, for the same reason selection does not: it is a fact about this
- * window rather than about anything on disk.
+ * window rather than about anything on disk. How the Assets panel is *being
+ * looked through* — which of its three views, and which folder — is the same
+ * kind of fact and sits in the same place.
  */
 export function App(): ReactElement {
   const connection = useSidecarStatus()
@@ -66,23 +69,25 @@ export function App(): ReactElement {
     <ProjectProvider>
       <SelectionProvider>
         <PlacingProvider>
-          <AssetMetaProvider>
-            <OpenSceneProvider>
-              <ScenePrefabsProvider>
-                <SceneAssetsProvider>
-                  <ViewportProvider>
-                    <SceneViewProvider>
-                      <PlayModeProvider>
-                        <LayoutProvider>
-                          <Shell connection={connection} />
-                        </LayoutProvider>
-                      </PlayModeProvider>
-                    </SceneViewProvider>
-                  </ViewportProvider>
-                </SceneAssetsProvider>
-              </ScenePrefabsProvider>
-            </OpenSceneProvider>
-          </AssetMetaProvider>
+          <AssetBrowsingProvider>
+            <AssetMetaProvider>
+              <OpenSceneProvider>
+                <ScenePrefabsProvider>
+                  <SceneAssetsProvider>
+                    <ViewportProvider>
+                      <SceneViewProvider>
+                        <PlayModeProvider>
+                          <LayoutProvider>
+                            <Shell connection={connection} />
+                          </LayoutProvider>
+                        </PlayModeProvider>
+                      </SceneViewProvider>
+                    </ViewportProvider>
+                  </SceneAssetsProvider>
+                </ScenePrefabsProvider>
+              </OpenSceneProvider>
+            </AssetMetaProvider>
+          </AssetBrowsingProvider>
         </PlacingProvider>
       </SelectionProvider>
     </ProjectProvider>

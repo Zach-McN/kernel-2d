@@ -1,0 +1,172 @@
+import type { ReactElement } from 'react'
+
+import type { ProjectTree } from '../../sidecar/tree-schema'
+import { findNode } from '../shell/asset-kinds'
+import { useAssetBrowsing } from '../shell/asset-browsing'
+import { assetRowsFor, type AssetRow } from '../shell/asset-rows'
+import { useSelection } from '../shell/selection'
+
+/**
+ * One folder at a time, as tiles — the file-explorer way of looking at a project.
+ *
+ * It shows exactly the rows the tree shows for the same folder, because both ask
+ * `asset-rows.ts` (`editor-kernel` D4): a `.meta` is folded into the tile of the
+ * file it annotates, and a stranded one gets a tile of its own, marked. Two
+ * rules for what a folder contains would disagree the first time either changed,
+ * and the symptom would be a file that exists in one view and not the other.
+ *
+ * **A single press selects and a double press enters.** That is the file
+ * explorer's own split and there is no room to improve on it: selecting is what
+ * the Inspector answers about, and it has to be possible to select a folder
+ * without walking into it. Entering also opens the way down to the folder in the
+ * tree, so the two halves of the split view never disagree about where you are.
+ *
+ * Thumbnails are deliberately not here yet — every tile wears a folder or a
+ * blank-page glyph. What a picture of a texture costs is a decode per file in
+ * the folder, and that is a feature with its own decisions to make (when to read
+ * them, what to cache them on, what an audio file's thumbnail even is) rather
+ * than a detail of this one.
+ */
+export function AssetGrid({ tree }: { tree: ProjectTree }): ReactElement {
+  const selection = useSelection()
+  const { folder, openFolder, expandFolder } = useAssetBrowsing()
+
+  // The top of the project is `''` here and `.` in the tree, so the root is
+  // reached by name rather than looked up — see `asset-browsing.tsx`.
+  const node = folder === '' ? tree.tree : findNode(tree, folder)
+
+  // The folder went away underneath the human: renamed outside the editor,
+  // deleted, or on a project that has just been swapped. Saying so and offering
+  // the way back beats an empty grid that looks like an empty folder.
+  if (node === null || node.kind !== 'directory') {
+    return (
+      <div className="assets__gone" data-testid="assets-grid-gone">
+        <p className="assets__message">{folder} is not a folder in this project any more.</p>
+        <button
+          type="button"
+          className="control control--action"
+          onClick={() => {
+            openFolder('')
+          }}
+        >
+          Go to the top of the project
+        </button>
+      </div>
+    )
+  }
+
+  const rows = assetRowsFor(node.children)
+
+  if (rows.length === 0) {
+    return (
+      <p className="assets__message" data-testid="assets-grid-empty">
+        This folder is empty.
+      </p>
+    )
+  }
+
+  return (
+    <ul className="asset-grid" data-testid="assets-grid" aria-label="What is in this folder">
+      {rows.map((row) => (
+        <AssetTile
+          key={row.node.path}
+          row={row}
+          selected={selection.selectedFilePath === row.node.path}
+          onSelect={selection.selectFile}
+          onEnter={(path) => {
+            openFolder(path)
+            expandFolder(path)
+          }}
+        />
+      ))}
+    </ul>
+  )
+}
+
+interface AssetTileProps {
+  row: AssetRow
+  selected: boolean
+  onSelect: (path: string) => void
+  onEnter: (path: string) => void
+}
+
+function AssetTile({ row, selected, onSelect, onEnter }: AssetTileProps): ReactElement {
+  const { node } = row
+  const isFolder = node.kind === 'directory'
+
+  return (
+    <li className="asset-tile">
+      <button
+        type="button"
+        className="asset-tile__button"
+        data-asset-path={node.path}
+        data-kind={node.kind}
+        data-selected={selected}
+        data-has-settings={row.hasSettings}
+        data-orphaned-settings={row.isOrphanedSettings}
+        // The name is the one thing a tile cannot always show in full, so it is
+        // always available in full.
+        title={node.name}
+        onClick={() => {
+          onSelect(node.path)
+        }}
+        onDoubleClick={() => {
+          if (isFolder) onEnter(node.path)
+        }}
+      >
+        <span className="asset-tile__icon" aria-hidden="true">
+          {isFolder ? <FolderIcon /> : <FileIcon />}
+        </span>
+        <span className="asset-tile__name">{node.name}</span>
+        {row.hasSettings && (
+          <span className="asset-row__badge" title="Has import settings beside it">
+            meta
+          </span>
+        )}
+        {row.isOrphanedSettings && (
+          <span
+            className="asset-row__badge asset-row__badge--orphan"
+            title="Import settings with no file beside them"
+          >
+            orphaned
+          </span>
+        )}
+      </button>
+    </li>
+  )
+}
+
+function FolderIcon(): ReactElement {
+  return (
+    <svg viewBox="0 0 40 32" width="40" height="32" focusable="false">
+      <path
+        fill="currentColor"
+        d="M2 5a3 3 0 0 1 3-3h9.2c.8 0 1.6.3 2.1.9L18.6 5H35a3 3 0 0 1 3 3v19a3 3 0 0 1-3 3H5a3 3 0 0 1-3-3Z"
+        opacity="0.35"
+      />
+      <path
+        fill="currentColor"
+        d="M2 11h36v16a3 3 0 0 1-3 3H5a3 3 0 0 1-3-3Z"
+        opacity="0.75"
+      />
+    </svg>
+  )
+}
+
+function FileIcon(): ReactElement {
+  return (
+    <svg viewBox="0 0 40 32" width="40" height="32" focusable="false">
+      <path
+        fill="currentColor"
+        d="M11 1h13.5L32 8.5V31H11Z"
+        opacity="0.28"
+      />
+      <path fill="currentColor" d="M24.5 1 32 8.5h-7.5Z" opacity="0.6" />
+      <g fill="currentColor" opacity="0.55">
+        <rect x="15" y="14" width="13" height="1.6" rx="0.8" />
+        <rect x="15" y="18" width="13" height="1.6" rx="0.8" />
+        <rect x="15" y="22" width="9" height="1.6" rx="0.8" />
+      </g>
+    </svg>
+  )
+}

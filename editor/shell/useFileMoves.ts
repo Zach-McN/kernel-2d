@@ -5,6 +5,7 @@ import type { ProjectTree } from '../../sidecar/tree-schema'
 import { readDocumentFromDisk, writeDocumentToDisk } from '../store/document-disk'
 import { deleteFileOnDisk, moveFileOnDisk } from '../store/file-disk'
 import { adoptFromDisk, beginRead, currentSaveFailures, flushSaves } from '../store/open-documents'
+import { useAssetBrowsing } from './asset-browsing'
 import { useProject } from './project-context'
 import { usePlacing } from './placing'
 import { documentPathsIn, movedPath, pointsAt, rewriteReferences, usesOf } from './references'
@@ -114,6 +115,7 @@ export function useFileMoves(): FileMoves {
   const selection = useSelection()
   const placing = usePlacing()
   const cameraMoved = useSceneCameraMoved()
+  const { pathMoved } = useAssetBrowsing()
 
   const tree = project.state === 'ready' ? project.tree : null
 
@@ -172,10 +174,24 @@ export function useFileMoves(): FileMoves {
         const moved = movedPath(stamping, from, to)
         if (moved !== null) startStamping(moved)
       }
+      // And so is where the Assets panel is *browsing*: rename the folder you
+      // are standing in and the icon view would otherwise be looking at a path
+      // that no longer exists (`editor-ui` U30 again).
+      pathMoved(from, to)
 
       return { ok: true, note: noteFor(failed, to) }
     },
-    [tree, selectedFilePath, openScene, selectFile, setOpenScene, cameraMoved, stamping, startStamping],
+    [
+      tree,
+      selectedFilePath,
+      openScene,
+      selectFile,
+      setOpenScene,
+      cameraMoved,
+      stamping,
+      startStamping,
+      pathMoved,
+    ],
   )
 
   const remove = useCallback(

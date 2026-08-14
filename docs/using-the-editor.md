@@ -196,12 +196,38 @@ Every asset gets a small settings file beside it (`knight.png` +
 a file it did not make — the only things it will do to one are the three below,
 each of which you asked for by name.
 
+### Three ways to look at it
+
+The cog at the top right of the Assets panel offers three, and you can change
+your mind at any time:
+
+- **Folder view** — the whole project as a tree, with folders that open and shut.
+  This is how the panel opens.
+- **Icon view** — one folder at a time, as tiles, the way Explorer shows medium
+  icons. **Click a tile to select it, double-click a folder to go into it.** The
+  line above the tiles is the trail back out: it reads
+  `my-game › assets › textures`, and every step in it is a button that takes you
+  there.
+- **Split view** — the tree on the left, the tiles on the right. Click a folder in
+  the tree and the tiles jump straight into it; walk into a folder on the right and
+  the tree opens the way down to it. This is the one to use when you know roughly
+  where something is but not exactly.
+
+Whichever you pick lasts until you reload, and moving the panel to a different
+corner of the window does not lose your place. Every tile currently wears a plain
+folder or blank-page symbol: **pictures of your actual art come later**.
+
+The controls at the bottom — making a level, renaming, deleting — keep a fixed
+share of the panel and scroll inside it, so nothing you are pointing at ever
+shifts while you are clicking on it. Drag the panel's top edge up if you want more
+room for tiles.
+
 ### Renaming, moving and deleting
 
-Select anything in the Assets panel and a row appears above the tree: its name,
-the folder it is in, and a line showing exactly where it is about to end up. Type
-a new name and press **Rename**, or pick another folder and press **Move**. It is
-one operation either way, and the button says which one it will be.
+Select anything in the Assets panel and a row appears at the bottom of the panel:
+its name, the folder it is in, and a line showing exactly where it is about to end
+up. Type a new name and press **Rename**, or pick another folder and press
+**Move**. It is one operation either way, and the button says which one it will be.
 
 **Everything that pointed at it follows.** Every level and prefab that drew that
 picture keeps drawing it, every level that placed that prefab keeps placing it,
@@ -585,7 +611,17 @@ the editor takes the change.
   lines it lined up to.
 - **Two levels open at once.**
 - **Saved panel layouts.** Drag the panels wherever you like; the arrangement
-  resets when the page reloads.
+  resets when the page reloads. Which of the three Assets views you chose, and the
+  folder you were in, reset with it.
+- **Pictures of your assets on the tiles.** The icon view draws a folder or a
+  blank page, never a thumbnail of the art itself.
+- **Sort, search or filter the icon view.** Folders first and then files,
+  alphabetically, the same order the tree uses, and everything in the folder is
+  shown.
+- **Drag a file from one folder into another.** Moving is still the name field and
+  the folder chooser at the bottom of the panel.
+- **A back button, or a bigger and smaller icon size.** The trail above the tiles
+  is how you go back up, and the tiles are one size.
 
 ---
 

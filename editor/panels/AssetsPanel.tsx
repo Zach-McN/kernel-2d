@@ -4,6 +4,7 @@ import { defaultPrefab, type Prefab } from '../../runtime/formats/prefab-schema'
 import { defaultScene, type Scene } from '../../runtime/formats/scene-schema'
 import { formatBytes } from '../../sidecar/bytes'
 import type { ProjectTree } from '../../sidecar/tree-schema'
+import { showsGrid, showsTree, useAssetBrowsing } from '../shell/asset-browsing'
 import { basename, findNode, folderPathsIn, parentOf } from '../shell/asset-kinds'
 import { assetRowsFor, type AssetRow } from '../shell/asset-rows'
 import { useProject } from '../shell/project-context'
@@ -12,6 +13,8 @@ import { useSelection } from '../shell/selection'
 import { useFileMoves, type Outcome, type UseReport } from '../shell/useFileMoves'
 import { createDocumentOnDisk } from '../store/document-disk'
 import { mintId } from '../store/ids'
+import { AssetBar } from './AssetBar'
+import { AssetGrid } from './AssetGrid'
 
 /**
  * The project folder, mirrored. Selecting anything here is what the Inspector
@@ -21,38 +24,44 @@ import { mintId } from '../store/ids'
  * file it annotates — is decided in `asset-rows.ts`, because the Inspector has
  * to count a folder's contents the same way this lists them.
  *
- * It is also the one panel that makes a file, which is why the row above the
- * tree shows the whole path it is about to create. Where a level goes is the
+ * It is also the one panel that makes a file, which is why the row under the
+ * folder shows the whole path it is about to create. Where a level goes is the
  * human's decision, taken from what they have selected — no folder name is
  * written into the code, because `scenes/` is a convention in the folder map and
  * not a fact this editor is allowed to rely on.
+ *
+ * **There are three ways to look at the same folder**, chosen behind the cog and
+ * held above the layout in `asset-browsing.tsx`: the tree, the icon grid, and
+ * both at once. They are two components either side of one bar rather than three
+ * panels or three components, because everything above the split — making a
+ * file, renaming one, deleting one, where you are — is the same question
+ * whichever half is on screen.
+ *
+ * The panel is a column that does not scroll: the bar keeps its place at the
+ * top, each half of the split scrolls on its own, and the controls are a footer
+ * under both. A single scroller would mean walking down the tree in the split
+ * view carried the grid's first row off the top of the panel.
+ *
+ * **The controls hold a fixed share of the panel and scroll inside it, and that
+ * is load-bearing rather than tidiness.** What they contain changes with the
+ * selection: the rename row is not there until something is selected, and it
+ * says a different number of things about a folder than about a file. If the
+ * browser resized when they did, the first press of a double-click would bring
+ * the rename row into existence, every tile would move, and the second press
+ * would land on whatever slid into that spot — the folder never opens, nothing
+ * reports an error, and the panel simply does not respond to a double-click.
+ * That is how this was found.
+ *
+ * It is `editor-ui` UG8 in a panel with no canvas in it: **what a gesture is
+ * aimed at must not be moved by the first half of that gesture.**
  */
 export function AssetsPanel(): ReactElement {
   const project = useProject()
   const selection = useSelection()
-  const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set())
-
-  const toggle = (path: string): void => {
-    setExpanded((previous) => {
-      const next = new Set(previous)
-      if (!next.delete(path)) next.add(path)
-      return next
-    })
-  }
+  const browsing = useAssetBrowsing()
 
   const reveal = (path: string): void => {
-    // Every folder on the way, so a file made inside a shut folder is not made
-    // somewhere the human cannot see it.
-    const parts = path.split('/').slice(0, -1)
-    setExpanded((previous) => {
-      const next = new Set(previous)
-      let at = ''
-      for (const part of parts) {
-        at = at === '' ? part : `${at}/${part}`
-        next.add(at)
-      }
-      return next
-    })
+    browsing.revealParents(path)
     selection.selectFile(path)
   }
 
@@ -68,46 +77,75 @@ export function AssetsPanel(): ReactElement {
     )
   }
 
+  const tree = project.tree
+
   return (
-    <div className="assets" data-testid="assets-panel" data-live={project.live}>
+    <div className="assets" data-testid="assets-panel" data-live={project.live} data-view={browsing.view}>
       {!project.live && (
         <p className="assets__stale" data-testid="assets-stale">
           Not hearing about changes — this may be out of date.
         </p>
       )}
 
-      <NewDocument folder={folderFor(selection.selectedFilePath, project.tree)} onCreated={reveal} />
+      <AssetBar projectName={tree.projectName} />
 
-      {selection.selectedFilePath !== null && (
-        // Keyed on the path, so selecting a different file starts the row over
-        // rather than leaving somebody else's typed name, refusal or half-pressed
-        // Delete sitting under it (`editor-ui` UG5, answered by remounting rather
-        // than by comparing).
-        <MoveOrDelete
-          key={selection.selectedFilePath}
-          path={selection.selectedFilePath}
-          tree={project.tree}
-          onMoved={reveal}
+      <div className="assets__body">
+        {showsTree(browsing.view) && (
+          <div className="assets__pane assets__pane--tree" data-testid="assets-list">
+            <ul className="assets__tree" role="tree" aria-label="Project folder">
+              {assetRowsFor(tree.tree.children).map((row) => (
+                <AssetNode
+                  key={row.node.path}
+                  row={row}
+                  depth={0}
+                  expanded={browsing.expanded}
+                  selected={selection.selectedFilePath}
+                  onToggle={browsing.toggleFolder}
+                  onSelect={selection.selectFile}
+                  // Picking a folder in the tree is what sends the grid into it,
+                  // which is the whole of what the split view is for. Harmless
+                  // in the tree-only view, where no grid is listening.
+                  onOpenFolder={browsing.openFolder}
+                />
+              ))}
+            </ul>
+
+            {tree.tree.children.length === 0 && (
+              <p className="assets__message">This project folder is empty.</p>
+            )}
+          </div>
+        )}
+
+        {showsGrid(browsing.view) && (
+          <div className="assets__pane assets__pane--grid" data-testid="assets-icons">
+            <AssetGrid tree={tree} />
+          </div>
+        )}
+      </div>
+
+      <div className="assets__tools">
+        <NewDocument
+          folder={folderFor(
+            selection.selectedFilePath,
+            tree,
+            showsGrid(browsing.view) ? browsing.folder : null,
+          )}
+          onCreated={reveal}
         />
-      )}
 
-      <ul className="assets__tree" role="tree" aria-label="Project folder">
-        {assetRowsFor(project.tree.tree.children).map((row) => (
-          <AssetNode
-            key={row.node.path}
-            row={row}
-            depth={0}
-            expanded={expanded}
-            selected={selection.selectedFilePath}
-            onToggle={toggle}
-            onSelect={selection.selectFile}
+        {selection.selectedFilePath !== null && (
+          // Keyed on the path, so selecting a different file starts the row over
+          // rather than leaving somebody else's typed name, refusal or half-pressed
+          // Delete sitting under it (`editor-ui` UG5, answered by remounting rather
+          // than by comparing).
+          <MoveOrDelete
+            key={selection.selectedFilePath}
+            path={selection.selectedFilePath}
+            tree={tree}
+            onMoved={reveal}
           />
-        ))}
-      </ul>
-
-      {project.tree.tree.children.length === 0 && (
-        <p className="assets__message">This project folder is empty.</p>
-      )}
+        )}
+      </div>
     </div>
   )
 }
@@ -116,17 +154,22 @@ export function AssetsPanel(): ReactElement {
 
 /**
  * Which folder a new file goes in: the selected folder, the selected file's
- * folder, or the top of the project.
+ * folder, the folder the grid is standing in, or the top of the project.
  *
  * Read from the tree rather than guessed from the path, because whether
  * `scenes` is a folder or a file called `scenes` is a fact about the project and
  * not about the string.
+ *
+ * The grid's folder is the fallback rather than the answer — a selection is
+ * always the stronger signal, and `browsed` is null whenever no grid is on
+ * screen, because a folder nobody can see is not a place the human chose.
  */
-function folderFor(selectedPath: string | null, tree: ProjectTree): string {
-  if (selectedPath === null) return ''
+function folderFor(selectedPath: string | null, tree: ProjectTree, browsed: string | null): string {
+  const standingIn = browsed ?? ''
+  if (selectedPath === null) return standingIn
 
   const node = findNode(tree, selectedPath)
-  if (node === null) return ''
+  if (node === null) return standingIn
   if (node.kind === 'directory') return node.path
 
   return node.path.split('/').slice(0, -1).join('/')
@@ -482,9 +525,18 @@ interface AssetNodeProps {
   selected: string | null
   onToggle: (path: string) => void
   onSelect: (path: string) => void
+  onOpenFolder: (path: string) => void
 }
 
-function AssetNode({ row, depth, expanded, selected, onToggle, onSelect }: AssetNodeProps): ReactElement {
+function AssetNode({
+  row,
+  depth,
+  expanded,
+  selected,
+  onToggle,
+  onSelect,
+  onOpenFolder,
+}: AssetNodeProps): ReactElement {
   const { node } = row
   const isFolder = node.kind === 'directory'
   const isOpen = isFolder && expanded.has(node.path)
@@ -502,7 +554,9 @@ function AssetNode({ row, depth, expanded, selected, onToggle, onSelect }: Asset
         data-orphaned-settings={row.isOrphanedSettings}
         onClick={() => {
           onSelect(node.path)
-          if (isFolder) onToggle(node.path)
+          if (!isFolder) return
+          onToggle(node.path)
+          onOpenFolder(node.path)
         }}
       >
         <span className="asset-row__chevron" aria-hidden="true">
@@ -533,6 +587,7 @@ function AssetNode({ row, depth, expanded, selected, onToggle, onSelect }: Asset
               selected={selected}
               onToggle={onToggle}
               onSelect={onSelect}
+              onOpenFolder={onOpenFolder}
             />
           ))}
         </ul>
