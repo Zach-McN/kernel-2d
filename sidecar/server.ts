@@ -10,6 +10,7 @@ import { toFileEventMessage } from './event-schema.js'
 import { deleteFile, moveFile } from './file-operations.js'
 import { createEventFeed, type EventFeed } from './feed.js'
 import { RefusedError, readMetaView, writeMetaFor } from './meta-files.js'
+import { guardRefusal } from './request-guard.js'
 import { scanProject } from './scan.js'
 import { toPosixPath } from './paths.js'
 import { SIDECAR_STATUS_FORMAT, SIDECAR_STATUS_VERSION, type SidecarStatus } from './status-schema.js'
@@ -124,6 +125,16 @@ async function handleRequest(
 ): Promise<void> {
   const url = new URL(request.url ?? '/', `http://${context.options.host}`)
   const pathname = url.pathname
+
+  // Who may ask, before what is asked. The loopback bind bounds who can
+  // connect, not who can instruct — any web page in any browser on this
+  // machine can aim a blind POST at this port. The whole rule and its reasons
+  // are stated at the top of `request-guard.ts` and not restated here.
+  const refused = guardRefusal(request.method ?? 'GET', request.headers)
+  if (refused !== null) {
+    sendJson(response, 403, { error: refused })
+    return
+  }
 
   // Reading is open. Writing is five requests and nothing else: two PUTs that
   // each replace one named thing, one POST that makes one document where there

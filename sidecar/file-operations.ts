@@ -35,6 +35,14 @@ import { relativePosixPath } from './paths.js'
  * has stopped being something a person can hold in their head, which is the point
  * at which it starts damaging work nobody authored.
  *
+ * **Who may ask is checked one layer out, before any of this runs.** Every line
+ * above says "the editor names" — and the loopback bind alone does not make
+ * that true, because any web page in any browser on this machine can aim a
+ * blind POST at this port. The guard in `request-guard.ts` is what makes it
+ * true: a state-changing request whose Origin names another site is refused,
+ * and so is any request whose Host names anything but this machine. The
+ * privilege below is written against a caller that guard has already let in.
+ *
  * **Move and delete are separate requests, like create and replace, and for the
  * same reason** (D22): kept apart, neither can do the other's job however
  * confused the caller is. The question to ask of any further widening is not "is
