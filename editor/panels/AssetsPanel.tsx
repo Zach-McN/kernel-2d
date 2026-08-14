@@ -1,4 +1,4 @@
-import { useState, type ReactElement } from 'react'
+import { useRef, useState, type ReactElement } from 'react'
 
 import { defaultPrefab, type Prefab } from '../../runtime/formats/prefab-schema'
 import { defaultScene, type Scene } from '../../runtime/formats/scene-schema'
@@ -12,10 +12,12 @@ import { pointsAt } from '../shell/references'
 import { useSelection } from '../shell/selection'
 import { NOT_DRAGGABLE, useAssetDrag, type AssetDragProps } from '../shell/useAssetDrag'
 import { useFileMoves, type Outcome, type UseReport } from '../shell/useFileMoves'
+import { useFolderHistoryButtons } from '../shell/useFolderHistoryButtons'
 import { createDocumentOnDisk } from '../store/document-disk'
 import { mintId } from '../store/ids'
 import { AssetBar } from './AssetBar'
 import { AssetGrid } from './AssetGrid'
+import { SplitHandle } from './SplitHandle'
 
 /**
  * The project folder, mirrored. Selecting anything here is what the Inspector
@@ -61,6 +63,11 @@ export function AssetsPanel(): ReactElement {
   const selection = useSelection()
   const browsing = useAssetBrowsing()
   const dragProps = useAssetDrag()
+  const body = useRef<HTMLDivElement>(null)
+
+  // The mouse's side buttons, over the browsing area only. Off in the tree-only
+  // view, where there is no folder to be inside of.
+  useFolderHistoryButtons({ surface: body, enabled: showsGrid(browsing.view) })
 
   const reveal = (path: string): void => {
     browsing.revealParents(path)
@@ -91,9 +98,19 @@ export function AssetsPanel(): ReactElement {
 
       <AssetBar projectName={tree.projectName} />
 
-      <div className="assets__body">
+      <div className="assets__body" ref={body}>
         {showsTree(browsing.view) && (
-          <div className="assets__pane assets__pane--tree" data-testid="assets-list">
+          <div
+            className="assets__pane assets__pane--tree"
+            data-testid="assets-list"
+            // Only in the split view does the tree have a width of its own to
+            // be told; on its own it takes the whole panel.
+            style={
+              browsing.view === 'split'
+                ? { flex: `0 0 ${(browsing.splitFraction * 100).toFixed(2)}%` }
+                : undefined
+            }
+          >
             <ul className="assets__tree" role="tree" aria-label="Project folder">
               {assetRowsFor(tree.tree.children).map((row) => (
                 <AssetNode
@@ -118,6 +135,8 @@ export function AssetsPanel(): ReactElement {
             )}
           </div>
         )}
+
+        {browsing.view === 'split' && <SplitHandle body={body} />}
 
         {showsGrid(browsing.view) && (
           <div className="assets__pane assets__pane--grid" data-testid="assets-icons">

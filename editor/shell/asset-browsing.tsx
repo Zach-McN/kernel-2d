@@ -26,6 +26,19 @@ import { movedPath } from './references'
  * second folder in the tree moved the grid somewhere nobody asked it to go. What
  * they do share is a direction: entering a folder in the grid opens the way to
  * it in the tree, so the two halves of the split view agree about where you are.
+ *
+ * **Where the grid is, is a trail rather than a folder.** The mouse's back and
+ * forward buttons hop along it, so it has to answer the same questions a
+ * browser's does: where you have been, where you were before you came back, and
+ * — the one that decides the shape — what happens when you go somewhere new
+ * after stepping back. Everything ahead of you is dropped, because a trail that
+ * kept it would offer a *forward* into a folder you have since changed your mind
+ * about, which is not a place you were on the way to.
+ *
+ * A parent is not a step back. Going up from `assets/textures` lands on
+ * `assets`, and stepping back from it lands wherever you were before — which is
+ * frequently somewhere else entirely, and is the whole reason the trail exists
+ * rather than a call to `parentOf`.
  */
 
 export type AssetView = 'list' | 'icons' | 'split'
@@ -42,6 +55,23 @@ export interface AssetBrowsing {
   folder: string
   /** Show this folder in the grid, and open the way down to it in the tree. */
   openFolder: (path: string) => void
+
+  /** Whether there is anywhere to step back to, or forward to. */
+  canGoBack: boolean
+  canGoForward: boolean
+  /** One step along the trail. Both do nothing at the end they are at. */
+  goBack: () => void
+  goForward: () => void
+
+  /**
+   * How much of the split view's width the tree gets, as a fraction.
+   *
+   * Kept as a fraction rather than as pixels, so dragging the panel wider keeps
+   * the proportion the human chose rather than leaving the tree at whatever
+   * number of pixels it happened to be.
+   */
+  splitFraction: number
+  setSplitFraction: (fraction: number) => void
 
   /** Which folders the tree has open. */
   expanded: ReadonlySet<string>
@@ -63,10 +93,24 @@ export interface AssetBrowsing {
 
 const AssetBrowsingContext = createContext<AssetBrowsing | null>(null)
 
+/** Where the tree's edge sits when nobody has moved it, and how far it may go. */
+export const SPLIT_DEFAULT = 0.4
+const SPLIT_NARROWEST = 0.12
+const SPLIT_WIDEST = 0.8
+
+/** Every folder visited, and which of them is on screen. */
+interface Trail {
+  folders: readonly string[]
+  at: number
+}
+
 export function AssetBrowsingProvider({ children }: { children: ReactNode }): ReactElement {
   const [view, setView] = useState<AssetView>('list')
-  const [folder, setFolder] = useState('')
+  const [trail, setTrail] = useState<Trail>({ folders: [''], at: 0 })
+  const [splitFraction, setSplit] = useState(SPLIT_DEFAULT)
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set())
+
+  const folder = trail.folders[trail.at] ?? ''
 
   const revealParents = useCallback((path: string) => {
     // Every folder on the way, so something reached inside a shut folder is not
@@ -97,14 +141,55 @@ export function AssetBrowsingProvider({ children }: { children: ReactNode }): Re
 
   const openFolder = useCallback(
     (path: string) => {
-      setFolder(path)
+      setTrail((previous) => {
+        // Going where you already are is not a step, and recording it would put
+        // a stutter in the trail that takes two presses of Back to get out of.
+        if ((previous.folders[previous.at] ?? '') === path) return previous
+        // Everything ahead is dropped: it was the way to somewhere you have
+        // since changed your mind about, and offering Forward into it would be
+        // offering a place you were never on the way to.
+        const folders = [...previous.folders.slice(0, previous.at + 1), path]
+        return { folders, at: folders.length - 1 }
+      })
       revealParents(path)
     },
     [revealParents],
   )
 
+  /**
+   * One step along the trail, opening the way down to wherever it lands.
+   *
+   * Reads the trail rather than taking it from an updater, because it has a
+   * second thing to do with the answer. A `setState` updater runs during a
+   * render, so setting the open folders from inside one would be changing state
+   * while rendering — legal-looking, and the shape React warns about.
+   */
+  const step = useCallback(
+    (by: 1 | -1) => {
+      const at = trail.at + by
+      if (at < 0 || at >= trail.folders.length) return
+      setTrail({ ...trail, at })
+      revealParents(trail.folders[at] ?? '')
+    },
+    [trail, revealParents],
+  )
+
+  const goBack = useCallback(() => step(-1), [step])
+  const goForward = useCallback(() => step(1), [step])
+
+  const setSplitFraction = useCallback((fraction: number) => {
+    // Clamped here rather than at the handle, so no caller can leave a pane the
+    // human cannot get hold of again.
+    setSplit(Math.min(SPLIT_WIDEST, Math.max(SPLIT_NARROWEST, fraction)))
+  }, [])
+
   const pathMoved = useCallback((from: string, to: string) => {
-    setFolder((previous) => movedPath(previous, from, to) ?? previous)
+    // Every folder on the trail, not only the one on screen: stepping back into
+    // a folder under its old name would land on nothing.
+    setTrail((previous) => ({
+      ...previous,
+      folders: previous.folders.map((path) => movedPath(path, from, to) ?? path),
+    }))
     setExpanded((previous) => new Set([...previous].map((path) => movedPath(path, from, to) ?? path)))
   }, [])
 
@@ -114,13 +199,33 @@ export function AssetBrowsingProvider({ children }: { children: ReactNode }): Re
       setView,
       folder,
       openFolder,
+      canGoBack: trail.at > 0,
+      canGoForward: trail.at < trail.folders.length - 1,
+      goBack,
+      goForward,
+      splitFraction,
+      setSplitFraction,
       expanded,
       toggleFolder,
       expandFolder,
       revealParents,
       pathMoved,
     }),
-    [view, folder, openFolder, expanded, toggleFolder, expandFolder, revealParents, pathMoved],
+    [
+      view,
+      folder,
+      openFolder,
+      trail,
+      goBack,
+      goForward,
+      splitFraction,
+      setSplitFraction,
+      expanded,
+      toggleFolder,
+      expandFolder,
+      revealParents,
+      pathMoved,
+    ],
   )
 
   return <AssetBrowsingContext.Provider value={value}>{children}</AssetBrowsingContext.Provider>

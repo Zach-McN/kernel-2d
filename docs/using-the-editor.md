@@ -211,10 +211,20 @@ your mind at any time:
 - **Split view** — the tree on the left, the tiles on the right. Click a folder in
   the tree and the tiles jump straight into it; walk into a folder on the right and
   the tree opens the way down to it. This is the one to use when you know roughly
-  where something is but not exactly.
+  where something is but not exactly. **Drag the line between the two halves** to
+  give one of them more room; double-click that line to put it back where it was.
 
-Whichever you pick lasts until you reload, and moving the panel to a different
-corner of the window does not lose your place. Every tile currently wears a plain
+**Your mouse's side buttons hop in and out of folders.** Back leaves the folder
+you are in and forward takes you back into it, exactly as they do in Explorer —
+and they go *where you were*, not simply up one level, so walking three folders
+deep and then jumping out to the top is one press of back away from being three
+deep again. Changing your mind and going somewhere else forgets the way forward,
+the same as a browser does. They work anywhere over the folder you are browsing,
+in the icon and split views.
+
+Whichever you pick lasts until you reload — along with the folder you are in, the
+way back and forward, and where you put the split — and moving the panel to a
+different corner of the window loses none of it. Every tile currently wears a plain
 folder or blank-page symbol: **pictures of your actual art come later**.
 
 The controls at the bottom — making a level, renaming, deleting — keep a fixed
@@ -631,8 +641,9 @@ the editor takes the change.
   lines it lined up to.
 - **Two levels open at once.**
 - **Saved panel layouts.** Drag the panels wherever you like; the arrangement
-  resets when the page reloads. Which of the three Assets views you chose, and the
-  folder you were in, reset with it.
+  resets when the page reloads. Which of the three Assets views you chose, the
+  folder you were in, the way back and forward, and where you put the split all
+  reset with it.
 - **Pictures of your assets on the tiles.** The icon view draws a folder or a
   blank page, never a thumbnail of the art itself.
 - **Sort, search or filter the icon view.** Folders first and then files,
@@ -643,8 +654,10 @@ the editor takes the change.
   the bottom of the panel.
 - **Drag a file into the Hierarchy, or onto an entity to give it that texture.**
   The level's picture is the only place a drop means anything.
-- **A back button, or a bigger and smaller icon size.** The trail above the tiles
-  is how you go back up, and the tiles are one size.
+- **Back and forward *buttons*, or a bigger and smaller icon size.** The mouse's
+  side buttons go back and forward, the trail above the tiles is the other way
+  back up, and the tiles are one size. With a mouse that has no side buttons, the
+  trail is the whole story — there is nothing on screen that goes forward.
 
 ---
 
