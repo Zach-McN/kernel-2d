@@ -232,7 +232,12 @@ export function PlayModeProvider({ children }: { children: ReactNode }): ReactEl
     // The anchor is the level whose Play button this run belongs to — not
     // wherever the game has travelled to since (`go`), which the open document
     // knows nothing about.
-    const anchor = play.state === 'running' ? play.opened : (play.opened ?? play.path)
+    const anchor =
+      play.state === 'running'
+        ? play.opened
+        : play.state === 'failed'
+          ? (play.opened ?? play.path)
+          : play.path
     if (anchor !== openPath) setPlay({ state: 'stopped' })
   }, [play, openPath])
 
