@@ -498,6 +498,22 @@ The editing gestures are off during play, so there is nothing for a click to
 collide with; Stop gives the mouse back to the editor. An exported folder
 hears the same clicks the same way.
 
+**The game can travel while it runs.** A game's own code may ask for another
+level — in the tower defense, clicking a banner on the level-select scene opens
+that level, and clicking the trophy afterwards comes back. The viewport follows
+the game wherever it goes; the level you were *editing* stays open underneath,
+untouched, and **Stop always returns you to it**. The bar under the picture
+names whichever level the game is in right now. The started-where-the-file-says
+check only speaks for the level you pressed Play on — a level the game
+travelled to was never on your screen to compare against.
+
+**The game can remember between runs.** A game may keep a few small facts —
+which levels have been beaten, in the tower defense — and they survive Stop,
+closing the editor, and reopening it. They live in your browser, not in any
+file of the project: nothing in the project folder changes, exporting the game
+does not carry your progress with it, and clearing the browser's site data for
+the editor's address forgets everything.
+
 **There is still no collision and no sound.** Each arrives when a game needs
 it, exactly as the keyboard and the pointer did.
 
@@ -523,10 +539,12 @@ authoritative and does nothing is worse than no field.
 `npm run export -- ../my-game` writes a folder you can give somebody.
 
 **What is in it.** The page, the game, and the parts of your project the starting
-level actually reaches — that level, every prefab it places from, every picture
-those draw, and the import settings beside each of them. Your levels and art are
-in there as the same files they are in your project, at the same paths, so you can
-open the folder and read it.
+level actually reaches — that level, **every level the game can travel to from
+it**, every prefab those place from, every picture any of them can come to draw
+(a projectile's art included), and the import settings beside each texture. Your
+levels and art are in there as the same files they are in your project, at the
+same paths, so you can open the folder and read it. A level that a door names
+but that does not exist refuses the export by name, before anything is written.
 
 **It runs the same way Play does.** The folder is not a picture of your level: it
 opens the file, draws it and then starts the same clock the editor's Play button

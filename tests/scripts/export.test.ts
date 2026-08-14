@@ -219,6 +219,48 @@ describe('what the folder holds', () => {
     expect(planned.plan.leftOut.find((one) => one.path === 'scenes')?.count).toBe(1)
   })
 
+  it('follows a door: a level named by any component ships too', async () => {
+    // The level select shape: an entity whose component names another scene.
+    // The export must ship every place the game can go, transitively.
+    const scene = JSON.parse(fs.readFileSync(project.file(LEVEL_ONE), 'utf8')) as {
+      entities: { id: string; name: string; transform: object; components: object }[]
+    }
+    scene.entities.push({
+      id: 'aaaaaaaabbbbbbbb',
+      name: 'Level 2 banner',
+      transform: { x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1 },
+      components: { portal: { scene: 'scenes/level-02.json' } },
+    })
+    fs.writeFileSync(project.file(LEVEL_ONE), JSON.stringify(scene, null, 2))
+
+    const planned = await planExport(project.root)
+    expect(planned.ok).toBe(true)
+    if (!planned.ok) return
+
+    const files = new Set(planned.plan.files)
+    expect(files.has('scenes/level-02.json')).toBe(true)
+    expect(planned.plan.leftOut.find((one) => one.path === 'scenes')).toBeUndefined()
+  })
+
+  it('refuses a door to a scene that is not there, and says which door', async () => {
+    const scene = JSON.parse(fs.readFileSync(project.file(LEVEL_ONE), 'utf8')) as {
+      entities: { id: string; name: string; transform: object; components: object }[]
+    }
+    scene.entities.push({
+      id: 'aaaaaaaacccccccc',
+      name: 'Broken banner',
+      transform: { x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1 },
+      components: { portal: { scene: 'scenes/never-written.json' } },
+    })
+    fs.writeFileSync(project.file(LEVEL_ONE), JSON.stringify(scene, null, 2))
+
+    const planned = await planExport(project.root)
+    expect(planned.ok).toBe(false)
+    if (planned.ok) return
+    expect(planned.problem).toContain('scenes/never-written.json')
+    expect(planned.problem).toContain('named by a door')
+  })
+
   it('does not count tooling folders among what it left out', async () => {
     // A human who keeps their game folder in git has a `.git` in it. Reporting "left
     // out .git (2,431)" would bury the line that matters under one nobody asked about,

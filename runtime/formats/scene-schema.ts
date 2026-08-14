@@ -446,6 +446,41 @@ export function textureRefsOf(holder: ComponentHolder): AssetRef[] {
   return refs
 }
 
+/**
+ * Every scene this entity's components name: any string under a field named
+ * `scene`, at any depth, in any component.
+ *
+ * The door convention, mirroring `textureRefsOf`'s: a game that can travel —
+ * a level select's portals, a victory banner's way home — names its
+ * destination scene inside its own components, and whoever must know what a
+ * scene *reaches* (the export command, deciding which files to ship) walks
+ * for the same key the game's systems read. A scene is named by its
+ * project-relative path alone, because that is the one name a scene has
+ * everywhere — there is no id to pair it with, and no `.meta` beside a JSON
+ * document.
+ */
+export function sceneRefsOf(holder: ComponentHolder): string[] {
+  const refs: string[] = []
+
+  const walk = (value: unknown): void => {
+    if (value === null || typeof value !== 'object') return
+    if (Array.isArray(value)) {
+      for (const item of value) walk(item)
+      return
+    }
+    for (const [key, inside] of Object.entries(value)) {
+      if (key === 'scene' && typeof inside === 'string' && inside.length > 0) {
+        refs.push(inside)
+        continue
+      }
+      walk(inside)
+    }
+  }
+
+  walk(holder.components)
+  return refs
+}
+
 /** The component types on this entity or prefab that the kernel has no schema for. */
 export function unknownComponentTypesOf(holder: ComponentHolder): string[] {
   return Object.keys(holder.components)

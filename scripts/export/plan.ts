@@ -3,7 +3,7 @@ import path from 'node:path'
 
 import { metaPathFor } from '../../runtime/formats/meta-schema.js'
 import { PROJECT_FORMAT, ProjectSchema } from '../../runtime/formats/project-schema.js'
-import { prefabRefOf, spriteOf } from '../../runtime/formats/scene-schema.js'
+import { prefabRefOf, sceneRefsOf } from '../../runtime/formats/scene-schema.js'
 import { describeLoadProblem, loadScene, type LoadProblem } from '../../runtime/scene/load-scene.js'
 import { isIgnoredName } from '../../sidecar/ignore.js'
 import { nodeProjectReader } from './project-reader.js'
@@ -23,15 +23,14 @@ import { nodeProjectReader } from './project-reader.js'
  *
  * ## What is copied
  *
- * Only what the starting level reaches: the level, every prefab it places from, every
- * texture those draw, the `.meta` beside each of those textures, and `project.json`.
- * Not the whole `assets/` folder — which would ship `assets/source`, the `.psd` and
- * `.blend` originals, and the art that was cut from the level last week.
- *
- * Today that set is *complete* rather than merely sufficient, because there is no way
- * for a game to reach a second level: one startup scene, no transitions, no input. The
- * moment a level can name another one, this walk follows it and the export grows with
- * the game rather than with the folder.
+ * Only what the starting level reaches: the level, **every level its doors can
+ * reach** (`sceneRefsOf` — any scene a component names, followed transitively,
+ * because a game that can travel ships every place it can go), every prefab any of
+ * those place from, every texture any of those draw — the loader's own broad
+ * reading, `textureRefsOf`, so the art a projectile or a spawned banner will wear
+ * ships too — the `.meta` beside each texture, and `project.json`. Not the whole
+ * `assets/` folder — which would ship `assets/source`, the `.psd` and `.blend`
+ * originals, and the art that was cut from the level last week.
  *
  * ## What refuses, and the one thing that does not
  *
@@ -88,40 +87,62 @@ export async function planExport(projectPath: string): Promise<ExportPlanResult>
 
   const startupScene = settings.startupScene
 
-  const level = await loadScene(reader, startupScene)
-  if (!level.ok) {
-    return { ok: false, problem: `${startupScene} cannot be the starting level. ${level.problem}` }
-  }
+  // Every scene the game can reach, starting level first: each one is loaded
+  // the way the game will load it, and each may name more through its doors.
+  const scenes = new Set<string>([startupScene])
+  const queue = [startupScene]
+  const prefabs = new Set<string>()
+  const textures = new Set<string>()
+  const warnings: string[] = []
 
-  const fatal = level.problems.filter((problem) => !isWitnessOnly(problem))
-  if (fatal.length > 0) {
-    return {
-      ok: false,
-      problem: [
-        `${startupScene} would not draw properly in an exported game:`,
-        ...fatal.map((problem) => `  - ${describeLoadProblem(problem)}`),
-        'Nothing has been written. Fix these in the editor and export again.',
-      ].join('\n'),
+  for (;;) {
+    const scenePath = queue.shift()
+    if (scenePath === undefined) break
+
+    const level = await loadScene(reader, scenePath)
+    if (!level.ok) {
+      const role =
+        scenePath === startupScene ? 'cannot be the starting level' : 'is named by a door and cannot be reached'
+      return { ok: false, problem: `${scenePath} ${role}. ${level.problem}` }
     }
+
+    const fatal = level.problems.filter((problem) => !isWitnessOnly(problem))
+    if (fatal.length > 0) {
+      return {
+        ok: false,
+        problem: [
+          `${scenePath} would not draw properly in an exported game:`,
+          ...fatal.map((problem) => `  - ${describeLoadProblem(problem)}`),
+          'Nothing has been written. Fix these in the editor and export again.',
+        ].join('\n'),
+      }
+    }
+
+    // The resolved entities, not the ones as written: an instance's picture —
+    // and the doors it holds — are named by the prefab it points at, so what a
+    // level needs is only knowable after resolution, which the loader just did.
+    for (const entity of level.request.scene.entities) {
+      const placed = prefabRefOf(entity)?.path
+      if (placed !== undefined) prefabs.add(placed)
+      for (const named of sceneRefsOf(entity)) {
+        if (scenes.has(named)) continue
+        scenes.add(named)
+        queue.push(named)
+      }
+    }
+    // The loader's own texture list — every `texture`-named reference in every
+    // component, which is exactly what the game can come to draw mid-run.
+    for (const texture of Object.keys(level.request.textures)) textures.add(texture)
+
+    warnings.push(...level.problems.filter(isWitnessOnly).map(describeLoadProblem))
   }
 
-  // The resolved entities, not the ones as written: an instance's picture is named
-  // by the prefab it points at, so the textures a level needs are only knowable
-  // after resolution — which is what the loader has just done.
-  const scene = level.request.scene
-  const prefabs = [...new Set(scene.entities.map((entity) => prefabRefOf(entity)?.path ?? null))]
-    .filter((candidate): candidate is string => candidate !== null)
-    .sort()
-  const textures = [...new Set(scene.entities.map((entity) => spriteOf(entity)?.texture.path ?? null))]
-    .filter((candidate): candidate is string => candidate !== null)
-    .sort()
-
-  const missingBytes = textures.filter((texture) => !isFile(projectPath, texture))
+  const missingBytes = [...textures].sort().filter((texture) => !isFile(projectPath, texture))
   if (missingBytes.length > 0) {
     return {
       ok: false,
       problem: [
-        `${startupScene} draws pictures that are not in the project folder:`,
+        'The game draws pictures that are not in the project folder:',
         ...missingBytes.map((texture) => `  - ${texture}`),
         'Their import settings are still there, so this is a file that has been moved, renamed or deleted.',
         'Nothing has been written.',
@@ -131,10 +152,10 @@ export async function planExport(projectPath: string): Promise<ExportPlanResult>
 
   const files = [
     PROJECT_FILE,
-    startupScene,
+    ...scenes,
     ...prefabs,
     ...textures,
-    ...textures.map((texture) => metaPathFor(texture)),
+    ...[...textures].map((texture) => metaPathFor(texture)),
   ].sort()
 
   return {
@@ -142,7 +163,7 @@ export async function planExport(projectPath: string): Promise<ExportPlanResult>
     plan: {
       startupScene,
       files: [...new Set(files)],
-      warnings: level.problems.filter(isWitnessOnly).map(describeLoadProblem),
+      warnings: [...new Set(warnings)],
       leftOut: leftOutOf(projectPath, new Set(files)),
     },
   }

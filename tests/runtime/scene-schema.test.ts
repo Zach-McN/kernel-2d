@@ -13,6 +13,7 @@ import {
   serializeScene,
   spinOf,
   spriteOf,
+  sceneRefsOf,
   textureRefsOf,
   unknownComponentTypesOf,
   type Entity,
@@ -424,5 +425,37 @@ describe('every texture a document names', () => {
 
   it('reads a prefab the same way it reads an entity, because both hold components', () => {
     expect(textureRefsOf({ components: knight.components })).toEqual(textureRefsOf(knight))
+  })
+})
+
+describe('every scene an entity names', () => {
+  it('finds a scene named at any depth, in any component', () => {
+    const banner: Entity = {
+      ...defaultEntity('abc123', 'Banner'),
+      components: {
+        portal: { scene: 'scenes/level-01.json', done: { texture: { id: 'x', path: 'check.png' } } },
+        home: { scene: 'scenes/select.json' },
+        nested: { deep: [{ scene: 'scenes/level-02.json' }] },
+      },
+    }
+
+    expect(sceneRefsOf(banner)).toEqual([
+      'scenes/level-01.json',
+      'scenes/select.json',
+      'scenes/level-02.json',
+    ])
+  })
+
+  it('skips a scene field that is not a path', () => {
+    const broken: Entity = {
+      ...defaultEntity('abc123', 'Broken'),
+      components: { portal: { scene: 7 }, other: { scene: '' }, next: { scene: null } },
+    }
+
+    expect(sceneRefsOf(broken)).toEqual([])
+  })
+
+  it('finds nothing on an entity that names none', () => {
+    expect(sceneRefsOf(defaultEntity('abc123', 'Empty'))).toEqual([])
   })
 })
