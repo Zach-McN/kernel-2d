@@ -98,9 +98,13 @@ same way:
 npm run editor -- ../games/tower-defense
 ```
 
-It is empty on purpose — no levels, no art yet — so the Assets panel shows the folders
-and `project.json` says no starting level has been chosen. That is the correct state,
-not a fault.
+It has a level in it now — a field with a road across it and a monster that walks the
+road when you press Play. All of that is generated scaffolding meant to be replaced,
+and every file in it says so inside itself.
+
+**How to author that game is its own page**, not this one: `games/tower-defense/docs/authoring.md`
+says how a road is drawn and a monster placed. This page stays about the editor, which
+is the same editor for every game.
 
 An export goes the other way and is the one thing that does copy: it writes a new
 folder holding a copy of the parts of your game it needs, plus the engine. It
