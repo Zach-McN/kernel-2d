@@ -1,4 +1,4 @@
-import { DockviewReact, themeAbyss } from 'dockview-react'
+import { DockviewReact, themeAbyssSpaced } from 'dockview-react'
 import { useEffect } from 'react'
 import type { ReactElement } from 'react'
 
@@ -106,7 +106,13 @@ function Shell({ connection }: { connection: SidecarConnection }): ReactElement 
       <main className="editor-shell__panels">
         <DockviewReact
           components={PANEL_COMPONENTS}
-          theme={themeAbyss}
+          /*
+           * The spaced variant, for its *structure*: it is the one that gives
+           * each group rounded corners and a gap around it, and that puts the
+           * tabs inside the group they belong to rather than on a strip above
+           * the whole layout. Its colours are all redefined in `shell.css`.
+           */
+          theme={themeAbyssSpaced}
           onReady={(event) => {
             layout.attach(event.api)
             layOutPanels(event.api)

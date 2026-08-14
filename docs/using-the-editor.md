@@ -8,7 +8,8 @@ It is kept current by the definition of done in `CLAUDE.md`: a session that
 changes what you can do, or how you do it, changes this page in the same commit.
 If this page and the editor disagree, the editor is right and the page is a bug.
 
-Last true as of: **a dark editor with one orange in it** (2026-08-13).
+Last true as of: **panels that look like windows, with their tabs joined to
+them** (2026-08-13).
 
 ---
 
@@ -153,6 +154,11 @@ written about a fifth of a second after you stop making them.
 ## What the editor can do
 
 ### Reading the screen
+
+**Every panel is a little window** with rounded corners and a gap around it, and
+its tabs sit on top of it the way a browser's tabs sit on a browser window — the
+open one is joined to the panel below it, so you can always see which tab belongs
+to which panel. The Viewport's canvas sits in a darker well inside its window.
 
 Dark, with one orange. **Orange always means "this is the one you are working on"**
 — the tab you are in, the row you have selected, the field you are typing in,

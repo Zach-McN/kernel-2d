@@ -7,19 +7,24 @@
   color-scheme: dark;
 
   /*
-   * The palette: three steps of ground, one hairline, and one accent.
+   * The palette: four steps of ground, one hairline, and one accent.
    *
    * Near-black rather than the blue-grey it used to be, because the accent is
    * warm and a warm accent on a cool ground reads as a colour clash rather than
-   * as emphasis. The three grounds are close together on purpose — depth here
-   * comes from a hairline between surfaces, not from a big jump in lightness,
-   * which is what keeps a screen made almost entirely of panels from looking
-   * striped.
+   * as emphasis.
+   *
+   * The four steps are a stack, and the order is what makes a panel look like a
+   * window: `background` is the frame the windows sit in and shows through the
+   * gaps between them, `strip` is the bar their tabs sit on, `surface` is the
+   * page inside — and the open tab is painted `surface` so that it *is* the
+   * page, reaching up into the bar. That is the whole of the browser-tab
+   * effect, and it only works while these three stay in this order.
    */
   --shell-background: #0e0f11;
-  --shell-surface: #13151a;
-  --shell-raised: #1e2028;
-  --shell-line: #2a2d35;
+  --shell-strip: #14161b;
+  --shell-surface: #1a1d23;
+  --shell-raised: #262a33;
+  --shell-line: #2f333d;
   --shell-text: #e6e8ec;
   --shell-text-dim: #8b909a;
 
@@ -40,7 +45,7 @@
    * are grey text on grey. One colour, shared by the control and by the list it
    * opens, so the two cannot drift.
    */
-  --shell-control-background: #16181e;
+  --shell-control-background: #101318;
 
   --shell-good: #42c98a;
   --shell-bad: #fa5853;
@@ -196,38 +201,55 @@ body {
 }
 
 /*
- * Dockview's Abyss theme, repainted.
+ * Dockview's spaced Abyss theme, repainted.
  *
- * The theme is picked in `App.tsx` for its *structure* — where it puts borders,
- * how it treats an inactive group — and everything it colours is built from the
+ * The theme is picked in `App.tsx` for its *structure* — rounded groups with a
+ * gap between them, tabs belonging to the group they open rather than to a bar
+ * across the top of the layout — and everything it colours is built from the
  * five values below. Redefining those five is therefore the whole repaint, and
  * it keeps every colour in the editor in this one file. Writing a bespoke
- * dockview theme object instead would move the same five values into TypeScript,
- * where the next person changing the palette would not find them.
+ * dockview theme object instead would move the same five values into
+ * TypeScript, where the next person changing the palette would not find them.
+ *
+ * The mapping is what makes a panel look like a window with tabs on it:
+ *
+ *   abyss-dark     the frame, seen through the gaps between groups
+ *   abyss          the tab bar along the top of a group
+ *   abyss-light    a tab that is not open
+ *   abyss-lighter  a tab that *is* open — the page colour, so it reads as the
+ *                  page reaching up into the bar
  */
-.dockview-theme-abyss {
-  --dv-color-abyss-dark: var(--shell-surface);
-  --dv-color-abyss: var(--shell-background);
-  --dv-color-abyss-light: var(--shell-background);
-  --dv-color-abyss-lighter: var(--shell-line);
+.dockview-theme-abyss-spaced {
+  --dv-color-abyss-dark: var(--shell-background);
+  --dv-color-abyss: var(--shell-strip);
+  --dv-color-abyss-light: var(--shell-strip);
+  --dv-color-abyss-lighter: var(--shell-surface);
   --dv-color-abyss-accent: var(--shell-accent);
   --dv-color-abyss-primary-text: var(--shell-text);
   --dv-color-abyss-secondary-text: var(--shell-text-dim);
 
   --dv-paneview-active-outline-color: var(--shell-accent);
-  --dv-separator-border: var(--shell-line);
   --dv-tab-divider-color: transparent;
-  --dv-tab-border-radius: var(--shell-radius);
-  --dv-tab-margin: 4px 3px;
   --dv-icon-hover-background-color: rgba(255, 255, 255, 0.07);
-  --dv-tabs-and-actions-container-height: 34px;
+
+  /*
+   * Square along the bottom, and no margin under it: the two halves of a tab
+   * being *attached* to the page rather than floating above it. Everything
+   * else about the shape is the theme's.
+   */
+  --dv-tab-border-radius: 9px 9px 0 0;
+  --dv-tab-margin: var(--dv-tab-margin-block) var(--dv-tab-margin-inline) 0;
 }
 
 /*
- * A tab is a pill, and the open one is outlined rather than filled. Drawn as an
- * inset shadow, not a border: a border would add a pixel to a tab that is
- * already laid out, and the strip would twitch every time the open tab changed.
+ * The page inside the window. The theme fills it with the tab bar's colour,
+ * which is right when a tab is a floating pill and wrong here: the open tab has
+ * to be the same colour as the page for the two to read as one surface.
  */
+.editor-shell__panels .dv-groupview .dv-content-container {
+  background-color: var(--shell-surface);
+}
+
 .editor-shell__panels .dv-tab {
   font-family: var(--shell-mono);
   font-size: 12px;
@@ -235,16 +257,17 @@ body {
 }
 
 /*
- * The open tab of a *group* is merely filled; only the group the human is
- * actually working in wears the accent. Four docked groups means four open
- * tabs, and outlining all four says "current" four times, which says it none.
+ * The open tab of a *group* is joined to its page and says nothing more; only
+ * the group the human is actually working in wears the accent, as a line along
+ * the tab's top edge. Four docked groups means four open tabs, and marking all
+ * four says "current" four times, which says it none.
+ *
+ * A line on the top edge rather than an outline around the tab, because an
+ * outline would draw a border along the bottom — between the tab and the page
+ * it is supposed to be part of — and undo the join.
  */
-.editor-shell__panels .dv-tab.dv-active-tab {
-  box-shadow: inset 0 0 0 1px var(--shell-line);
-}
-
 .editor-shell__panels .dv-active-group .dv-tab.dv-active-tab {
-  box-shadow: inset 0 0 0 1px var(--shell-accent);
+  box-shadow: inset 0 2px 0 var(--shell-accent);
 }
 
 .editor-shell__panels .dv-tab.dv-inactive-tab:hover {
@@ -617,11 +640,26 @@ body {
  * needs to be able to see — on a flat background, transparent and
  * background-coloured look identical.
  */
+/*
+ * Inset inside its panel, with the page showing as a frame around it and its
+ * own corners rounded — a well the artwork sits in, rather than the panel's
+ * whole floor.
+ *
+ * It earns the eight pixels twice over. The stage is the darkest thing on
+ * screen and the panel is not, so without the inset the open tab would join a
+ * black rectangle instead of the page it is supposed to be part of, and the
+ * tab-to-page join — the point of the whole shape — would fail in the largest
+ * panel. And a fixed inset is safe where a variable one would not be: the
+ * canvas's size is what framing is computed against (see the note on the bar
+ * below), so this is a margin that must never depend on what is in the panel.
+ */
 .viewport__stage {
   position: relative;
   flex: 1;
   min-height: 0;
   overflow: hidden;
+  margin: 8px 8px 0;
+  border-radius: 8px;
   background-color: var(--shell-background);
   background-image:
     linear-gradient(45deg, #171920 25%, transparent 25%),
@@ -681,13 +719,14 @@ body {
   stroke-width: 1.5;
 }
 
+/* No rule above it any more: the gap between the well and this bar is what
+   separates them, and a line as well would be saying it twice. */
 .viewport__bar {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
   gap: 4px 12px;
   padding: 6px 12px;
-  border-top: 1px solid var(--shell-line);
 }
 
 .viewport__note {

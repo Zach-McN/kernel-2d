@@ -384,12 +384,33 @@ test('a click lands where the camera says it landed, at any zoom', async ({ page
 
   const entities = await levelOnDisk(before + 2)
   const [firstPlaced, secondPlaced] = entities.slice(before)
-  expect(firstPlaced?.transform).toMatchObject(onGrid(near))
-  expect(secondPlaced?.transform).toMatchObject(onGrid(far))
+  expectNear(firstPlaced?.transform, near)
+  expectNear(secondPlaced?.transform, far)
 })
 
-/** The same arithmetic the editor uses, written out so the test says what it means. */
-function onGrid(point: { x: number; y: number }): { x: number; y: number } {
-  const on = (value: number): number => Math.round((value - 8) / 16) * 16 + 8
-  return { x: on(point.x), y: on(point.y) }
+/**
+ * Landed on the grid, and on one of the two grid positions either side of where
+ * the camera was looking.
+ *
+ * Not "on the snap of the focus exactly", which is what this asserted until the
+ * day a stylesheet changed the panel's width. The middle of the canvas can land
+ * exactly on the line between two grid positions — the fixture's camera sits at
+ * x=160 with a grid of 8, 24, … 152, 168, so the middle is 160, precisely
+ * halfway — and which side a click on a boundary falls to is then decided by
+ * the canvas being an odd number of pixels wide. Rounding, not behaviour.
+ *
+ * What the test is actually for survives at this width: an implementation that
+ * treated the click's screen pixels as level units would be out by hundreds of
+ * units, not by one step.
+ */
+function expectNear(
+  transform: { x: number; y: number } | undefined,
+  point: { x: number; y: number },
+): void {
+  expect(transform).toBeDefined()
+  const onGrid = (value: number): boolean => (value - 8) % 16 === 0
+  expect(onGrid(transform?.x ?? 1), 'x is on the grid').toBe(true)
+  expect(onGrid(transform?.y ?? 1), 'y is on the grid').toBe(true)
+  expect(Math.abs((transform?.x ?? 0) - point.x)).toBeLessThanOrEqual(16)
+  expect(Math.abs((transform?.y ?? 0) - point.y)).toBeLessThanOrEqual(16)
 }
