@@ -87,7 +87,18 @@ test.describe('the editor shell', () => {
 
     await expect(groupHoldingBoth).toHaveCount(0)
 
-    await inspectorTab.dragTo(hierarchyTab)
+    /*
+     * Dropped a quarter of the way across the tab rather than on its middle,
+     * which is where `dragTo` aims by default.
+     *
+     * Dockview splits a tab 50/50 into "insert before this one" and "insert
+     * after it", and the comparisons either side are strict — so a drop on the
+     * dividing line itself resolves to neither, no overlay appears, and the
+     * drop is discarded. The middle of an element is exactly that line, and
+     * whether it rounds to one side depends on the tab's sub-pixel width, which
+     * is to say on the font. A test aimed there passes or fails on typography.
+     */
+    await inspectorTab.dragTo(hierarchyTab, { targetPosition: { x: 20, y: 12 } })
 
     await expect(groupHoldingBoth).toHaveCount(1)
     await expect(page.getByTestId('inspector-panel')).toBeVisible()

@@ -8,7 +8,7 @@ It is kept current by the definition of done in `CLAUDE.md`: a session that
 changes what you can do, or how you do it, changes this page in the same commit.
 If this page and the editor disagree, the editor is right and the page is a bug.
 
-Last true as of: **a game folder you open by double-clicking it** (2026-08-13).
+Last true as of: **a dark editor with one orange in it** (2026-08-13).
 
 ---
 
@@ -151,6 +151,22 @@ written about a fifth of a second after you stop making them.
 ---
 
 ## What the editor can do
+
+### Reading the screen
+
+Dark, with one orange. **Orange always means "this is the one you are working on"**
+— the tab you are in, the row you have selected, the field you are typing in,
+and the zoom button when the view is exactly fitting. Nothing else is orange, so
+if you have lost what you selected, look for the orange.
+
+The other three colours mean what they usually do and are never used for
+anything else: green is working (the dot at the top right), amber is something
+worth knowing, red is something wrong.
+
+Panel furniture — tabs, headings, badges, the boxes you type numbers into — is
+in a typewriter face; your own words, like file names and the sentences the
+panels tell you things in, are not. It is a way of telling at a glance what is
+the editor talking and what is your project.
 
 ### Your folder, mirrored
 

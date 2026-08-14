@@ -6,7 +6,33 @@
 :root {
   color-scheme: dark;
 
-  --shell-background: #171a1f;
+  /*
+   * The palette: three steps of ground, one hairline, and one accent.
+   *
+   * Near-black rather than the blue-grey it used to be, because the accent is
+   * warm and a warm accent on a cool ground reads as a colour clash rather than
+   * as emphasis. The three grounds are close together on purpose — depth here
+   * comes from a hairline between surfaces, not from a big jump in lightness,
+   * which is what keeps a screen made almost entirely of panels from looking
+   * striped.
+   */
+  --shell-background: #0e0f11;
+  --shell-surface: #13151a;
+  --shell-raised: #1e2028;
+  --shell-line: #2a2d35;
+  --shell-text: #e6e8ec;
+  --shell-text-dim: #8b909a;
+
+  /*
+   * Orange is for what is *current* — the open tab, the selected row, the field
+   * being typed in — and for nothing else. It is the only saturated thing on
+   * screen, so the moment it also means "warning" or "button" it stops meaning
+   * anything. What is wrong or waiting has its own colours below.
+   */
+  --shell-accent: #ff6144;
+  --shell-accent-hot: #e74f34;
+  --shell-accent-wash: rgba(255, 97, 68, 0.14);
+
   /*
    * What a control is filled with. Opaque, and that is the point: a
    * semi-transparent fill leaves the browser nothing solid to draw a `<select>`'s
@@ -14,13 +40,21 @@
    * are grey text on grey. One colour, shared by the control and by the list it
    * opens, so the two cannot drift.
    */
-  --shell-control-background: #111417;
-  --shell-line: #2a2f38;
-  --shell-text: #d7dce3;
-  --shell-text-dim: #8b95a3;
-  --shell-good: #4ec98a;
-  --shell-bad: #e5715f;
-  --shell-waiting: #d9b34a;
+  --shell-control-background: #16181e;
+
+  --shell-good: #42c98a;
+  --shell-bad: #fa5853;
+  --shell-waiting: #ffc444;
+
+  /*
+   * Two type roles. Sans for anything the human reads as words — file names,
+   * sentences, values — and mono for the chrome around it: tabs, status,
+   * headings, badges, the labels on controls. It is the reference UI's own
+   * split, and it earns its place by making chrome unmistakably chrome.
+   */
+  --shell-mono: 'Cascadia Mono', Consolas, ui-monospace, monospace;
+  --shell-radius: 6px;
+  --shell-radius-sm: 4px;
 }
 
 html,
@@ -44,6 +78,36 @@ body {
   height: 100%;
 }
 
+/*
+ * Scrollbars, which are chrome and were the last thing still wearing the
+ * browser's. Thin, unlit until the pointer is over them, and drawn inside a
+ * transparent border so the thumb does not touch the text it is scrolling.
+ */
+::-webkit-scrollbar {
+  width: 11px;
+  height: 11px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 6px;
+  background: #30343d;
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #3d424d;
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
 /* --- status strip ------------------------------------------------------- */
 
 .status-strip {
@@ -54,6 +118,7 @@ body {
   height: 32px;
   padding: 0 12px;
   border-bottom: 1px solid var(--shell-line);
+  font-family: var(--shell-mono);
   font-size: 12px;
   line-height: 32px;
   white-space: nowrap;
@@ -61,7 +126,21 @@ body {
 
 .status-strip__brand {
   color: var(--shell-text-dim);
-  letter-spacing: 0.04em;
+  letter-spacing: 0.18em;
+  text-transform: lowercase;
+}
+
+/* The one mark on screen that is not information: the editor saying which
+   editor it is. Drawn rather than added to the markup, because a decoration
+   that no reader needs has no business being a thing the page announces. */
+.status-strip__brand::before {
+  content: '';
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: 9px;
+  border-radius: 2px;
+  background: var(--shell-accent);
 }
 
 .status-strip__project {
@@ -116,6 +195,62 @@ body {
   height: 100%;
 }
 
+/*
+ * Dockview's Abyss theme, repainted.
+ *
+ * The theme is picked in `App.tsx` for its *structure* — where it puts borders,
+ * how it treats an inactive group — and everything it colours is built from the
+ * five values below. Redefining those five is therefore the whole repaint, and
+ * it keeps every colour in the editor in this one file. Writing a bespoke
+ * dockview theme object instead would move the same five values into TypeScript,
+ * where the next person changing the palette would not find them.
+ */
+.dockview-theme-abyss {
+  --dv-color-abyss-dark: var(--shell-surface);
+  --dv-color-abyss: var(--shell-background);
+  --dv-color-abyss-light: var(--shell-background);
+  --dv-color-abyss-lighter: var(--shell-line);
+  --dv-color-abyss-accent: var(--shell-accent);
+  --dv-color-abyss-primary-text: var(--shell-text);
+  --dv-color-abyss-secondary-text: var(--shell-text-dim);
+
+  --dv-paneview-active-outline-color: var(--shell-accent);
+  --dv-separator-border: var(--shell-line);
+  --dv-tab-divider-color: transparent;
+  --dv-tab-border-radius: var(--shell-radius);
+  --dv-tab-margin: 4px 3px;
+  --dv-icon-hover-background-color: rgba(255, 255, 255, 0.07);
+  --dv-tabs-and-actions-container-height: 34px;
+}
+
+/*
+ * A tab is a pill, and the open one is outlined rather than filled. Drawn as an
+ * inset shadow, not a border: a border would add a pixel to a tab that is
+ * already laid out, and the strip would twitch every time the open tab changed.
+ */
+.editor-shell__panels .dv-tab {
+  font-family: var(--shell-mono);
+  font-size: 12px;
+  letter-spacing: 0.02em;
+}
+
+/*
+ * The open tab of a *group* is merely filled; only the group the human is
+ * actually working in wears the accent. Four docked groups means four open
+ * tabs, and outlining all four says "current" four times, which says it none.
+ */
+.editor-shell__panels .dv-tab.dv-active-tab {
+  box-shadow: inset 0 0 0 1px var(--shell-line);
+}
+
+.editor-shell__panels .dv-active-group .dv-tab.dv-active-tab {
+  box-shadow: inset 0 0 0 1px var(--shell-accent);
+}
+
+.editor-shell__panels .dv-tab.dv-inactive-tab:hover {
+  background-color: var(--shell-raised);
+}
+
 /* --- the assets tree ---------------------------------------------------- */
 
 .assets {
@@ -143,8 +278,8 @@ body {
 .assets__stale {
   margin: 0 0 4px;
   padding: 6px 12px;
-  background: rgba(229, 113, 95, 0.12);
-  border-bottom: 1px solid rgba(229, 113, 95, 0.35);
+  background: rgba(250, 88, 83, 0.12);
+  border-bottom: 1px solid rgba(250, 88, 83, 0.35);
   color: var(--shell-bad);
 }
 
@@ -211,11 +346,18 @@ body {
 }
 
 .asset-row__button:hover {
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(255, 255, 255, 0.04);
 }
 
+/*
+ * Selection is the accent's job, and it is stated twice: a wash across the row
+ * and a bar down its leading edge. The wash alone is faint enough to lose
+ * against a hover on a dark ground, and the bar alone is easy to miss at the
+ * left margin — together they survive both.
+ */
 .asset-row__button[data-selected='true'] {
-  background: rgba(96, 150, 230, 0.28);
+  background: var(--shell-accent-wash);
+  box-shadow: inset 2px 0 0 var(--shell-accent);
 }
 
 .asset-row__button[data-kind='directory'] .asset-row__name {
@@ -250,17 +392,18 @@ body {
 .asset-row__badge {
   flex: none;
   padding: 0 5px;
-  border-radius: 3px;
-  background: rgba(255, 255, 255, 0.07);
+  border-radius: var(--shell-radius-sm);
+  background: var(--shell-raised);
   color: var(--shell-text-dim);
+  font-family: var(--shell-mono);
   font-size: 10px;
   line-height: 15px;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 
 .asset-row__badge--orphan {
-  background: rgba(217, 179, 74, 0.16);
+  background: rgba(255, 196, 68, 0.14);
   color: var(--shell-waiting);
 }
 
@@ -299,9 +442,10 @@ body {
   padding-bottom: 4px;
   border-bottom: 1px solid var(--shell-line);
   color: var(--shell-text-dim);
-  font-size: 11px;
+  font-family: var(--shell-mono);
+  font-size: 10px;
   font-weight: 600;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
 }
 
@@ -348,13 +492,27 @@ body {
 
 .control {
   min-width: 0;
-  padding: 2px 4px;
+  padding: 2px 6px;
   border: 1px solid var(--shell-line);
-  border-radius: 3px;
+  border-radius: var(--shell-radius-sm);
   background: var(--shell-control-background);
   color: var(--shell-text);
   font: inherit;
   line-height: 18px;
+}
+
+/*
+ * Mono for what is typed *into*, and never for a button.
+ *
+ * A field holding a number or a name is easier to read and to line up in mono,
+ * and it can be any width it likes. A button is sized by its label, and mono is
+ * wide enough that switching the whole control set to it clipped "Duplicate"
+ * and wrapped the prefab buttons onto three lines. The look is worth a field;
+ * it is not worth a control that cannot show its own name.
+ */
+.control--number,
+.control--text {
+  font-family: var(--shell-mono);
 }
 
 /*
@@ -369,11 +527,18 @@ body {
 }
 
 .control:hover {
-  border-color: #3a4150;
+  border-color: #3a3f4a;
 }
 
+/*
+ * The field being typed in is a current thing, so it wears the accent — the
+ * same rule as the open tab and the selected row. Two edges of it, because a
+ * one-pixel border on a dark control is nearly invisible next to one that is
+ * merely hovered.
+ */
 .control:focus-visible {
-  border-color: var(--shell-good);
+  border-color: var(--shell-accent);
+  box-shadow: 0 0 0 1px var(--shell-accent-wash);
   outline: none;
 }
 
@@ -392,15 +557,32 @@ body {
   line-height: 16px;
 }
 
+/* The zoom is exactly fitting — a state of the control, so the accent, not the
+   green that means "this is working" over in the status strip. */
 .control--step[data-fitting='true'] {
-  border-color: var(--shell-good);
-  color: var(--shell-good);
+  border-color: var(--shell-accent);
+  color: var(--shell-accent);
 }
 
 .control--action {
   padding: 1px 10px;
   cursor: pointer;
   line-height: 16px;
+}
+
+/*
+ * A button is filled where a field is sunk, which is the only thing telling the
+ * two apart at this size — both are one line of text in a rounded rectangle.
+ */
+.control--action,
+.control--step {
+  background: var(--shell-raised);
+}
+
+.control--action:hover:not(:disabled),
+.control--step:hover:not(:disabled) {
+  background: #262933;
+  border-color: #3a3f4a;
 }
 
 .control:disabled {
@@ -440,12 +622,12 @@ body {
   flex: 1;
   min-height: 0;
   overflow: hidden;
-  background-color: #14161a;
+  background-color: var(--shell-background);
   background-image:
-    linear-gradient(45deg, #1c1f25 25%, transparent 25%),
-    linear-gradient(-45deg, #1c1f25 25%, transparent 25%),
-    linear-gradient(45deg, transparent 75%, #1c1f25 75%),
-    linear-gradient(-45deg, transparent 75%, #1c1f25 75%);
+    linear-gradient(45deg, #171920 25%, transparent 25%),
+    linear-gradient(-45deg, #171920 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #171920 75%),
+    linear-gradient(-45deg, transparent 75%, #171920 75%);
   background-size: 16px 16px;
   background-position:
     0 0,
@@ -469,21 +651,21 @@ body {
 
 .viewport__bounds {
   fill: none;
-  stroke: rgba(215, 220, 227, 0.35);
+  stroke: rgba(230, 232, 236, 0.3);
   stroke-width: 1;
 }
 
 .viewport__frame {
   fill: none;
-  stroke: rgba(78, 201, 138, 0.75);
+  stroke: rgba(66, 201, 138, 0.75);
   stroke-width: 1;
 }
 
 /* Pixels no frame reaches. Shaded rather than outlined, because they are not a
    frame and must not look like one. */
 .viewport__uncovered {
-  fill: rgba(229, 113, 95, 0.22);
-  stroke: rgba(229, 113, 95, 0.5);
+  fill: rgba(250, 88, 83, 0.20);
+  stroke: rgba(250, 88, 83, 0.5);
   stroke-width: 1;
   stroke-dasharray: 3 3;
 }
@@ -688,12 +870,12 @@ body {
 
 /* Where the scene's own 0,0 is. y counts upward from this corner. */
 .scene__origin line {
-  stroke: rgba(215, 220, 227, 0.3);
+  stroke: rgba(230, 232, 236, 0.25);
   stroke-width: 1;
 }
 
 .scene__origin text {
-  fill: rgba(215, 220, 227, 0.4);
+  fill: rgba(230, 232, 236, 0.35);
   font-family: inherit;
   font-size: 10px;
 }
@@ -775,11 +957,13 @@ body {
 }
 
 .entity-row__button:hover {
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(255, 255, 255, 0.04);
 }
 
+/* The same two-part selection as the assets tree, for the same reason. */
 .entity-row__button[data-selected='true'] {
-  background: rgba(96, 150, 230, 0.28);
+  background: var(--shell-accent-wash);
+  box-shadow: inset 2px 0 0 var(--shell-accent);
 }
 
 .entity-row__name {
@@ -799,20 +983,22 @@ body {
 .entity-row__badge {
   flex: none;
   padding: 0 5px;
-  border-radius: 3px;
-  background: rgba(229, 113, 95, 0.16);
+  border-radius: var(--shell-radius-sm);
+  background: rgba(250, 88, 83, 0.16);
   color: var(--shell-bad);
+  font-family: var(--shell-mono);
   font-size: 10px;
   line-height: 15px;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 
 /* An instance is an ordinary state, not a fault — so it must not wear the
-   colour every other badge in this list uses to mean "this is broken". */
+   colour every other badge in this list uses to mean "this is broken". Nor the
+   accent, which means "current" and would make every instance look selected. */
 .entity-row__badge--prefab {
   margin-left: 8px;
-  background: rgba(122, 162, 247, 0.16);
+  background: var(--shell-raised);
   color: var(--shell-text-dim);
 }
 
@@ -837,7 +1023,7 @@ body {
   max-height: 220px;
   overflow: auto;
   border: 1px solid var(--shell-line);
-  border-radius: 3px;
+  border-radius: var(--shell-radius-sm);
   background: rgba(0, 0, 0, 0.25);
   color: var(--shell-text-dim);
   font-family: 'Cascadia Mono', Consolas, monospace;
