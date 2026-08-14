@@ -332,7 +332,7 @@ function projectSettings(generatedAt: string): Project {
  *
  * Scene space is y-up from the bottom-left corner and there is no camera yet,
  * so everything sits in the lower-left of a typical panel — a level whose
- * entities were all off screen would test the Hierarchy and teach the human
+ * entities were all off screen would test the Outliner and teach the human
  * nothing.
  *
  * The knight and the slime are pivoted at their feet in their import settings,

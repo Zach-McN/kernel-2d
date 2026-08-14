@@ -56,12 +56,12 @@ test.describe('the Inspector', () => {
     await expect(note(page)).toContainText('Nothing to tune on import')
   })
 
-  test('names a scene as a scene, says how much is in it, and points at the Hierarchy', async ({ page }) => {
+  test('names a scene as a scene, says how much is in it, and points at the Outliner', async ({ page }) => {
     await select(page, 'scenes/level-01.json')
 
     await expect(page.getByTestId('inspector-document-format')).toHaveText('Scene')
     await expect(page.getByTestId('inspector-entity-count')).toHaveText('5 entities')
-    await expect(note(page)).toContainText('Select an entity in the Hierarchy')
+    await expect(note(page)).toContainText('Select an entity in the Outliner')
   })
 
   test('says what is wrong with a document it cannot read, and shows the file', async ({ page }) => {
@@ -149,7 +149,7 @@ test.describe('an entity’s turn rate', () => {
   async function selectEntity(page: Page, name: string): Promise<void> {
     await select(page, LEVEL_ONE)
     await page
-      .getByTestId('hierarchy-panel')
+      .getByTestId('outliner-panel')
       .locator('[data-entity-id]')
       .filter({ hasText: name })
       .first()

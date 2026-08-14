@@ -8,9 +8,9 @@ import { useSelection } from './selection'
 /**
  * A copy of one entity, in the same place, selected afterwards.
  *
- * Shared rather than owned by the Hierarchy that first had the button, for the
+ * Shared rather than owned by the Outliner that first had the button, for the
  * reason `usePlacePrefab` was shared: the gesture is reachable from two places
- * and they are the same gesture. The button is in the Hierarchy; `Shift-D` is in
+ * and they are the same gesture. The button is in the Outliner; `Shift-D` is in
  * the viewport, where the hand already is. One implementation, so the two can
  * never disagree about what a copy is.
  *

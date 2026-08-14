@@ -148,7 +148,7 @@ test.describe('the Assets panel views', () => {
     // and "after" and a drop on it is discarded in silence (`editor-ui` UG11).
     await page
       .getByRole('tab', { name: 'Assets', exact: true })
-      .dragTo(page.getByRole('tab', { name: 'Hierarchy', exact: true }), {
+      .dragTo(page.getByRole('tab', { name: 'Outliner', exact: true }), {
         targetPosition: { x: 20, y: 12 },
       })
 

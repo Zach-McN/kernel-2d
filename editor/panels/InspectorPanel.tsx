@@ -226,7 +226,7 @@ function FileBody({ node, meta }: FileBodyProps): ReactElement {
  *
  * Three formats have a body of their own now, each reached by what the document
  * says it is. The scene's is the fall-through and is deliberately short: a scene's
- * properties *are* its entities, and those are the Hierarchy's to list and the
+ * properties *are* its entities, and those are the Outliner's to list and the
  * entity inspector's to tune. Repeating them here would be a second place to read
  * the same thing.
  */
@@ -291,7 +291,7 @@ function DocumentBody({ path }: { path: string }): ReactElement {
         />
       )}
       <Note data-testid="inspector-note">
-        It is open in the Viewport. Select an entity in the Hierarchy to tune it.
+        It is open in the Viewport. Select an entity in the Outliner to tune it.
       </Note>
     </Section>
   )

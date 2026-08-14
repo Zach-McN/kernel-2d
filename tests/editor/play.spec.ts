@@ -48,7 +48,7 @@ test.beforeEach(async ({ page }) => {
 
 const viewport = (page: Page): Locator => page.getByTestId('viewport-panel')
 const row = (page: Page, name: string): Locator =>
-  page.getByTestId('hierarchy-panel').locator('[data-entity-id]').filter({ hasText: name }).first()
+  page.getByTestId('outliner-panel').locator('[data-entity-id]').filter({ hasText: name }).first()
 
 async function openScene(page: Page, scenePath: string): Promise<void> {
   await selectAsset(page, scenePath)
@@ -218,7 +218,7 @@ test.describe('a level that is running', () => {
     const moved = [...now.keys()].filter((id) => started.get(id) !== now.get(id))
     expect(moved).toHaveLength(2)
 
-    // And they are the two the Hierarchy names, identified by the ids that moved
+    // And they are the two the Outliner names, identified by the ids that moved
     // rather than by position — the picture cannot tell you *why* something moved,
     // so the assertion has to be about which entity it was.
     await stop(page)
@@ -514,7 +514,7 @@ test('writes nothing at all while a level is running', async ({ page }) => {
   expect(snapshotProject()).toEqual(before)
   // The level is also still the length it was, so the Add really did nothing
   // rather than being added and written back later.
-  await expect(page.getByTestId('hierarchy-panel').locator('[data-entity-id]')).toHaveCount(5)
+  await expect(page.getByTestId('outliner-panel').locator('[data-entity-id]')).toHaveCount(5)
 })
 
 // --- the pictures ---------------------------------------------------------

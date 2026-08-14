@@ -26,7 +26,7 @@ import { useSelection } from './selection'
  *
  * It sits above the docking layout for the usual reason (`editor-ui` U9) and for
  * the sharper one: this fetch has a side effect, because it is what puts the
- * scene into the document store. Owned by the Hierarchy panel, closing that tab
+ * scene into the document store. Owned by the Outliner panel, closing that tab
  * would leave the Viewport drawing a scene whose document never arrived — a
  * panel silently depending on another panel being open.
  *
@@ -129,7 +129,7 @@ export function OpenSceneProvider({ children }: { children: ReactNode }): ReactE
   }, [candidate, tree])
 
   // Read from the store, never from the served answer: the store is what the
-  // Hierarchy's edits change and what undo reverses, and a panel drawing the
+  // Outliner's edits change and what undo reverses, and a panel drawing the
   // served copy would look right and quietly disagree (`editor-ui` U12).
   const scene = useSceneDocument(openScene)
 

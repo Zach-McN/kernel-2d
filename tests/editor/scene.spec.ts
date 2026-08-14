@@ -38,7 +38,7 @@ test.beforeEach(async ({ page }) => {
 
 const viewport = (page: Page): Locator => page.getByTestId('viewport-panel')
 const row = (page: Page, name: string): Locator =>
-  page.getByTestId('hierarchy-panel').locator('[data-entity-id]').filter({ hasText: name }).first()
+  page.getByTestId('outliner-panel').locator('[data-entity-id]').filter({ hasText: name }).first()
 
 async function openScene(page: Page, scenePath = LEVEL_ONE): Promise<void> {
   await selectAsset(page, scenePath)
@@ -80,7 +80,7 @@ test.describe('looking at a texture while a scene is open', () => {
 
     // The scene is exactly where it was left, selection included.
     await expect(viewport(page)).toHaveAttribute('data-scene-showing', LEVEL_ONE)
-    await expect(page.getByTestId('hierarchy-panel')).toHaveAttribute('data-scene', LEVEL_ONE)
+    await expect(page.getByTestId('outliner-panel')).toHaveAttribute('data-scene', LEVEL_ONE)
   })
 
   /**
@@ -208,9 +208,9 @@ test('a texture re-saved outside the editor shows its new pixels within a second
 // --- acceptance 10: edited in a text editor ---------------------------------
 
 test.describe('the scene file changing on disk', () => {
-  test('the Hierarchy and the Viewport follow within a second', async ({ page }) => {
+  test('the Outliner and the Viewport follow within a second', async ({ page }) => {
     await openScene(page)
-    await expect(page.getByTestId('hierarchy-panel').locator('[data-entity-id]')).toHaveCount(5)
+    await expect(page.getByTestId('outliner-panel').locator('[data-entity-id]')).toHaveCount(5)
 
     const scene = JSON.parse(fs.readFileSync(sceneFile(), 'utf8')) as {
       entities: { id: string; name: string }[]
@@ -222,10 +222,10 @@ test.describe('the scene file changing on disk', () => {
     } as (typeof scene.entities)[number])
     fs.writeFileSync(sceneFile(), `${JSON.stringify(scene, null, 2)}\n`)
 
-    await expect(page.getByTestId('hierarchy-panel').locator('[data-entity-id]')).toHaveCount(6, {
+    await expect(page.getByTestId('outliner-panel').locator('[data-entity-id]')).toHaveCount(6, {
       timeout: WITHIN_A_SECOND + 1_000,
     })
-    await expect(page.getByTestId('hierarchy-panel')).toContainText('Added by hand')
+    await expect(page.getByTestId('outliner-panel')).toContainText('Added by hand')
   })
 
   /**
@@ -253,7 +253,7 @@ test.describe('the scene file changing on disk', () => {
     }
     fs.writeFileSync(sceneFile(), `${JSON.stringify(scene, null, 2)}\n`)
 
-    await expect(page.getByTestId('hierarchy-panel')).toContainText('Renamed by hand', {
+    await expect(page.getByTestId('outliner-panel')).toContainText('Renamed by hand', {
       timeout: WITHIN_A_SECOND + 1_000,
     })
 

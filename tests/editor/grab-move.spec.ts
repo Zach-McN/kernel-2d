@@ -38,7 +38,7 @@ test.beforeEach(async ({ page }) => {
 const viewport = (page: Page): Locator => page.getByTestId('viewport-panel')
 
 const row = (page: Page, name: string): Locator =>
-  page.getByTestId('hierarchy-panel').locator('[data-entity-id]').filter({ hasText: name }).first()
+  page.getByTestId('outliner-panel').locator('[data-entity-id]').filter({ hasText: name }).first()
 
 async function cameraScale(page: Page): Promise<number> {
   return Number(await viewport(page).getAttribute('data-scene-scale'))

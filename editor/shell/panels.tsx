@@ -2,7 +2,7 @@ import type { DockviewApi, IDockviewPanelProps } from 'dockview-react'
 import type { FunctionComponent, ReactElement } from 'react'
 
 import { AssetsPanel } from '../panels/AssetsPanel'
-import { HierarchyPanel } from '../panels/HierarchyPanel'
+import { OutlinerPanel } from '../panels/OutlinerPanel'
 import { InspectorPanel } from '../panels/InspectorPanel'
 import { TexturePanel } from '../panels/TexturePanel'
 import { ViewportPanel } from '../panels/ViewportPanel'
@@ -51,11 +51,11 @@ const TEXTURE: PanelDefinition = {
   render: TexturePanel,
 }
 
-const HIERARCHY: PanelDefinition = {
-  id: 'hierarchy',
-  title: 'Hierarchy',
+const OUTLINER: PanelDefinition = {
+  id: 'outliner',
+  title: 'Outliner',
   blurb: 'Everything in the open scene, in the order it is drawn.',
-  render: HierarchyPanel,
+  render: OutlinerPanel,
 }
 
 const INSPECTOR: PanelDefinition = {
@@ -75,7 +75,7 @@ const ASSETS: PanelDefinition = {
 export const PANELS = {
   viewport: VIEWPORT,
   texture: TEXTURE,
-  hierarchy: HIERARCHY,
+  outliner: OUTLINER,
   inspector: INSPECTOR,
   assets: ASSETS,
 } as const
@@ -139,9 +139,9 @@ export function layOutPanels(api: DockviewApi): void {
   })
 
   api.addPanel({
-    id: PANELS.hierarchy.id,
-    component: PANELS.hierarchy.id,
-    title: PANELS.hierarchy.title,
+    id: PANELS.outliner.id,
+    component: PANELS.outliner.id,
+    title: PANELS.outliner.title,
     position: { direction: 'left', referencePanel: PANELS.viewport.id },
     initialWidth: 240,
   })

@@ -162,7 +162,7 @@ function setPivotX(path: string, x: number): void {
 }
 
 /**
- * The four things the Hierarchy does, as the store sees them.
+ * The four things the Outliner does, as the store sees them.
  *
  * Written here in the same shape the panel writes them, because the point of
  * these is that adding and deleting an entity are *edits* like any other. A

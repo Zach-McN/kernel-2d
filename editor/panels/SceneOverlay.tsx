@@ -126,7 +126,7 @@ function Selected({ entity }: { entity: DrawnEntity }): ReactElement {
 
 /** What is on screen, in one line: how much of the scene was drawn, and how close. */
 export function describeScene(shown: ShownScene, entityCount: number): string {
-  if (entityCount === 0) return 'This scene is empty. Add an entity in the Hierarchy to put something in it.'
+  if (entityCount === 0) return 'This scene is empty. Add an entity in the Outliner to put something in it.'
 
   const drawn = shown.entities.filter((entity) => entity.bounds !== null).length
   const nothing = entityCount - drawn

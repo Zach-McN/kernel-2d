@@ -71,7 +71,7 @@ test('a new level is made where it said it would be, and opens', async ({ page }
     'data-scene-showing',
     'scenes/level-03.json',
   )
-  await expect(page.getByTestId('hierarchy-message')).toContainText('empty')
+  await expect(page.getByTestId('outliner-message')).toContainText('empty')
 })
 
 test('the name field does not need the extension, and does not double it', async ({ page }) => {
@@ -171,7 +171,7 @@ test('a picture of a level that has just been started', async ({ page }) => {
   await inScenesFolder(page)
   await nameIt(page, 'level-03')
   await page.getByTestId('new-scene-create').click()
-  await expect(page.getByTestId('hierarchy-message')).toContainText('empty')
+  await expect(page.getByTestId('outliner-message')).toContainText('empty')
   // The row as well as the scene. The level opens from the service's answer,
   // and the folder listing arrives a beat later by way of the watcher — so a
   // picture taken on the first of those catches the Inspector mid-sentence,

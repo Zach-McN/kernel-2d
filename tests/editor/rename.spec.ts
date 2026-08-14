@@ -67,7 +67,7 @@ async function moveIt(page: Page, from: string, to: { name?: string; folder?: st
 
 async function openScene(page: Page): Promise<void> {
   await selectAsset(page, LEVEL_ONE)
-  await expect(page.getByTestId('hierarchy-panel')).toHaveAttribute('data-scene', LEVEL_ONE)
+  await expect(page.getByTestId('outliner-panel')).toHaveAttribute('data-scene', LEVEL_ONE)
   await expect(page.getByTestId('viewport-panel')).toHaveAttribute('data-scene-drawn', '5')
 }
 

@@ -40,7 +40,7 @@ test.beforeEach(async ({ page }) => {
 const viewport = (page: Page): Locator => page.getByTestId('viewport-panel')
 
 const row = (page: Page, name: string): Locator =>
-  page.getByTestId('hierarchy-panel').locator('[data-entity-id]').filter({ hasText: name }).first()
+  page.getByTestId('outliner-panel').locator('[data-entity-id]').filter({ hasText: name }).first()
 
 async function cameraScale(page: Page): Promise<number> {
   return Number(await viewport(page).getAttribute('data-scene-scale'))
@@ -122,7 +122,7 @@ async function emptySpot(page: Page): Promise<{ x: number; y: number }> {
 
 // --- acceptance: clicking in the picture ------------------------------------
 
-test('clicking a sprite selects it, in the picture and in the Hierarchy', async ({ page }) => {
+test('clicking a sprite selects it, in the picture and in the Outliner', async ({ page }) => {
   await openScene(page)
   await expect(page.getByTestId('scene-selected-bounds')).toHaveCount(0)
 

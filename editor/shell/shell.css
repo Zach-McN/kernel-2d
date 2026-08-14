@@ -1215,7 +1215,7 @@ body {
 /*
  * Dimmed while a level is running, because `inert` is invisible.
  *
- * Without it the Hierarchy and the Inspector look exactly as they do when they
+ * Without it the Outliner and the Inspector look exactly as they do when they
  * work, and a human presses Delete twice before reading the caption under the
  * canvas. The rule is on the attribute rather than a class of our own, so
  * whatever is out of reach and the thing that looks out of reach are the same
@@ -1308,16 +1308,16 @@ body {
   stroke-width: 1.5;
 }
 
-/* --- the hierarchy ------------------------------------------------------- */
+/* --- the outliner ------------------------------------------------------- */
 
-.hierarchy {
+.outliner {
   display: flex;
   flex-direction: column;
   height: 100%;
   min-height: 0;
 }
 
-.hierarchy__bar {
+.outliner__bar {
   display: flex;
   flex: none;
   gap: 6px;
@@ -1325,7 +1325,7 @@ body {
   border-bottom: 1px solid var(--shell-line);
 }
 
-.hierarchy__list {
+.outliner__list {
   flex: 1;
   min-height: 0;
   margin: 0;
@@ -1334,19 +1334,48 @@ body {
   list-style: none;
 }
 
-.hierarchy__message {
+.outliner__message {
   margin: 0;
   padding: 12px 16px;
   color: var(--shell-text-dim);
 }
 
-.hierarchy__note {
+.outliner__note {
   flex: none;
   margin: 0;
   padding: 6px 12px;
   border-top: 1px solid var(--shell-line);
   color: var(--shell-text-dim);
   opacity: 0.7;
+}
+
+.entity-row {
+  position: relative;
+}
+
+/*
+ * Where the carried row would land: a line on the edge between two rows. The
+ * accent, for the same reason the viewport's drop ring wears it — this is the
+ * most current thing on screen for as long as it is there. Drawn outside the
+ * flow (and deaf to the pointer) so it cannot move the rows it sits between:
+ * a target that shifts under the gesture aiming at it is UG13's bug.
+ */
+.entity-row[data-drop-line]::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--shell-accent);
+  pointer-events: none;
+}
+
+.entity-row[data-drop-line='above']::after {
+  top: -1px;
+}
+
+.entity-row[data-drop-line='below']::after {
+  bottom: -1px;
 }
 
 .entity-row__button {

@@ -288,7 +288,9 @@ last row is drawn in front.
 
 - **Assets panel** → *New scene* / *New prefab*, with a name and a folder. Also
   **drag a file onto the level** — see below.
-- **Hierarchy** → add, duplicate, delete, and move a row back or forward.
+- **Outliner** → add, duplicate, delete, and reorder — with the `↑` `↓` buttons,
+  or by dragging a row to where it should sit. A line shows where it will land;
+  `Ctrl-Z` takes either kind of reorder back in one press.
 - **Viewport** → click to select, drag to move, `G` to move without holding
   anything, `Shift-D` for a copy.
 - **Inspector** → name, position, rotation, scale, spin, and which texture it draws.
@@ -421,11 +423,11 @@ start on the sprite starts by hiding it.
   selecting something else. All of those would move the entity out from under your
   cursor, so they wait until you have finished.
 - Anything that takes the level away — pressing Play, closing the level, clicking
-  another row in the Hierarchy, or the window losing focus — puts the entity back
+  another row in the Outliner, or the window losing focus — puts the entity back
   the way `Esc` does. Nothing was decided, so nothing is kept.
 
 **`Shift-D` copies the selected entity** onto exactly the same spot and selects the
-copy, which is the same thing the Hierarchy's *Duplicate* button does. `Shift-D`
+copy, which is the same thing the Outliner's *Duplicate* button does. `Shift-D`
 then `G` is how you make a second one and put it somewhere, without your hand
 leaving the picture.
 
@@ -682,8 +684,9 @@ the editor takes the change.
 - **Drag a file from one folder into another.** Files drag *into the level*, not
   into other folders; moving one is still the name field and the folder chooser at
   the bottom of the panel.
-- **Drag a file into the Hierarchy, or onto an entity to give it that texture.**
-  The level's picture is the only place a drop means anything.
+- **Drag a file into the Outliner, or onto an entity to give it that texture.**
+  The level's picture is the only place a *file* drop means anything — the only
+  thing that drops into the Outliner is its own rows, to reorder them.
 - **Back and forward *buttons*, or a bigger and smaller icon size.** The mouse's
   side buttons go back and forward, the trail above the tiles is the other way
   back up, and the tiles are one size. With a mouse that has no side buttons, the

@@ -1,4 +1,4 @@
-import type { ReactElement, ReactNode } from 'react'
+import { useRef, useState, type DragEvent, type ReactElement, type ReactNode } from 'react'
 
 import {
   SCENE_FORMAT,
@@ -40,8 +40,15 @@ import { editDocument } from '../store/open-documents'
  * A row shows what its entity *draws*, which for an instance comes from the
  * prefab it points at. Everything it *changes* goes to the document, re-found by
  * id inside the transaction (`editor-ui` U23).
+ *
+ * Reordering has two doors — the arrows, and dragging a row — and one
+ * implementation behind both, the same shape as Duplicate and `Shift-D`. The
+ * drag is the browser's own, marked with a type of its own so an asset being
+ * carried out of the Assets panel is not mistaken for a row (`editor-ui` U35);
+ * the row's id rides in a ref rather than in state, because what is being
+ * dragged never needs to be *drawn* — only where it would land does.
  */
-export function HierarchyPanel(): ReactElement {
+export function OutlinerPanel(): ReactElement {
   const open = useOpenScene()
   const selection = useSelection()
   const assets = useSceneAssets()
@@ -49,6 +56,17 @@ export function HierarchyPanel(): ReactElement {
   // The same copy the viewport's Shift-D makes, so the button and the key can
   // never disagree about what a duplicate is (`editor/shell/useDuplicateEntity.ts`).
   const { duplicate } = useDuplicateEntity()
+
+  // The row being dragged. A ref, not state: setting state inside `dragstart`
+  // re-renders the row mid-gesture, which is the kind of DOM change Chromium
+  // answers by cancelling the drag it was about to start.
+  const draggingRow = useRef<string | null>(null)
+  // Where the carried row would land, for the line between rows — or null when
+  // there is no drag, or when letting go here would change nothing.
+  const [dropAt, setDropAt] = useState<number | null>(null)
+  // Counted rather than compared against `relatedTarget`: `dragleave` fires
+  // when the pointer crosses onto a child row (`editor-ui` U35).
+  const dragDepth = useRef(0)
 
   if (open.state === 'none') {
     return <Empty>No scene is open. Click a scene in the Assets panel to see what is in it.</Empty>
@@ -123,11 +141,51 @@ export function HierarchyPanel(): ReactElement {
     })
   }
 
+  /** The drag's answer: put the row at slot `to` of the list as shown now. */
+  const reorderTo = (id: string, to: number): void => {
+    change('Reorder entity', (list) => {
+      const at = list.findIndex((entity) => entity.id === id)
+      if (at < 0) return
+      const [moved] = list.splice(at, 1)
+      if (moved === undefined) return
+      // The slot was counted with the row still in place, so everything past
+      // it is one nearer the front once the row is out.
+      list.splice(Math.min(to > at ? to - 1 : to, list.length), 0, moved)
+    })
+  }
+
+  /**
+   * Which slot letting go here would fill, or null for "none, or nothing would
+   * change". Asked twice — on every `dragover` for the line, and again on the
+   * drop for the edit — so the two cannot disagree about where "here" is.
+   * A row is divided at its middle: the top half means before it, the bottom
+   * half after; below the last row means the end.
+   */
+  const slotUnder = (event: DragEvent<HTMLElement>): number | null => {
+    const id = draggingRow.current
+    if (id === null) return null
+    const from = entities.findIndex((entity) => entity.id === id)
+    if (from < 0) return null
+    const row = event.target instanceof HTMLElement ? event.target.closest('[data-row-index]') : null
+    const slot =
+      row instanceof HTMLElement
+        ? Number(row.getAttribute('data-row-index')) +
+          (event.clientY < middleOf(row.getBoundingClientRect()) ? 0 : 1)
+        : entities.length
+    return slot === from || slot === from + 1 ? null : slot
+  }
+
+  const dragDone = (): void => {
+    draggingRow.current = null
+    dragDepth.current = 0
+    setDropAt(null)
+  }
+
   const at = entities.findIndex((entity) => entity.id === selected)
 
   return (
-    <div className="hierarchy" data-testid="hierarchy-panel" data-scene={path}>
-      <header className="hierarchy__bar">
+    <div className="outliner" data-testid="outliner-panel" data-scene={path}>
+      <header className="outliner__bar">
         <button type="button" className="control control--action" data-testid="entity-add" onClick={add}>
           Add
         </button>
@@ -173,12 +231,43 @@ export function HierarchyPanel(): ReactElement {
       </header>
 
       {entities.length === 0 ? (
-        <p className="hierarchy__message" data-testid="hierarchy-message">
+        <p className="outliner__message" data-testid="outliner-message">
           This scene is empty. Add an entity to put something in it.
         </p>
       ) : (
-        <ol className="hierarchy__list" aria-label={`Entities in ${name}`}>
-          {entities.map((entity) => {
+        <ol
+          className="outliner__list"
+          aria-label={`Entities in ${name}`}
+          onDragEnter={(event) => {
+            if (!isRowDrag(event)) return
+            event.preventDefault()
+            dragDepth.current += 1
+          }}
+          // Every move, not just the first: a drag that is not cancelled here
+          // is a drag the browser will not let go of (`editor-ui` U35).
+          onDragOver={(event) => {
+            if (!isRowDrag(event)) return
+            event.preventDefault()
+            event.dataTransfer.dropEffect = 'move'
+            setDropAt(slotUnder(event))
+          }}
+          onDragLeave={() => {
+            dragDepth.current -= 1
+            if (dragDepth.current <= 0) {
+              dragDepth.current = 0
+              setDropAt(null)
+            }
+          }}
+          onDrop={(event) => {
+            if (!isRowDrag(event)) return
+            event.preventDefault()
+            const id = draggingRow.current
+            const slot = slotUnder(event)
+            if (id !== null && slot !== null) reorderTo(id, slot)
+            dragDone()
+          }}
+        >
+          {entities.map((entity, index) => {
             // The file's entity decides what this row *is*; the resolved one
             // decides what it draws. Falling back is the gap of one render
             // before the prefabs it points at have been read.
@@ -186,18 +275,36 @@ export function HierarchyPanel(): ReactElement {
             return (
               <Row
                 key={entity.id}
+                index={index}
                 entity={drawn}
                 fromPrefab={prefabRefOf(entity)?.path ?? null}
                 selected={entity.id === selected}
                 problem={problemFor(entity, drawn, assets, resolved)}
+                dropLine={
+                  dropAt === index
+                    ? 'above'
+                    : index === entities.length - 1 && dropAt === entities.length
+                      ? 'below'
+                      : null
+                }
                 onSelect={() => selection.selectEntity(path, entity.id)}
+                onDragStart={(event) => {
+                  // The marker is all a `dragover` can see; the id itself rides
+                  // in the ref, readable while the drag is happening (U35).
+                  event.dataTransfer.setData(ROW_DRAG_TYPE, entity.id)
+                  event.dataTransfer.effectAllowed = 'move'
+                  draggingRow.current = entity.id
+                }}
+                // Fires whether it was dropped or abandoned, which is exactly
+                // the question: the drag is over either way.
+                onDragEnd={dragDone}
               />
             )
           })}
         </ol>
       )}
 
-      <p className="hierarchy__note">The last one in the list is drawn in front.</p>
+      <p className="outliner__note">The last one in the list is drawn in front — drag a row to reorder.</p>
     </div>
   )
 }
@@ -228,21 +335,56 @@ function problemFor(
   return problem.kind === 'missing' ? 'missing texture' : 'texture problem'
 }
 
+/**
+ * The type on a row's drag, saying it is an Outliner row.
+ *
+ * A marker and nothing more, distinct from the Assets panel's
+ * (`../shell/useAssetDrag.ts`) so neither surface mistakes the other's drag for
+ * its own: a row let go over the picture places nothing, and a file let go over
+ * this list changes no order.
+ */
+const ROW_DRAG_TYPE = 'application/x-kernel-2d-entity-row'
+
+/** Ours rather than an asset, a text selection, or a file from Explorer. */
+function isRowDrag(event: DragEvent<HTMLElement>): boolean {
+  return event.dataTransfer.types.includes(ROW_DRAG_TYPE)
+}
+
+function middleOf(box: DOMRect): number {
+  return box.top + box.height / 2
+}
+
 interface RowProps {
+  /** Where this row sits in the list, which is where it sits in the draw order. */
+  index: number
   /** Resolved: the texture shown is the one this row actually draws. */
   entity: Entity
   /** The prefab this is an instance of, or null when it is not one. */
   fromPrefab: string | null
   selected: boolean
   problem: string | null
+  /** The edge the carried row would land on, for the line, or null. */
+  dropLine: 'above' | 'below' | null
   onSelect: () => void
+  onDragStart: (event: DragEvent<HTMLElement>) => void
+  onDragEnd: () => void
 }
 
-function Row({ entity, fromPrefab, selected, problem, onSelect }: RowProps): ReactElement {
+function Row({
+  index,
+  entity,
+  fromPrefab,
+  selected,
+  problem,
+  dropLine,
+  onSelect,
+  onDragStart,
+  onDragEnd,
+}: RowProps): ReactElement {
   const sprite = spriteOf(entity)
 
   return (
-    <li className="entity-row">
+    <li className="entity-row" data-row-index={index} data-drop-line={dropLine ?? undefined}>
       <button
         type="button"
         className="entity-row__button"
@@ -250,7 +392,10 @@ function Row({ entity, fromPrefab, selected, problem, onSelect }: RowProps): Rea
         data-selected={selected}
         data-entity-problem={problem ?? ''}
         data-entity-prefab={fromPrefab ?? ''}
+        draggable
         onClick={onSelect}
+        onDragStart={onDragStart}
+        onDragEnd={onDragEnd}
       >
         <span className="entity-row__name">{entity.name}</span>
         {fromPrefab !== null && (
@@ -283,8 +428,8 @@ function nextEntityName(entities: readonly Entity[]): string {
 
 function Empty({ children }: { children: ReactNode }): ReactElement {
   return (
-    <div className="hierarchy" data-testid="hierarchy-panel">
-      <p className="hierarchy__message" data-testid="hierarchy-message">
+    <div className="outliner" data-testid="outliner-panel">
+      <p className="outliner__message" data-testid="outliner-message">
         {children}
       </p>
     </div>

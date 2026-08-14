@@ -215,7 +215,7 @@ test('leaves a picture of a file hovering over the level', async ({ page }, test
 // --- driving ---------------------------------------------------------------
 
 const viewport = (page: Page): Locator => page.getByTestId('viewport-panel')
-const rows = (page: Page): Locator => page.getByTestId('hierarchy-panel').locator('[data-entity-id]')
+const rows = (page: Page): Locator => page.getByTestId('outliner-panel').locator('[data-entity-id]')
 const row = (page: Page, name: string): Locator => rows(page).filter({ hasText: name }).first()
 
 async function openScene(page: Page): Promise<void> {

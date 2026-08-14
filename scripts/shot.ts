@@ -58,7 +58,7 @@ const SHOTS: Record<string, Shot> = {
   /** As it opens: nothing selected, every panel saying what it is for. */
   editor: async () => undefined,
 
-  /** A level open with an entity selected — Hierarchy, Viewport and Inspector all full. */
+  /** A level open with an entity selected — Outliner, Viewport and Inspector all full. */
   level: async (page, projectPath) => {
     await openLevel(page, projectPath)
     await page.locator('[data-entity-id]').nth(1).click()

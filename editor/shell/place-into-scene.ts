@@ -13,7 +13,7 @@ import { snapPoint, type Snap } from './snap'
  * **Here rather than in either caller, because each of them now has two.**
  * Placing a prefab is a button in the Inspector, a mode in the viewport, and a
  * file dropped on the picture; making an entity that draws a texture is the
- * Hierarchy's Add followed by a pick, and a file dropped on the picture. Two
+ * Outliner's Add followed by a pick, and a file dropped on the picture. Two
  * copies of "what a placed instance is" is two chances to write one that copies
  * the prefab's components instead of pointing at it — which would look identical
  * on the day it was written and stop following the prefab the day after

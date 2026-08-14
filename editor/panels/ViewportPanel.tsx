@@ -41,7 +41,7 @@ import { SceneOverlay, describeScene } from './SceneOverlay'
  * document store's, what its instances inherit is `scene-prefabs.tsx`, which
  * textures all of that needs is `scene-assets.tsx`, and where the camera is
  * looking is `scene-view-context.tsx` — this panel fetches nothing of its own,
- * so the picture and the Hierarchy and the Inspector are all describing one
+ * so the picture and the Outliner and the Inspector are all describing one
  * object (`editor-ui` U12).
  *
  * It draws the **resolved** entities and edits the document, which is the rule

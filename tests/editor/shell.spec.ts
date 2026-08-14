@@ -3,7 +3,7 @@ import { expect, test, type Locator } from '@playwright/test'
 import { verticalDividerNear } from './dividers.js'
 import { EDITOR_TEST_PROJECT_NAME, editorTestProjectDisplayPath } from './test-project.js'
 
-const PANEL_TITLES = ['Viewport', 'Texture', 'Hierarchy', 'Inspector', 'Assets'] as const
+const PANEL_TITLES = ['Viewport', 'Texture', 'Outliner', 'Inspector', 'Assets'] as const
 
 test.beforeEach(async ({ page }) => {
   await page.goto('/')
@@ -20,7 +20,7 @@ test.describe('the editor shell', () => {
     // that is not on screen at rest.
     await expect(page.getByTestId('assets-panel')).toBeVisible()
     await expect(page.getByTestId('inspector-panel')).toBeVisible()
-    await expect(page.getByTestId('hierarchy-panel')).toBeVisible()
+    await expect(page.getByTestId('outliner-panel')).toBeVisible()
     await expect(page.getByTestId('viewport-panel')).toBeVisible()
   })
 
@@ -62,11 +62,11 @@ test.describe('the editor shell', () => {
   })
 
   test('panels resize by dragging the divider between them', async ({ page }) => {
-    const hierarchy = page.getByTestId('hierarchy-panel')
-    const before = await boxOf(hierarchy)
+    const outliner = page.getByTestId('outliner-panel')
+    const before = await boxOf(outliner)
 
     const divider = await verticalDividerNear(page, before.x + before.width)
-    expect(divider, 'a draggable divider on the right edge of the Hierarchy panel').not.toBeNull()
+    expect(divider, 'a draggable divider on the right edge of the Outliner panel').not.toBeNull()
     if (divider === null) return
 
     await page.mouse.move(divider.x, divider.y)
@@ -74,16 +74,16 @@ test.describe('the editor shell', () => {
     await page.mouse.move(divider.x + 120, divider.y, { steps: 12 })
     await page.mouse.up()
 
-    const after = await boxOf(hierarchy)
+    const after = await boxOf(outliner)
     expect(after.width).toBeGreaterThan(before.width + 80)
   })
 
   test('panels re-dock by dragging their tab onto another panel', async ({ page }) => {
     const inspectorTab = page.getByRole('tab', { name: 'Inspector', exact: true })
-    const hierarchyTab = page.getByRole('tab', { name: 'Hierarchy', exact: true })
+    const outlinerTab = page.getByRole('tab', { name: 'Outliner', exact: true })
     const groupHoldingBoth = page
       .locator('.dv-groupview')
-      .filter({ has: page.getByRole('tab', { name: 'Hierarchy', exact: true }) })
+      .filter({ has: page.getByRole('tab', { name: 'Outliner', exact: true }) })
       .filter({ has: page.getByRole('tab', { name: 'Inspector', exact: true }) })
 
     await expect(groupHoldingBoth).toHaveCount(0)
@@ -99,7 +99,7 @@ test.describe('the editor shell', () => {
      * whether it rounds to one side depends on the tab's sub-pixel width, which
      * is to say on the font. A test aimed there passes or fails on typography.
      */
-    await inspectorTab.dragTo(hierarchyTab, { targetPosition: { x: 20, y: 12 } })
+    await inspectorTab.dragTo(outlinerTab, { targetPosition: { x: 20, y: 12 } })
 
     await expect(groupHoldingBoth).toHaveCount(1)
     await expect(page.getByTestId('inspector-panel')).toBeVisible()

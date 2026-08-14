@@ -90,7 +90,7 @@ function texturesWantedBy(entities: readonly Entity[]): Map<string, string> {
  * Read once per window, shared by every panel that needs it.
  *
  * Three panels ask what a level's textures resolve to — the Viewport draws them,
- * the Hierarchy marks the entities that cannot be drawn, and the Inspector
+ * the Outliner marks the entities that cannot be drawn, and the Inspector
  * explains why. Three callers of the hook would be three sets of requests kept
  * on three timers, and a panel a beat behind its neighbour with nothing on
  * screen saying which one is right (`editor-ui` U9). Above the layout, because

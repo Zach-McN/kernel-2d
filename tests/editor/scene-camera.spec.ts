@@ -42,7 +42,7 @@ test.beforeEach(async ({ page }) => {
 const viewport = (page: Page): Locator => page.getByTestId('viewport-panel')
 
 const row = (page: Page, name: string): Locator =>
-  page.getByTestId('hierarchy-panel').locator('[data-entity-id]').filter({ hasText: name }).first()
+  page.getByTestId('outliner-panel').locator('[data-entity-id]').filter({ hasText: name }).first()
 
 interface Camera {
   scale: number
@@ -173,7 +173,7 @@ test('a scene opens with everything in it on screen', async ({ page }) => {
 
   // Five entities in the level, five of them visible. Framing is not "most of
   // it": a level laid out past the panel's edges is framed, not cropped.
-  await expect(page.getByTestId('hierarchy-panel').locator('[data-entity-id]')).toHaveCount(5)
+  await expect(page.getByTestId('outliner-panel').locator('[data-entity-id]')).toHaveCount(5)
   await expect.poll(() => onScreenCount(page)).toBe(5)
   await expect(page.getByTestId('viewport-offscreen')).toHaveCount(0)
 })

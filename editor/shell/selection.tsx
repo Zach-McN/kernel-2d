@@ -34,7 +34,7 @@ export type Selected =
 
 export interface Selection {
   selected: Selected
-  /** Which scene the Viewport and Hierarchy are showing, or null. */
+  /** Which scene the Viewport and Outliner are showing, or null. */
   openScene: string | null
 
   selectFile: (path: string) => void

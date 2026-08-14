@@ -48,14 +48,14 @@ test.beforeEach(async ({ page }) => {
 
 // --- driving ---------------------------------------------------------------
 
-const hierarchy = (page: Page): Locator => page.getByTestId('hierarchy-panel')
-const rows = (page: Page): Locator => hierarchy(page).locator('[data-entity-id]')
+const outliner = (page: Page): Locator => page.getByTestId('outliner-panel')
+const rows = (page: Page): Locator => outliner(page).locator('[data-entity-id]')
 const row = (page: Page, name: string): Locator =>
-  hierarchy(page).locator('[data-entity-id]').filter({ hasText: name }).first()
+  outliner(page).locator('[data-entity-id]').filter({ hasText: name }).first()
 
 async function openScene(page: Page, scenePath: string): Promise<void> {
   await selectAsset(page, scenePath)
-  await expect(hierarchy(page)).toHaveAttribute('data-scene', scenePath)
+  await expect(outliner(page)).toHaveAttribute('data-scene', scenePath)
 }
 
 /** How many sprites the renderer reports having actually drawn (V17). */
@@ -81,7 +81,7 @@ function fingerprint(projectRelative: string): { text: string; modifiedAt: numbe
   return { text: fs.readFileSync(file, 'utf8'), modifiedAt: fs.statSync(file).mtimeMs }
 }
 
-/** Which texture each row in the Hierarchy says it draws. */
+/** Which texture each row in the Outliner says it draws. */
 function textures(page: Page): Promise<string[]> {
   return rows(page).evaluateAll((buttons) =>
     buttons.map((button) => button.querySelector('.entity-row__texture')?.textContent ?? ''),
