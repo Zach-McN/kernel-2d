@@ -13,8 +13,6 @@ import zlib from 'node:zlib'
 
 export type Colour = readonly [red: number, green: number, blue: number, alpha: number]
 
-export const TRANSPARENT: Colour = [0, 0, 0, 0]
-
 export class PixelCanvas {
   readonly width: number
   readonly height: number

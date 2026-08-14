@@ -2,9 +2,10 @@
  * The shape of the module `scripts/game-code.ts` generates.
  *
  * It has no file on disk, so this is the only place a typechecker can learn what
- * importing it gives you. Kept beside the page that imports it rather than in a
- * global `env.d.ts`, because the module exists for exactly one reason and reading
- * it next to its consumer is worth more than tidiness.
+ * importing it gives you. Kept beside the shipped page that imports it rather
+ * than in a global `env.d.ts` — the editor's `running-level.ts` imports it too,
+ * but the module exists so a shipped game can load a project's systems, and
+ * reading it next to that consumer is worth more than tidiness.
  */
 declare module 'virtual:game-systems' {
   import type { System } from '../game/system'

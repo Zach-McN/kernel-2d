@@ -1,4 +1,5 @@
 import { DocumentViewSchema, type EditorDocument } from '../../sidecar/document-view-schema'
+import { refusal } from './refusal'
 
 /**
  * Reading one document, with no side effect anywhere.
@@ -107,14 +108,4 @@ async function send(
   // reads: a service speaking a shape this editor does not know should be
   // treated as a failed write, not as a successful one.
   DocumentViewSchema.parse(await response.json())
-}
-
-async function refusal(response: Response, fallback: string): Promise<string> {
-  try {
-    const body = (await response.json()) as { error?: unknown }
-    if (typeof body.error === 'string' && body.error !== '') return body.error
-  } catch {
-    // Fall through to the generic sentence below.
-  }
-  return fallback
 }

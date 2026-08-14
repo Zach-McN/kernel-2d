@@ -3,6 +3,7 @@ import path from 'node:path'
 
 import { annotatedPathFor, isMetaFileName, metaPathFor } from '../runtime/formats/meta-schema.js'
 import { FILE_CHANGE_FORMAT, FILE_CHANGE_VERSION, type FileChange } from './file-change-schema.js'
+import { exists, remove } from './fs-helpers.js'
 import { BadPathError, resolveInsideProject } from './meta-files.js'
 import { relativePosixPath } from './paths.js'
 
@@ -300,22 +301,4 @@ export async function deleteFile(projectPath: string, requestedPath: string): Pr
 function isInside(parent: string, candidate: string): boolean {
   const relative = path.relative(path.resolve(parent), path.resolve(candidate))
   return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative))
-}
-
-async function exists(absolutePath: string): Promise<boolean> {
-  try {
-    await fs.access(absolutePath)
-    return true
-  } catch {
-    return false
-  }
-}
-
-async function remove(absolutePath: string): Promise<void> {
-  try {
-    await fs.unlink(absolutePath)
-  } catch (error) {
-    // Already gone is the outcome that was wanted.
-    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
-  }
 }

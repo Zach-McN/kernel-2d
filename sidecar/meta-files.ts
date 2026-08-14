@@ -2,6 +2,8 @@ import { randomBytes } from 'node:crypto'
 import fs from 'node:fs/promises'
 import path from 'node:path'
 
+import { firstIssue } from './first-issue.js'
+import { exists, remove } from './fs-helpers.js'
 import { isIgnoredName } from './ignore.js'
 import {
   AssetMetaSchema,
@@ -344,31 +346,5 @@ function view(
     meta: parts.meta ?? null,
     problem: parts.problem ?? null,
     text: parts.text ?? null,
-  }
-}
-
-/** One issue, said plainly. A wall of validator output helps nobody read a panel. */
-function firstIssue(error: { issues: readonly { path: readonly PropertyKey[]; message: string }[] }): string {
-  const issue = error.issues[0]
-  if (issue === undefined) return 'it did not validate'
-  const where = issue.path.map(String).join('.')
-  return where === '' ? issue.message : `${where}: ${issue.message}`
-}
-
-async function exists(absolutePath: string): Promise<boolean> {
-  try {
-    await fs.access(absolutePath)
-    return true
-  } catch {
-    return false
-  }
-}
-
-async function remove(absolutePath: string): Promise<void> {
-  try {
-    await fs.unlink(absolutePath)
-  } catch (error) {
-    // Already gone is the outcome that was wanted.
-    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
   }
 }

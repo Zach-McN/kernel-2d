@@ -9,7 +9,7 @@
  * starts and stops a running level; it never drives one.
  *
  * The direction of the arrow is the whole point and it is asserted by
- * `tests/runtime/boundaries.test.ts`: the editor may import the runtime, and
+ * `tests/architecture/boundaries.test.ts`: the editor may import the runtime, and
  * nothing here may ever import the editor or the development-only service. A
  * game that ships with a panel in it is the failure this boundary exists to
  * prevent, and it is far cheaper to hold now than to unpick later.

@@ -1,5 +1,6 @@
 import type { AssetMeta } from '../../runtime/formats/meta-schema'
 import { MetaViewSchema } from '../../sidecar/meta-view-schema'
+import { refusal } from './refusal'
 
 /**
  * Putting one document back on disk, through the editor service.
@@ -20,20 +21,11 @@ export async function writeMetaToDisk(path: string, document: AssetMeta): Promis
     cache: 'no-store',
   })
 
-  if (!response.ok) throw new Error(await refusal(response))
+  if (!response.ok)
+    throw new Error(await refusal(response, 'The editor service would not save these settings.'))
 
   // Validated rather than trusted, the same as every other answer this editor
   // reads: a service speaking a shape this editor does not know should be
   // treated as a failed write, not as a successful one.
   MetaViewSchema.parse(await response.json())
-}
-
-async function refusal(response: Response): Promise<string> {
-  try {
-    const body = (await response.json()) as { error?: unknown }
-    if (typeof body.error === 'string' && body.error !== '') return body.error
-  } catch {
-    // Fall through to the generic sentence below.
-  }
-  return 'The editor service would not save these settings.'
 }

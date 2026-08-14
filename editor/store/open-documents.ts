@@ -99,11 +99,6 @@ export const { sealEdits, peekUndo, peekRedo, beginRead, adoptFromDisk, flushSav
 
 export type { Document }
 
-/** The document for one path, whatever kind it is, or null if not loaded. */
-export function useDocument(path: string | null): Document | null {
-  return useDocumentState((state) => (path === null ? null : (state.docs[path] ?? null)))
-}
-
 /**
  * Every document this window is holding.
  *

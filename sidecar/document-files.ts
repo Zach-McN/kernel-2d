@@ -10,6 +10,7 @@ import {
   type DocumentView,
   type EditorDocument,
 } from './document-view-schema.js'
+import { firstIssue } from './first-issue.js'
 import { BadDocumentError, BadPathError, resolveInsideProject } from './meta-files.js'
 import { relativePosixPath } from './paths.js'
 
@@ -296,12 +297,4 @@ function view(
     problem: parts.problem ?? null,
     text: parts.text ?? null,
   }
-}
-
-/** One issue, said plainly. A wall of validator output helps nobody read a panel. */
-function firstIssue(error: { issues: readonly { path: readonly PropertyKey[]; message: string }[] }): string {
-  const issue = error.issues[0]
-  if (issue === undefined) return 'it did not validate'
-  const where = issue.path.map(String).join('.')
-  return where === '' ? issue.message : `${where}: ${issue.message}`
 }

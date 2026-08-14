@@ -5,7 +5,7 @@ import {
   assetTypeForName,
   defaultImportSettings,
   defaultMeta,
-  metaPathFor as appendMetaSuffix,
+  metaPathFor,
   serializeMeta,
 } from '../../runtime/formats/meta-schema.js'
 import { writeLauncher } from '../launcher/write.js'
@@ -62,11 +62,6 @@ export function writeSampleProject(projectPath: string, options: WriteOptions = 
   ;(launcher.written ? report.written : report.skipped).push(launcher.path)
 
   return report
-}
-
-/** The `.meta` sidecar carries the marking for anything that cannot hold it inside. */
-export function metaPathFor(absolutePath: string): string {
-  return appendMetaSuffix(absolutePath)
 }
 
 /**

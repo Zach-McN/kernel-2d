@@ -1,6 +1,7 @@
 import * as Phaser from 'phaser'
 
 import { spriteOf, type Entity } from '../formats/scene-schema'
+import { forgetOldestBeyond, loadImage, setCanvasStyleSize } from '../textures/image-cache'
 import { applyImportSettings } from '../textures/import-settings'
 import { createEntityLayer, type DrawnEntity, type EntityLayer, type ResolvedSprite } from './entity-layer'
 import type { SceneRequest, SceneTexture } from './scene-request'
@@ -432,46 +433,4 @@ class SceneStage extends Phaser.Scene {
     if (this.layer === null) throw new Error('the scene stage was used before it was ready')
     return this.layer
   }
-}
-
-/** Fetches and decodes an image, or hands back the one already decoded. */
-async function loadImage(
-  cache: Map<string, HTMLImageElement>,
-  key: string,
-  url: string,
-): Promise<HTMLImageElement> {
-  const cached = cache.get(key)
-  if (cached !== undefined) {
-    // Re-inserted so the eviction order is "least recently drawn".
-    cache.delete(key)
-    cache.set(key, cached)
-    return cached
-  }
-
-  const image = new Image()
-  image.src = url
-  await image.decode()
-
-  cache.set(key, image)
-  return image
-}
-
-/** Drops the least recently drawn images, and the GPU textures with them. */
-function forgetOldestBeyond(
-  cache: Map<string, HTMLImageElement>,
-  textures: Phaser.Textures.TextureManager,
-  limit: number,
-  keep: ReadonlySet<string>,
-): void {
-  for (const key of [...cache.keys()]) {
-    if (cache.size <= limit) return
-    if (keep.has(key)) continue
-    cache.delete(key)
-    if (textures.exists(key)) textures.remove(key)
-  }
-}
-
-function setCanvasStyleSize(canvas: HTMLCanvasElement, width: number, height: number): void {
-  canvas.style.width = `${width}px`
-  canvas.style.height = `${height}px`
 }

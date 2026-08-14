@@ -2,6 +2,7 @@ import * as Phaser from 'phaser'
 
 import type { TextureFilter, TextureImportSettings } from '../formats/meta-schema'
 import type { FrameRect } from '../textures/frames'
+import { forgetOldestBeyond, loadImage, setCanvasStyleSize } from '../textures/image-cache'
 import { applyImportSettings, filterOf } from '../textures/import-settings'
 
 /**
@@ -200,7 +201,7 @@ export async function createTextureView(options: TextureViewOptions): Promise<Te
       }
 
       scene.draw(key, shown.placement, pixelRatio)
-      forgetOldestBeyond(images, scene.textures, IMAGE_CACHE_LIMIT, key)
+      forgetOldestBeyond(images, scene.textures, IMAGE_CACHE_LIMIT, new Set([key]))
       current = shown
       return shown
     },
@@ -281,49 +282,4 @@ class PreviewScene extends Phaser.Scene {
       .setPosition(Math.round(placement.x * pixelRatio), Math.round(placement.y * pixelRatio))
       .setScale(placement.scale * pixelRatio)
   }
-}
-
-/** Fetches and decodes an image, or hands back the one already decoded. */
-async function loadImage(
-  cache: Map<string, HTMLImageElement>,
-  key: string,
-  url: string,
-): Promise<HTMLImageElement> {
-  const cached = cache.get(key)
-  if (cached !== undefined) {
-    // Re-inserted so the eviction order is "least recently shown".
-    cache.delete(key)
-    cache.set(key, cached)
-    return cached
-  }
-
-  const image = new Image()
-  image.src = url
-  await image.decode()
-
-  cache.set(key, image)
-  return image
-}
-
-/**
- * Drops the least recently shown images, and the GPU textures that go with
- * them, once there are more than the cache is meant to hold.
- */
-function forgetOldestBeyond(
-  cache: Map<string, HTMLImageElement>,
-  textures: Phaser.Textures.TextureManager,
-  limit: number,
-  keep: string,
-): void {
-  for (const key of [...cache.keys()]) {
-    if (cache.size <= limit) return
-    if (key === keep) continue
-    cache.delete(key)
-    if (textures.exists(key)) textures.remove(key)
-  }
-}
-
-function setCanvasStyleSize(canvas: HTMLCanvasElement, width: number, height: number): void {
-  canvas.style.width = `${width}px`
-  canvas.style.height = `${height}px`
 }

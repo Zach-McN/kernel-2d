@@ -288,7 +288,7 @@ function NewDocument({
           // The prefab is named after the file it is going into, which is the
           // name the human just typed — there is nothing else it could sensibly
           // be, and it is editable the moment it opens.
-          onClick={() => create(defaultPrefab(mintId(), stemOf(file)))}
+          onClick={() => create(defaultPrefab(mintId(), withoutJsonExtension(file)))}
         >
           New prefab
         </button>
@@ -309,8 +309,8 @@ function NewDocument({
   )
 }
 
-/** A file name without its extension, for naming what goes inside it. */
-function stemOf(file: string): string {
+/** A file name without its `.json`, for naming what goes inside it. */
+function withoutJsonExtension(file: string): string {
   return file.replace(/\.json$/i, '')
 }
 

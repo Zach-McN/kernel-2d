@@ -24,7 +24,7 @@ import { TextureOverlay, describeShown } from './TextureOverlay'
  *
  * It is brought to the front when a texture is selected, by the shell rather
  * than by itself: a panel behind another tab is not rendering, and cannot ask to
- * be looked at (`editor/shell/useTextureTab.ts`).
+ * be looked at (`editor/shell/useSelectionFocus.ts`).
  *
  * Every state gets a sentence rather than a blank, and they are deliberately
  * different sentences: "nothing is selected" and "what is selected is a sound"

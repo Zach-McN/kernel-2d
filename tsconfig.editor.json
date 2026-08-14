@@ -10,7 +10,7 @@
   // `runtime/` is browser code too — it ships inside the game, which is a web
   // page — so it is checked here rather than with the sidecar's config. The
   // import direction is the other half of the boundary and is asserted by
-  // `tests/runtime/boundaries.test.ts`, not by this file.
+  // `tests/architecture/boundaries.test.ts`, not by this file.
   //
   // Vitest tests of browser-side code are checked here rather than with the
   // sidecar's config, because the Node project's resolution cannot follow the

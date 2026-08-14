@@ -1,4 +1,5 @@
 import { FileChangeSchema, type FileChange } from '../../sidecar/file-change-schema'
+import { refusal } from './refusal'
 
 /**
  * Moving one file, and deleting one file, through the editor service.
@@ -42,14 +43,4 @@ async function send(url: string, fallback: string): Promise<FileChange> {
   // reads: a service speaking a shape this editor does not know should be
   // treated as a failed operation, not as a successful one.
   return FileChangeSchema.parse(await response.json())
-}
-
-async function refusal(response: Response, fallback: string): Promise<string> {
-  try {
-    const body = (await response.json()) as { error?: unknown }
-    if (typeof body.error === 'string' && body.error !== '') return body.error
-  } catch {
-    // Fall through to the generic sentence below.
-  }
-  return fallback
 }

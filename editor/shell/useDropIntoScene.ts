@@ -135,7 +135,7 @@ async function placeAsset(
     placed: placeSpriteEntity({
       scenePath,
       texture: { id: view.meta.id, path },
-      stem: stemOf(name),
+      stem: withoutExtension(name),
       at,
       snap,
     }),
@@ -157,7 +157,7 @@ function describeAsset(type: AssetType): string {
 }
 
 /** A file's name without its extension, which is what the entity is called. */
-function stemOf(name: string): string {
+function withoutExtension(name: string): string {
   const dot = name.lastIndexOf('.')
   return dot <= 0 ? name : name.slice(0, dot)
 }

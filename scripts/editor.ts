@@ -13,7 +13,7 @@ import { startEditor, type RunningEditor } from './editor/start.js'
  * already taken — happens before anything is running, so there is never a
  * half-started editor pointed at nothing.
  *
- * The starting itself is `editor/start.ts`, shared with the screenshot tool.
+ * The starting itself is `scripts/editor/start.ts`, shared with the screenshot tool.
  * What is left here is the command: reading the arguments, and stopping.
  */
 
