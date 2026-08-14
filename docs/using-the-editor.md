@@ -54,8 +54,7 @@ running. Ctrl-C stops both halves.
 
 **Give a folder its button.** Writes `Open editor.cmd` into it, which is the
 double-click above. A folder made by `npm run sample-project` already has one;
-run this for a folder that does not, and again if you ever move a game folder or
-the `kernel-2d` folder — the button remembers where the other one was:
+run this for a folder that does not:
 
 ```bash
 npm run launcher -- ../my-game
@@ -63,6 +62,12 @@ npm run launcher -- ../my-game
 
 It will not touch a file of that name that it did not write itself, so a launcher
 you have edited by hand is safe.
+
+**Moving folders.** The button remembers where the `kernel-2d` folder was, so
+moving a game folder away from it — or moving `kernel-2d` — leaves it pointing at
+nothing. Double-clicking it then says so and waits, and the fix is to **ask a
+session to refresh the launcher**, which is the command above run once. Moving the
+whole `gamedev` folder as one piece changes nothing and needs no refresh.
 
 **Make a folder that plays your game:**
 

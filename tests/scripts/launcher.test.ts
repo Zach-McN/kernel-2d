@@ -98,6 +98,27 @@ describe('the launcher a game folder is opened with', () => {
     expect(text.match(/^\s*pause$/gm)?.length).toBe(2)
   })
 
+  it('tells the human to ask for a refresh rather than to run something', () => {
+    write()
+
+    // The person who sees this message is the one who never opens a terminal.
+    // A message whose only remedy is a command is a message with no remedy.
+    expect(written()).toContain('ASK CLAUDE TO REFRESH THIS LAUNCHER')
+  })
+
+  it('sticks to characters a console window can print', () => {
+    write()
+
+    // The console reads this in the OEM codepage, not UTF-8: a dash out of a
+    // word processor arrives as mojibake in the middle of an error message.
+    const strange = [...written()].filter((character) => {
+      const code = character.codePointAt(0) ?? 0
+      return code > 126 || (code < 32 && character !== '\r' && character !== '\n')
+    })
+
+    expect(strange).toEqual([])
+  })
+
   it('produces the same bytes every time, so re-running does not churn the folder', () => {
     write()
     const first = written()
