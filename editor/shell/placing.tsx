@@ -29,6 +29,15 @@ import { WHOLE_UNITS, type Snap } from './snap'
  * twenty — the Inspector would move off the prefab on the first press. So the
  * prefab being placed is remembered here, and pressing in the picture is free
  * to change nothing at all.
+ *
+ * **The file being dragged out of the Assets panel is here too**, for the same
+ * reason and one more. It is the third way something gets put down, so it is
+ * the same subject; and both ends of the gesture are in this window, which means
+ * the path does not have to travel in the drag's own `dataTransfer` — that
+ * carries a marker saying "this is one of ours" and nothing else, because data
+ * put in a `dataTransfer` cannot be *read* until the drop, and the viewport has
+ * to be able to say what it is about to place while the pointer is still moving.
+ * One copy of the fact, in the one place both panels can see it.
  */
 
 export interface Placing {
@@ -41,6 +50,11 @@ export interface Placing {
   stamping: string | null
   startStamping: (prefabPath: string) => void
   stopStamping: () => void
+
+  /** The file being dragged out of the Assets panel right now, or null. */
+  dragging: string | null
+  startDragging: (path: string) => void
+  stopDragging: () => void
 }
 
 const PlacingContext = createContext<Placing | null>(null)
@@ -48,13 +62,25 @@ const PlacingContext = createContext<Placing | null>(null)
 export function PlacingProvider({ children }: { children: ReactNode }): ReactElement {
   const [snap, setSnap] = useState<Snap>(WHOLE_UNITS)
   const [stamping, setStamping] = useState<string | null>(null)
+  const [dragging, setDragging] = useState<string | null>(null)
 
   const startStamping = useCallback((prefabPath: string) => setStamping(prefabPath), [])
   const stopStamping = useCallback(() => setStamping(null), [])
+  const startDragging = useCallback((path: string) => setDragging(path), [])
+  const stopDragging = useCallback(() => setDragging(null), [])
 
   const value = useMemo<Placing>(
-    () => ({ snap, setSnap, stamping, startStamping, stopStamping }),
-    [snap, stamping, startStamping, stopStamping],
+    () => ({
+      snap,
+      setSnap,
+      stamping,
+      startStamping,
+      stopStamping,
+      dragging,
+      startDragging,
+      stopDragging,
+    }),
+    [snap, stamping, startStamping, stopStamping, dragging, startDragging, stopDragging],
   )
 
   return <PlacingContext.Provider value={value}>{children}</PlacingContext.Provider>

@@ -13,6 +13,7 @@ import { describeProblem, problemsIn, useSceneAssets } from '../shell/scene-asse
 import { describePrefabProblem, prefabProblemsIn, useResolvedScene } from '../shell/scene-prefabs'
 import { useDrawScene, useSceneView, type SceneViewState } from '../shell/scene-view-context'
 import { freePoint, snapPoint } from '../shell/snap'
+import { useSceneDropTarget, type SceneDropTarget } from '../shell/useSceneDropTarget'
 import { useSceneGestures, type Grab, type ScenePlacement } from '../shell/useSceneGestures'
 import { useSelection } from '../shell/selection'
 import { useDuplicateEntity } from '../shell/useDuplicateEntity'
@@ -132,6 +133,10 @@ export function ViewportPanel(): ReactElement {
     placement,
   })
 
+  // A file let go over the picture. Off while a level is running, like every
+  // other way of changing one.
+  const dropTarget = useSceneDropTarget({ shown: current, enabled: !mode.active })
+
   const camera = current?.camera ?? null
   const visible = current === null ? null : onScreen(current)
 
@@ -189,7 +194,12 @@ export function ViewportPanel(): ReactElement {
       data-play-units={runningLevel === null ? '' : JSON.stringify(runningLevel.units)}
       data-play-steps={runningLevel === null ? '' : String(runningLevel.steps)}
     >
-      <Stage host={host} view={view} grab={grabOf(gestures, placing.stamping !== null && !mode.active)}>
+      <Stage
+        host={host}
+        view={view}
+        grab={grabOf(gestures, placing.stamping !== null && !mode.active)}
+        drop={dropTarget}
+      >
         {/* No editor marks over a running game. */}
         {current !== null && !mode.active && (
           <SceneOverlay shown={current} selected={selected} axis={gestures.grabbing?.axis ?? null} />
@@ -217,6 +227,8 @@ export function ViewportPanel(): ReactElement {
           stampingName={
             placing.stamping === null ? null : (stamp.prefabName ?? basename(placing.stamping))
           }
+          dropping={dropTarget.over ? dropTarget.carrying : null}
+          dropRefused={dropTarget.refused}
           onPlay={mode.start}
           // Not merely "there is a picture": a level's textures arrive one at a
           // time, so a report can be a real report of this level with half of it
@@ -424,6 +436,8 @@ interface StageProps {
   view: SceneViewState
   /** Which cursor to offer, decided by whichever gesture has priority. */
   grab: string
+  /** The picture as somewhere a file from the Assets panel can be let go. */
+  drop: SceneDropTarget
   children: ReactNode
 }
 
@@ -435,7 +449,7 @@ interface StageProps {
  * drag this tab across the layout without the renderer noticing, and what keeps
  * the camera pointing where they left it.
  */
-function Stage({ host, view, grab, children }: StageProps): ReactElement {
+function Stage({ host, view, grab, drop, children }: StageProps): ReactElement {
   const canvas = view.state === 'ready' ? view.canvas : null
   const measure = view.state === 'ready' ? view.measure : null
 
@@ -475,10 +489,15 @@ function Stage({ host, view, grab, children }: StageProps): ReactElement {
       ref={host}
       data-testid="viewport-stage"
       data-grab={grab}
+      data-dropping={drop.over}
       // Focusable, but never in the tab order. Pressing in the picture moves
       // focus here, which is what takes it off a field the human was typing in
       // — otherwise clicking a sprite and pressing F types an f into a name.
       tabIndex={-1}
+      onDragEnter={drop.onDragEnter}
+      onDragOver={drop.onDragOver}
+      onDragLeave={drop.onDragLeave}
+      onDrop={drop.onDrop}
     >
       {children}
     </div>
@@ -521,6 +540,10 @@ interface CaptionProps {
   placing: Placing
   /** What is being repeat-placed, in words, or null when nothing is. */
   stampingName: string | null
+  /** The file hovering over the picture right now, named, or null. */
+  dropping: string | null
+  /** Why the last file let go here put nothing down, or null. */
+  dropRefused: string | null
   onPlay: () => void
   /** False until there is a settled picture of this level to run — and to check against. */
   canPlay: boolean
@@ -544,6 +567,8 @@ function Caption({
   grab,
   placing,
   stampingName,
+  dropping,
+  dropRefused,
   onPlay,
   canPlay,
 }: CaptionProps): ReactElement {
@@ -645,7 +670,17 @@ function Caption({
        * differs: a grab is a mode with no button held, so the axis keys and the
        * way out of it are things a human can only find out by being told.
        */}
-      {stampingName !== null ? (
+      {/*
+       * A file hovering over the picture takes the sentence, because it is the
+       * most current thing on screen and because it is the only place the human
+       * finds out the drop will land *here* rather than wherever the level's
+       * origin happens to be.
+       */}
+      {dropping !== null ? (
+        <Note testId="viewport-dropping" title={`Let go to put ${dropping} in the level here`}>
+          Drop <strong>{dropping}</strong> here.
+        </Note>
+      ) : stampingName !== null ? (
         <Note testId="viewport-stamping" title={`Every click in the level places another ${stampingName}. Esc stops it.`}>
           Placing <strong>{stampingName}</strong> — Esc to stop.
         </Note>
@@ -672,6 +707,15 @@ function Caption({
        * has to debug by counting, and the answer — which file, under which name
        * — is right here.
        */}
+      {/* A file that was let go here and could not become anything says what it
+          was instead. It stays until the next drag, because it answers a
+          question the human has only just asked. */}
+      {dropRefused !== null && (
+        <Note bad testId="viewport-drop-refused" title={dropRefused}>
+          {dropRefused}
+        </Note>
+      )}
+
       {prefabProblems.map((problem) => (
         <Note key={problem.path} bad testId="viewport-problem" title={describePrefabProblem(problem)}>
           {describePrefabProblem(problem)}

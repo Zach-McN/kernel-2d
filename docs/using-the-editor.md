@@ -276,11 +276,31 @@ pivot drawn over it, so you can see what the settings actually did.
 A level is a flat, ordered list of entities. **List order is draw order** — the
 last row is drawn in front.
 
-- **Assets panel** → *New scene* / *New prefab*, with a name and a folder.
+- **Assets panel** → *New scene* / *New prefab*, with a name and a folder. Also
+  **drag a file onto the level** — see below.
 - **Hierarchy** → add, duplicate, delete, and move a row back or forward.
 - **Viewport** → click to select, drag to move, `G` to move without holding
   anything, `Shift-D` for a copy.
 - **Inspector** → name, position, rotation, scale, spin, and which texture it draws.
+
+#### Dragging things in
+
+**Pick a file up in the Assets panel and let it go over the level.** The picture
+lights up while you are over it and says what you are carrying; where you let go
+is where it lands, on the snap like everything else.
+
+- **A texture** becomes a new entity that draws it, named after the file.
+- **A prefab** becomes an instance of that prefab — the same thing the *Place*
+  button makes, and it still follows the prefab when you change it.
+
+Whatever you drop is selected the moment it lands, so the Inspector is already on
+it. One drop is one press of `Ctrl-Z`.
+
+It works from either view of the Assets panel, and folders cannot be picked up.
+**Anything else you drop says what it is instead** — "level-02.json is a level, so
+it cannot be placed in a level", "jump.wav is a sound" — rather than quietly doing
+nothing. Dragging a file in from Explorer does nothing at all; put it in the
+project folder and it appears in the panel like any other.
 
 ### Your game's own code
 
@@ -618,8 +638,11 @@ the editor takes the change.
 - **Sort, search or filter the icon view.** Folders first and then files,
   alphabetically, the same order the tree uses, and everything in the folder is
   shown.
-- **Drag a file from one folder into another.** Moving is still the name field and
-  the folder chooser at the bottom of the panel.
+- **Drag a file from one folder into another.** Files drag *into the level*, not
+  into other folders; moving one is still the name field and the folder chooser at
+  the bottom of the panel.
+- **Drag a file into the Hierarchy, or onto an entity to give it that texture.**
+  The level's picture is the only place a drop means anything.
 - **A back button, or a bigger and smaller icon size.** The trail above the tiles
   is how you go back up, and the tiles are one size.
 

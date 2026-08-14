@@ -10,6 +10,7 @@ import { assetRowsFor, type AssetRow } from '../shell/asset-rows'
 import { useProject } from '../shell/project-context'
 import { pointsAt } from '../shell/references'
 import { useSelection } from '../shell/selection'
+import { NOT_DRAGGABLE, useAssetDrag, type AssetDragProps } from '../shell/useAssetDrag'
 import { useFileMoves, type Outcome, type UseReport } from '../shell/useFileMoves'
 import { createDocumentOnDisk } from '../store/document-disk'
 import { mintId } from '../store/ids'
@@ -59,6 +60,7 @@ export function AssetsPanel(): ReactElement {
   const project = useProject()
   const selection = useSelection()
   const browsing = useAssetBrowsing()
+  const dragProps = useAssetDrag()
 
   const reveal = (path: string): void => {
     browsing.revealParents(path)
@@ -106,6 +108,7 @@ export function AssetsPanel(): ReactElement {
                   // which is the whole of what the split view is for. Harmless
                   // in the tree-only view, where no grid is listening.
                   onOpenFolder={browsing.openFolder}
+                  dragProps={dragProps}
                 />
               ))}
             </ul>
@@ -526,6 +529,8 @@ interface AssetNodeProps {
   onToggle: (path: string) => void
   onSelect: (path: string) => void
   onOpenFolder: (path: string) => void
+  /** What makes a file draggable. Asked per row, and never for a folder. */
+  dragProps: (path: string) => AssetDragProps
 }
 
 function AssetNode({
@@ -536,6 +541,7 @@ function AssetNode({
   onToggle,
   onSelect,
   onOpenFolder,
+  dragProps,
 }: AssetNodeProps): ReactElement {
   const { node } = row
   const isFolder = node.kind === 'directory'
@@ -547,6 +553,7 @@ function AssetNode({
         type="button"
         className="asset-row__button"
         style={{ paddingLeft: `${depth * 14 + 8}px` }}
+        {...(isFolder ? NOT_DRAGGABLE : dragProps(node.path))}
         data-asset-path={node.path}
         data-kind={node.kind}
         data-selected={selected === node.path}
@@ -588,6 +595,7 @@ function AssetNode({
               onToggle={onToggle}
               onSelect={onSelect}
               onOpenFolder={onOpenFolder}
+              dragProps={dragProps}
             />
           ))}
         </ul>

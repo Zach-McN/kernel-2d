@@ -5,6 +5,7 @@ import { findNode } from '../shell/asset-kinds'
 import { useAssetBrowsing } from '../shell/asset-browsing'
 import { assetRowsFor, type AssetRow } from '../shell/asset-rows'
 import { useSelection } from '../shell/selection'
+import { NOT_DRAGGABLE, useAssetDrag, type AssetDragProps } from '../shell/useAssetDrag'
 
 /**
  * One folder at a time, as tiles — the file-explorer way of looking at a project.
@@ -30,6 +31,7 @@ import { useSelection } from '../shell/selection'
 export function AssetGrid({ tree }: { tree: ProjectTree }): ReactElement {
   const selection = useSelection()
   const { folder, openFolder, expandFolder } = useAssetBrowsing()
+  const dragProps = useAssetDrag()
 
   // The top of the project is `''` here and `.` in the tree, so the root is
   // reached by name rather than looked up — see `asset-browsing.tsx`.
@@ -77,6 +79,9 @@ export function AssetGrid({ tree }: { tree: ProjectTree }): ReactElement {
             openFolder(path)
             expandFolder(path)
           }}
+          // A folder is not something that can land in a level, so it is not
+          // something that can be picked up (`useAssetDrag.ts`).
+          drag={row.node.kind === 'file' ? dragProps(row.node.path) : NOT_DRAGGABLE}
         />
       ))}
     </ul>
@@ -88,9 +93,11 @@ interface AssetTileProps {
   selected: boolean
   onSelect: (path: string) => void
   onEnter: (path: string) => void
+  /** What makes this tile draggable — or the folder's refusal to be. */
+  drag: AssetDragProps
 }
 
-function AssetTile({ row, selected, onSelect, onEnter }: AssetTileProps): ReactElement {
+function AssetTile({ row, selected, onSelect, onEnter, drag }: AssetTileProps): ReactElement {
   const { node } = row
   const isFolder = node.kind === 'directory'
 
@@ -99,6 +106,7 @@ function AssetTile({ row, selected, onSelect, onEnter }: AssetTileProps): ReactE
       <button
         type="button"
         className="asset-tile__button"
+        {...drag}
         data-asset-path={node.path}
         data-kind={node.kind}
         data-selected={selected}

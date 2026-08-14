@@ -1,14 +1,10 @@
-import { instanceOfPrefab } from '../../runtime/formats/prefab-schema'
-import { SCENE_FORMAT, type Entity } from '../../runtime/formats/scene-schema'
 import type { Point } from '../../runtime/scene/coordinates'
-import { mintId } from '../store/ids'
-import { editDocument, usePrefabDocument } from '../store/open-documents'
-import { freeName, namesIn } from './entity-names'
+import { usePrefabDocument } from '../store/open-documents'
+import { placePrefabInstance } from './place-into-scene'
 import { usePlacing } from './placing'
 import { useResolvedScene } from './scene-prefabs'
 import { useSceneView } from './scene-view-context'
 import { useSelection } from './selection'
-import { snapPoint } from './snap'
 
 /**
  * Putting one instance of a prefab into the open level.
@@ -23,14 +19,15 @@ import { snapPoint } from './snap'
  *
  * Two decisions live in here:
  *
- *   - **It writes a reference and nothing else.** Copying the prefab's
- *     components in at placement time would look identical on the day it was
- *     placed and stop following the prefab the day after, which is the one thing
- *     placing by reference is for.
  *   - **It lands where it is asked to, snapped the same way a drag is** — in the
  *     middle of what the Viewport is showing when nowhere is named. The level's
  *     origin is frequently nowhere near the screen once there is a camera, so
  *     placing there would be correct and invisible.
+ *   - **The prefab comes from the document store**, which is what this hook is
+ *     for. The recipe that writes the instance is not: a prefab dropped on the
+ *     picture was read off disk a moment earlier and has never been in the
+ *     store, so what an instance *is* lives in `place-into-scene.ts` and both
+ *     callers use it.
  *
  * **Two doors rather than one function taking an optional point**, because the
  * caller that has no point is a button: `onClick={place}` hands a React event to
@@ -74,21 +71,9 @@ export function usePlacePrefab(prefabPath: string | null): {
     const scenePath = resolved.path
     if (scenePath === null || prefab === null || prefabPath === null) return null
 
-    const landing = snapPoint(at, placing.snap)
-    const id = mintId()
-
-    editDocument(scenePath, { label: 'Place prefab' }, (document) => {
-      if (document.format !== SCENE_FORMAT) return
-      const entity = instanceOfPrefab(id, nextInstanceName(document.entities, prefab.name), {
-        id: prefab.id,
-        path: prefabPath,
-      })
-      entity.transform.x = landing.x
-      entity.transform.y = landing.y
-      document.entities.push(entity)
-    })
-
-    return id
+    // The recipe itself is shared with the drop, which has read its prefab off
+    // disk rather than from the store (`place-into-scene.ts`).
+    return placePrefabInstance({ scenePath, prefabPath, prefab, at, snap: placing.snap }).entity
   }
 
   const place = (): void => {
@@ -106,16 +91,4 @@ export function usePlacePrefab(prefabPath: string | null): {
       put(at)
     },
   }
-}
-
-/**
- * What a placed instance is called: the prefab's name, then a number.
- *
- * Counting within the level rather than across the project, because "Slime 2"
- * should mean the second one here and not the second one ever placed. The bare
- * name is offered first, so the only slime in a level is just "Slime".
- */
-function nextInstanceName(entities: readonly Entity[], prefabName: string): string {
-  const stem = prefabName.trim() === '' ? 'Instance' : prefabName.trim()
-  return freeName(namesIn(entities), stem, { bare: true })
 }

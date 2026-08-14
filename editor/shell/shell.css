@@ -1065,6 +1065,20 @@ body {
 }
 
 /*
+ * A file from the Assets panel is over the picture and letting go will put it
+ * down here.
+ *
+ * Drawn as an inset ring rather than a border, and with no change to the box:
+ * the stage's size is what framing is computed against, so a highlight that took
+ * a pixel off it would resize the canvas at the moment the human is aiming at it
+ * (UG8, and UG13 one panel over). The accent, because this is the most current
+ * thing on screen for as long as it is there.
+ */
+.viewport__stage[data-dropping='true'] {
+  box-shadow: inset 0 0 0 2px var(--shell-accent);
+}
+
+/*
  * The scene's caption is one line, always, however much it has to say.
  *
  * This is a constraint rather than a style. The bar sits under the stage, so a
