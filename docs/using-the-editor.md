@@ -80,6 +80,17 @@ It prints the folder it wrote and every file in it. By default that folder is
 `dist/<your-game>` inside `kernel-2d`; `--out ../somewhere-else` puts it wherever
 you like, as long as that is not inside your project folder.
 
+**Take pictures of the editor**, for a devlog or to send someone. It opens your
+project, saves a few PNGs into `kernel-2d/shots/`, and closes again — it never
+changes anything in your folder:
+
+```bash
+npm run shot -- ../my-game
+```
+
+Name one — `editor`, `level`, `texture` or `tabs` — to take just that one, and add
+`--scale 3` for a close-up worth zooming into.
+
 **Look at the folder you just made:**
 
 ```bash

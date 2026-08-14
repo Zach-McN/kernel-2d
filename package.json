@@ -12,6 +12,7 @@
     "sidecar": "tsx sidecar/main.ts",
     "sample-project": "tsx scripts/sample-project.ts",
     "launcher": "tsx scripts/launcher.ts",
+    "shot": "tsx scripts/shot.ts",
     "export": "tsx scripts/export.ts",
     "serve": "tsx scripts/serve.ts",
     "dev": "vite",

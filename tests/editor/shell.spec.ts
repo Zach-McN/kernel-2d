@@ -1,5 +1,6 @@
-import { expect, test, type Locator, type Page } from '@playwright/test'
+import { expect, test, type Locator } from '@playwright/test'
 
+import { verticalDividerNear } from './dividers.js'
 import { EDITOR_TEST_PROJECT_NAME, editorTestProjectDisplayPath } from './test-project.js'
 
 const PANEL_TITLES = ['Viewport', 'Texture', 'Hierarchy', 'Inspector', 'Assets'] as const
@@ -64,7 +65,7 @@ test.describe('the editor shell', () => {
     const hierarchy = page.getByTestId('hierarchy-panel')
     const before = await boxOf(hierarchy)
 
-    const divider = await dividerRightOf(page, before.x + before.width)
+    const divider = await verticalDividerNear(page, before.x + before.width)
     expect(divider, 'a draggable divider on the right edge of the Hierarchy panel').not.toBeNull()
     if (divider === null) return
 
@@ -117,23 +118,4 @@ async function boxOf(locator: Locator): Promise<{ x: number; y: number; width: n
   return box
 }
 
-/**
- * The vertical divider sitting on a given x, if it is draggable. Dockview marks
- * a divider disabled when the panels either side are already at their limits,
- * and a disabled one would fail the drag for an uninteresting reason.
- */
-async function dividerRightOf(page: Page, x: number): Promise<{ x: number; y: number } | null> {
-  const sashes = page.locator('.dv-sash:not(.dv-disabled)')
-
-  for (let index = 0; index < (await sashes.count()); index += 1) {
-    const box = await sashes.nth(index).boundingBox()
-    if (box === null) continue
-    const isVertical = box.height > box.width
-    if (isVertical && Math.abs(box.x + box.width / 2 - x) < 12) {
-      return { x: box.x + box.width / 2, y: box.y + box.height / 2 }
-    }
-  }
-
-  return null
-}
 

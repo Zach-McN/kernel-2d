@@ -37,6 +37,9 @@
   --shell-accent: #ff6144;
   --shell-accent-hot: #e74f34;
   --shell-accent-wash: rgba(255, 97, 68, 0.14);
+  /* The accent worn as a marking rather than as a colour: a hairline that says
+     which tab is current without becoming the loudest thing on the screen. */
+  --shell-accent-line: rgba(255, 97, 68, 0.6);
 
   /*
    * What a control is filled with. Opaque, and that is the point: a
@@ -251,9 +254,44 @@ body {
 }
 
 .editor-shell__panels .dv-tab {
+  position: relative; /* the corners below hang off it */
   font-family: var(--shell-mono);
   font-size: 12px;
   letter-spacing: 0.02em;
+}
+
+/*
+ * The corners where the open tab meets its page.
+ *
+ * A browser's tabs do not stop square at the page: the page turns *outward*
+ * into the tab, and that outward curve is what makes the two read as one shape
+ * rather than as a box standing on a shelf. It is a curve no border-radius can
+ * draw, because it bulges the wrong way — so each is a square of page colour
+ * with a quarter-circle bitten out of its outer corner, hung on the tab's
+ * bottom edge and reaching into the bar beside it.
+ *
+ * The bite is painted in the bar's own colour rather than left transparent: a
+ * gradient fading to transparent fades through transparent *black*, which puts
+ * a dark thread along a curve whose whole job is to be invisible.
+ */
+.editor-shell__panels .dv-tab.dv-active-tab::before,
+.editor-shell__panels .dv-tab.dv-active-tab::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  width: 8px;
+  height: 8px;
+  pointer-events: none;
+}
+
+.editor-shell__panels .dv-tab.dv-active-tab::before {
+  left: -8px;
+  background: radial-gradient(circle at top left, var(--shell-strip) 8px, var(--shell-surface) 8.5px);
+}
+
+.editor-shell__panels .dv-tab.dv-active-tab::after {
+  right: -8px;
+  background: radial-gradient(circle at top right, var(--shell-strip) 8px, var(--shell-surface) 8.5px);
 }
 
 /*
@@ -267,7 +305,7 @@ body {
  * it is supposed to be part of — and undo the join.
  */
 .editor-shell__panels .dv-active-group .dv-tab.dv-active-tab {
-  box-shadow: inset 0 2px 0 var(--shell-accent);
+  box-shadow: inset 0 1px 0 var(--shell-accent-line);
 }
 
 .editor-shell__panels .dv-tab.dv-inactive-tab:hover {

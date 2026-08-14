@@ -8,6 +8,10 @@
 node_modules/
 dist/
 
+# Pictures of the editor, taken by `npm run shot`. Made on demand, looked at,
+# thrown away — never a baseline anything is compared against.
+shots/
+
 # Browser-test output and the throwaway project the browser tests build
 test-results/
 playwright-report/

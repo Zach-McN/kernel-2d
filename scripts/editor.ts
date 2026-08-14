@@ -1,8 +1,6 @@
-import { createServer, type ViteDevServer } from 'vite'
-
-import { PORT_ENV_VAR, PROJECT_ENV_VAR, resolveConfig } from '../sidecar/config.js'
-import { startSidecar } from '../sidecar/start.js'
+import { resolveConfig } from '../sidecar/config.js'
 import { shouldOpenBrowser } from './editor-server.js'
+import { startEditor, type RunningEditor } from './editor/start.js'
 
 /**
  * `npm run editor -- <path-to-project-folder>` — the one command.
@@ -15,9 +13,8 @@ import { shouldOpenBrowser } from './editor-server.js'
  * already taken — happens before anything is running, so there is never a
  * half-started editor pointed at nothing.
  *
- * Vite comes up first so its address can go in the sidecar's banner. The
- * browser window it opens takes far longer to paint than the sidecar takes to
- * start, and the editor shows its own connecting state regardless.
+ * The starting itself is `editor/start.ts`, shared with the screenshot tool.
+ * What is left here is the command: reading the arguments, and stopping.
  */
 
 const result = resolveConfig(process.argv.slice(2), process.env, process.cwd())
@@ -27,51 +24,22 @@ if (!result.ok) {
   process.exit(1)
 }
 
-const config = result.config
-
-// The editor talks to the sidecar through Vite's proxy, so the browser never
-// needs to know this port. Vite does, and this is how it is told.
-process.env[PORT_ENV_VAR] = String(config.port)
-
-// And the same for the project folder, which Vite needs for a different reason:
-// the game's own code is compiled into the preview from there. Written back as
-// the resolved, symlink-free path this command already worked out, so the config
-// and the filesystem service are looking at the same folder rather than at two
-// spellings of it.
-process.env[PROJECT_ENV_VAR] = config.projectPath
-
-let editor: ViteDevServer
+let editor: RunningEditor
 try {
-  editor = await createServer({
-    // Vite's own startup box is replaced by the sidecar banner below, so
-    // starting the editor prints one thing rather than two.
-    logLevel: 'warn',
-    server: { open: shouldOpenBrowser(process.env) },
-  })
-  await editor.listen()
+  editor = await startEditor(result.config, { open: shouldOpenBrowser(process.env) })
 } catch (error) {
   console.error(error instanceof Error ? error.message : String(error))
   process.exit(1)
 }
 
-const editorUrl = editor.resolvedUrls?.local[0] ?? `http://localhost:${editor.config.server.port ?? ''}`
-
-try {
-  const sidecar = await startSidecar(config, { editorUrl })
-
-  let shuttingDown = false
-  const shutdown = async (): Promise<void> => {
-    if (shuttingDown) return
-    shuttingDown = true
-    console.log('\nkernel-2d editor stopped.')
-    await Promise.allSettled([editor.close(), sidecar.close()])
-    process.exit(0)
-  }
-
-  process.on('SIGINT', () => void shutdown())
-  process.on('SIGTERM', () => void shutdown())
-} catch (error) {
-  console.error(error instanceof Error ? error.message : String(error))
+let shuttingDown = false
+const shutdown = async (): Promise<void> => {
+  if (shuttingDown) return
+  shuttingDown = true
+  console.log('\nkernel-2d editor stopped.')
   await editor.close()
-  process.exit(1)
+  process.exit(0)
 }
+
+process.on('SIGINT', () => void shutdown())
+process.on('SIGTERM', () => void shutdown())

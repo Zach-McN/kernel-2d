@@ -3,6 +3,7 @@ import path from 'node:path'
 
 import { expect, test, type Locator, type Page } from '@playwright/test'
 
+import { verticalDividerNear } from './dividers.js'
 import { showPanel } from './panels.js'
 import { restoreProjectAfterEach } from './restore-project.js'
 import { selectAsset } from './select-asset.js'
@@ -428,7 +429,7 @@ test('dragging the panel wider keeps your place', async ({ page }) => {
   // much the layout currently frames it with. Asking the stage found nothing
   // the day that inset stopped being zero.
   const panel = await page.getByTestId('viewport-panel').boundingBox()
-  const sash = await verticalSashLeftOf(page, panel?.x ?? 0)
+  const sash = await verticalDividerNear(page, panel?.x ?? 0)
   expect(sash, 'a draggable divider on the left edge of the Viewport').not.toBeNull()
   if (sash === null) return
 
@@ -546,23 +547,3 @@ test('a picture of a framed scene, to look at when something is reported as look
   await page.screenshot({ path: 'test-results/scene-camera.png', fullPage: false })
 })
 
-/**
- * A draggable vertical divider on a given x, if there is one.
- *
- * Dockview marks a divider disabled when the panels either side are already at
- * their limits, and dragging a disabled one fails for a reason that has nothing
- * to do with the camera.
- */
-async function verticalSashLeftOf(page: Page, x: number): Promise<{ x: number; y: number } | null> {
-  const sashes = page.locator('.dv-sash:not(.dv-disabled)')
-
-  for (let index = 0; index < (await sashes.count()); index += 1) {
-    const box = await sashes.nth(index).boundingBox()
-    if (box === null) continue
-    if (box.height > box.width && Math.abs(box.x + box.width / 2 - x) < 12) {
-      return { x: box.x + box.width / 2, y: box.y + box.height / 2 }
-    }
-  }
-
-  return null
-}
