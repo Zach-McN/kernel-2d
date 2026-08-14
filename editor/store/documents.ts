@@ -105,6 +105,12 @@ export const MERGE_WINDOW_MS = 600
 
 interface HistoryEntry {
   label: string
+  /**
+   * The merge key the edits in it shared, or undefined for a step that stands
+   * alone. Kept so a gesture can take its own run back (`abandonEdits`) without
+   * anything having to guess which steps were its.
+   */
+  merge: string | undefined
   patches: Patch[]
   inversePatches: Patch[]
 }
@@ -132,6 +138,32 @@ export interface DocumentStore {
 
   /** Ends an open merge run, so the next edit starts a fresh undo step. */
   sealEdits: () => void
+
+  /**
+   * Takes a run of edits back, as though it had never happened — what a gesture
+   * that can be called off is cancelled with.
+   *
+   * It reverses every step at the top of the stack carrying this merge key and
+   * removes them, so the history is left exactly as it was before the gesture
+   * started. Two things follow from that, and both are the point:
+   *
+   *   - **Nothing writes an inverse of its own.** The patches immer already
+   *     recorded are what puts the document back, which is the same rule as
+   *     undo itself (D7, G2) — a gesture that restored a remembered position by
+   *     hand would be a second implementation of the thing this API exists to
+   *     have exactly one of.
+   *   - **It leaves no undo step behind.** Writing the old value back as a
+   *     further edit would end at the same document and leave a step on the
+   *     stack that reverses nothing, which is a press of Ctrl-Z that appears to
+   *     do nothing at all.
+   *
+   * **The key must be unique to the gesture**, not merely to the field — a run
+   * is identified by nothing else, so a key reused by a *previous* gesture on
+   * the same field would see that one taken back too. Mint it per gesture.
+   *
+   * True when there was anything to take back.
+   */
+  abandonEdits: (mergeKey: string) => boolean
 
   /** True when there was something to reverse. */
   undo: () => boolean
@@ -198,6 +230,7 @@ export function createDocumentStore(options: DocumentStoreOptions): DocumentStor
     if (merging && previous !== undefined) {
       undoStack[undoStack.length - 1] = {
         label: intent.label,
+        merge: intent.merge,
         patches: [...previous.patches, ...patches],
         // Inverses concatenate in reverse: undoing both means undoing the newer
         // change first. Same-field replaces would survive the naive order, so
@@ -206,7 +239,7 @@ export function createDocumentStore(options: DocumentStoreOptions): DocumentStor
         inversePatches: [...inversePatches, ...previous.inversePatches],
       }
     } else {
-      undoStack.push({ label: intent.label, patches, inversePatches })
+      undoStack.push({ label: intent.label, merge: intent.merge, patches, inversePatches })
     }
 
     openMerge = intent.merge === undefined ? null : { key: intent.merge, at }
@@ -226,6 +259,27 @@ export function createDocumentStore(options: DocumentStoreOptions): DocumentStor
 
   const sealEdits = (): void => {
     openMerge = null
+  }
+
+  const abandonEdits: DocumentStore['abandonEdits'] = (mergeKey) => {
+    let unwound = false
+
+    // Every step at the top carrying this key, not merely the newest one: a
+    // gesture that paused for longer than the merge window is two steps rather
+    // than one, and taking back half of a cancelled move is worse than taking
+    // back none of it.
+    while (undoStack.at(-1)?.merge === mergeKey) {
+      const entry = undoStack.pop()
+      if (entry === undefined) break
+      store.setState({ docs: applyPatches(store.getState().docs, entry.inversePatches) })
+      scheduleSaves(pathsTouchedBy(entry.inversePatches))
+      unwound = true
+    }
+
+    // Whether or not anything was taken back: the gesture is over either way,
+    // and the next edit must not merge into whatever the stack ends on.
+    sealEdits()
+    return unwound
   }
 
   const step = (from: HistoryEntry[], to: HistoryEntry[], direction: 'undo' | 'redo'): boolean => {
@@ -374,6 +428,7 @@ export function createDocumentStore(options: DocumentStoreOptions): DocumentStor
     edit,
     editDocument,
     sealEdits,
+    abandonEdits,
     undo: () => step(undoStack, redoStack, 'undo'),
     redo: () => step(redoStack, undoStack, 'redo'),
     peekUndo: () => undoStack.at(-1)?.label ?? null,

@@ -372,6 +372,102 @@ describe('what counts as one step while typing', () => {
   })
 })
 
+/**
+ * Calling a gesture off, which is a different thing from reversing it.
+ *
+ * A grab in the viewport is a run of edits that the human can decide never
+ * happened. The tempting implementation — write the old position back — ends at
+ * the right document and leaves a step on the stack that reverses nothing, so
+ * the next press of Ctrl-Z appears to do nothing at all. These are the cases
+ * that pin the difference.
+ */
+describe('taking a run of edits back', () => {
+  /** One move of a gesture, keyed the way the viewport keys one: per gesture. */
+  function moveTo(id: string, x: number, gesture: string): void {
+    harness.store.editDocument(LEVEL, { label: 'Move entity', merge: gesture }, (document) => {
+      if (document.format !== SCENE_FORMAT) return
+      const entity = document.entities.find((candidate) => candidate.id === id)
+      if (entity !== undefined) entity.transform.x = x
+    })
+  }
+
+  it('puts the document back where the run started', () => {
+    moveTo('aaaa000000000000', 40, 'move1')
+    moveTo('aaaa000000000000', 90, 'move1')
+
+    expect(harness.store.abandonEdits('move1')).toBe(true)
+
+    expect(harness.scene(LEVEL).entities[0]?.transform.x).toBe(0)
+  })
+
+  it('leaves no step behind, so the next Ctrl-Z reverses what came before it', () => {
+    setFilter(KNIGHT, 'linear')
+    harness.advance(1_000)
+    moveTo('aaaa000000000000', 90, 'move1')
+
+    harness.store.abandonEdits('move1')
+    harness.store.undo()
+
+    expect(harness.settings(KNIGHT).filter).toBe('nearest')
+  })
+
+  /**
+   * The one that decides the merge key has to be minted per gesture rather than
+   * per field. A run that paused for longer than the merge window is two steps,
+   * and taking back half of a cancelled move is worse than taking back none.
+   */
+  it('takes back every step of a run that paused long enough to split', () => {
+    moveTo('aaaa000000000000', 40, 'move1')
+    harness.advance(5_000)
+    moveTo('aaaa000000000000', 90, 'move1')
+
+    harness.store.abandonEdits('move1')
+
+    expect(harness.scene(LEVEL).entities[0]?.transform.x).toBe(0)
+    expect(harness.store.peekUndo()).toBeNull()
+  })
+
+  it('stops at a run that is not this one, however the keys were minted', () => {
+    moveTo('aaaa000000000000', 40, 'move1')
+    harness.advance(5_000)
+    moveTo('aaaa000000000000', 90, 'move2')
+
+    harness.store.abandonEdits('move2')
+
+    // The first gesture was somebody else's and stands, at exactly where it
+    // left the entity.
+    expect(harness.scene(LEVEL).entities[0]?.transform.x).toBe(40)
+    expect(harness.store.peekUndo()).toBe('Move entity')
+  })
+
+  it('says so, and changes nothing, when there was nothing to take back', () => {
+    setFilter(KNIGHT, 'linear')
+
+    expect(harness.store.abandonEdits('move1')).toBe(false)
+    expect(harness.settings(KNIGHT).filter).toBe('linear')
+  })
+
+  it('writes the restored document to disk, because the folder saw the run', async () => {
+    moveTo('aaaa000000000000', 90, 'move1')
+    await harness.store.flushSaves()
+
+    harness.store.abandonEdits('move1')
+    await harness.store.flushSaves()
+
+    expect(asScene(harness.writes.at(-1)?.document).entities[0]?.transform.x).toBe(0)
+  })
+
+  it('seals what it did not take back, so the next edit is a step of its own', () => {
+    moveTo('aaaa000000000000', 40, 'move1')
+    harness.store.abandonEdits('other')
+    moveTo('aaaa000000000000', 90, 'move1')
+
+    harness.store.undo()
+
+    expect(harness.scene(LEVEL).entities[0]?.transform.x).toBe(40)
+  })
+})
+
 describe('saving what changed', () => {
   it('writes the file after a change, and after reversing one', async () => {
     setFilter(KNIGHT, 'linear')

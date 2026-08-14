@@ -2,14 +2,14 @@ import type { ReactElement, ReactNode } from 'react'
 
 import {
   SCENE_FORMAT,
-  copyEntity,
   defaultEntity,
   prefabRefOf,
   spriteOf,
   type Entity,
 } from '../../runtime/formats/scene-schema'
 import { basename } from '../shell/asset-kinds'
-import { freeName, namesIn, stemOfName } from '../shell/entity-names'
+import { freeName, namesIn } from '../shell/entity-names'
+import { useDuplicateEntity } from '../shell/useDuplicateEntity'
 import { useOpenScene } from '../shell/open-scene'
 import { useSceneAssets, type SceneAssets } from '../shell/scene-assets'
 import { useResolvedScene, type ResolvedScene } from '../shell/scene-prefabs'
@@ -33,6 +33,10 @@ import { editDocument } from '../store/open-documents'
  * swaps two slots — and Ctrl-Z reverses every one of them without a line of undo
  * code being written here.
  *
+ * Duplicating is the one that has moved out, to `../shell/useDuplicateEntity.ts`,
+ * the day the viewport wanted the same copy from `Shift-D`. The button here is
+ * still what it was; there is simply one implementation of what a copy is.
+ *
  * A row shows what its entity *draws*, which for an instance comes from the
  * prefab it points at. Everything it *changes* goes to the document, re-found by
  * id inside the transaction (`editor-ui` U23).
@@ -42,6 +46,9 @@ export function HierarchyPanel(): ReactElement {
   const selection = useSelection()
   const assets = useSceneAssets()
   const resolved = useResolvedScene()
+  // The same copy the viewport's Shift-D makes, so the button and the key can
+  // never disagree about what a duplicate is (`editor/shell/useDuplicateEntity.ts`).
+  const { duplicate } = useDuplicateEntity()
 
   if (open.state === 'none') {
     return <Empty>No scene is open. Click a scene in the Assets panel to see what is in it.</Empty>
@@ -98,35 +105,6 @@ export function HierarchyPanel(): ReactElement {
     selection.selectEntity(path, id)
   }
 
-  /**
-   * A copy of an entity, directly behind nothing that was not already there.
-   *
-   * What has to survive the copy is a fact about the format, so `copyEntity`
-   * answers that. Two things are this panel's:
-   *
-   * It gets a **new id**, because two entities with one id is a scene the format
-   * rejects, and the failure would surface at the next save rather than here.
-   * And it goes in **directly after the original** rather than at the end of the
-   * list, because list order is draw order — appending would quietly bring the
-   * copy to the front of the level.
-   *
-   * It lands exactly on top of the original, which is what every editor of this
-   * kind does: the copy is selected, so the outline is on it and one drag moves
-   * it off. Any offset would be a number this editor invented.
-   */
-  const duplicate = (id: string): void => {
-    const copyId = mintId()
-    change('Duplicate entity', (list) => {
-      const at = list.findIndex((entity) => entity.id === id)
-      const source = list[at]
-      if (source === undefined) return
-      list.splice(at + 1, 0, copyEntity(source, copyId, nextCopyName(list, source.name)))
-    })
-    // Outside the transaction: what is selected afterwards is not part of the
-    // edit, or undo would restore a selection as well as a document.
-    selection.selectEntity(path, copyId)
-  }
-
   const remove = (id: string): void => {
     change('Delete entity', (list) => {
       const at = list.findIndex((entity) => entity.id === id)
@@ -157,7 +135,7 @@ export function HierarchyPanel(): ReactElement {
           type="button"
           className="control control--action"
           data-testid="entity-duplicate"
-          title="A copy, on top of this one and just in front of it"
+          title="A copy, on top of this one and just in front of it. Shift-D does the same from the picture."
           disabled={selected === null}
           onClick={() => selected !== null && duplicate(selected)}
         >
@@ -301,18 +279,6 @@ function Row({ entity, fromPrefab, selected, problem, onSelect }: RowProps): Rea
 /** A name for a new entity, counting on from the length of the list. */
 function nextEntityName(entities: readonly Entity[]): string {
   return freeName(namesIn(entities), 'Entity', { from: entities.length + 1 })
-}
-
-/**
- * What a copy is called: the original's name with a number after it.
- *
- * A duplicate that kept the name exactly would give the list two identical rows
- * — legal in the format, and useless to read. Counting up from the original's
- * stem rather than from the list's length keeps "Slime 2, Slime 3" in order
- * however much else is in the scene.
- */
-function nextCopyName(entities: readonly Entity[], original: string): string {
-  return freeName(namesIn(entities), stemOfName(original))
 }
 
 function Empty({ children }: { children: ReactNode }): ReactElement {

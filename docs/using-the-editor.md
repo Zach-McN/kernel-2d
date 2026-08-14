@@ -8,8 +8,8 @@ It is kept current by the definition of done in `CLAUDE.md`: a session that
 changes what you can do, or how you do it, changes this page in the same commit.
 If this page and the editor disagree, the editor is right and the page is a bug.
 
-Last true as of: **panels that look like windows, with their tabs joined to
-them** (2026-08-13).
+Last true as of: **grabbing an entity with `G` and copying one with `Shift-D`**
+(2026-08-14).
 
 ---
 
@@ -252,7 +252,8 @@ last row is drawn in front.
 
 - **Assets panel** → *New scene* / *New prefab*, with a name and a folder.
 - **Hierarchy** → add, duplicate, delete, and move a row back or forward.
-- **Viewport** → click to select, drag to move.
+- **Viewport** → click to select, drag to move, `G` to move without holding
+  anything, `Shift-D` for a copy.
 - **Inspector** → name, position, rotation, scale, spin, and which texture it draws.
 
 ### Your game's own code
@@ -335,7 +336,42 @@ time, space-drag still pans, and the wheel still zooms.
 | `−` `+` buttons | Zoom a whole step at a time |
 | Drag a sprite | Move it, landing on the snap |
 | Hold `Alt` while dragging | Ignore the snap and put it anywhere |
+| `G` | Grab the selected entity — it moves with the pointer, nothing held |
+| `X` / `Y` while grabbing | Hold it to that axis, from where it started |
+| `Esc` while grabbing | Put it back exactly where it was |
+| `Shift-D` | A copy of the selected entity, in the same place, selected |
 | `Esc` | Stop placing by clicking |
+
+#### Grabbing
+
+**Press `G` and the selected entity follows the pointer** — no button held, and it
+does not matter where the pointer is. It can be on the other side of the panel or
+on top of something else; the entity moves by however far you then move the mouse,
+so nothing jumps when you press the key. Click to put it down.
+
+This is Blender's `G`, and it is here for the reason Blender has it: the thing you
+are placing is usually the thing your cursor is covering, and a gesture that has to
+start on the sprite starts by hiding it.
+
+- **`X` and `Y` hold it to one axis**, measured from where it was before you pressed
+  `G` — so `G`, `X`, and a wave of the mouse slides it along the ground it is
+  standing on and nowhere else. A dashed line through the entity shows the axis it
+  is running along. Press the same key again to free it.
+- **`Esc` puts it back**, exactly, and leaves nothing behind: the next `Ctrl-Z`
+  reverses whatever you did *before* the grab, not the grab you called off.
+- **The snap and `Alt` work exactly as they do for a drag.**
+- **While a grab is running it has the picture.** The wheel will not zoom, `Home`
+  and `F` will not move the camera, and a click puts the entity down rather than
+  selecting something else. All of those would move the entity out from under your
+  cursor, so they wait until you have finished.
+- Anything that takes the level away — pressing Play, closing the level, clicking
+  another row in the Hierarchy, or the window losing focus — puts the entity back
+  the way `Esc` does. Nothing was decided, so nothing is kept.
+
+**`Shift-D` copies the selected entity** onto exactly the same spot and selects the
+copy, which is the same thing the Hierarchy's *Duplicate* button does. `Shift-D`
+then `G` is how you make a second one and put it somewhere, without your hand
+leaving the picture.
 
 Zoom is always a whole number of screen pixels per level unit, so pixel art never
 lands half on a pixel. Each level remembers where you were looking for as long as
@@ -481,8 +517,10 @@ done.
 ### Undo
 
 One `Ctrl-Z` history for the whole project, in the order you did things —
-including adding, deleting and reordering. A whole drag is one press. `Ctrl-Y` or
-`Ctrl-Shift-Z` redoes.
+including adding, deleting and reordering. A whole drag is one press, and so is a
+whole grab. A grab you called off with `Esc` is no press at all: it leaves the
+history exactly as it was, so the next `Ctrl-Z` reverses whatever came before it.
+`Ctrl-Y` or `Ctrl-Shift-Z` redoes.
 
 Two things Ctrl-Z deliberately does not cover: panning or zooming (a look, not a
 change), and anything that makes, moves or removes a file. It reverses changes

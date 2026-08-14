@@ -21,16 +21,46 @@ interface SceneOverlayProps {
   shown: ShownScene
   /** The selected entity's id, or null when the selection is not an entity. */
   selected: string | null
+  /** The axis a grab is held to, or null when nothing is being held to one. */
+  axis: 'x' | 'y' | null
 }
 
-export function SceneOverlay({ shown, selected }: SceneOverlayProps): ReactElement {
+export function SceneOverlay({ shown, selected, axis }: SceneOverlayProps): ReactElement {
   const entity = selected === null ? null : (shown.entities.find((one) => one.id === selected) ?? null)
 
   return (
     <svg className="scene__overlay" data-testid="scene-overlay" aria-hidden="true">
       <Origin at={shown.sceneOrigin} />
+      {entity !== null && axis !== null && <Axis at={entity.origin} axis={axis} />}
       {entity !== null && <Selected entity={entity} />}
     </svg>
+  )
+}
+
+/**
+ * The line a locked grab is running along.
+ *
+ * Drawn through the entity's *position* rather than the middle of its outline,
+ * because that is the point the lock actually holds still — a sprite pivoted at
+ * its feet slides along the ground it is standing on, not along its own waist.
+ *
+ * Worth drawing at all because the alternative is a caption: a sentence saying
+ * "locked to X" is read once, and a line through the level is still there while
+ * the hand is moving. Blender draws the same line for the same reason.
+ */
+function Axis({ at, axis }: { at: { x: number; y: number }; axis: 'x' | 'y' }): ReactElement {
+  // Longer than any canvas, and clipped by the SVG. The alternative is passing
+  // the canvas size down for a line whose ends nobody looks at.
+  const far = 10_000
+
+  return (
+    <g className="scene__axis" data-testid="scene-axis" data-axis={axis}>
+      {axis === 'x' ? (
+        <line x1={at.x - far} y1={at.y} x2={at.x + far} y2={at.y} />
+      ) : (
+        <line x1={at.x} y1={at.y - far} x2={at.x} y2={at.y + far} />
+      )}
+    </g>
   )
 }
 

@@ -13,11 +13,12 @@ import { describeProblem, problemsIn, useSceneAssets } from '../shell/scene-asse
 import { describePrefabProblem, prefabProblemsIn, useResolvedScene } from '../shell/scene-prefabs'
 import { useDrawScene, useSceneView, type SceneViewState } from '../shell/scene-view-context'
 import { freePoint, snapPoint } from '../shell/snap'
-import { useSceneGestures, type ScenePlacement } from '../shell/useSceneGestures'
+import { useSceneGestures, type Grab, type ScenePlacement } from '../shell/useSceneGestures'
 import { useSelection } from '../shell/selection'
+import { useDuplicateEntity } from '../shell/useDuplicateEntity'
 import { usePlacePrefab } from '../shell/usePlacePrefab'
 import { describeZoom } from '../shell/zoom'
-import { editDocument, sealEdits } from '../store/open-documents'
+import { abandonEdits, editDocument, sealEdits } from '../store/open-documents'
 import { NumberField } from './NumberField'
 import { SceneOverlay, describeScene } from './SceneOverlay'
 
@@ -118,6 +119,7 @@ export function ViewportPanel(): ReactElement {
   const placing = usePlacing()
   const stamp = usePlacePrefab(placing.stamping)
   const placement = usePlacement(open, current, placing, stamp)
+  const copy = useDuplicateEntity()
   const gestures = useSceneGestures({
     host,
     enabled: current !== null && !mode.active,
@@ -126,15 +128,21 @@ export function ViewportPanel(): ReactElement {
     frameAll: ready?.frameAll ?? noop,
     frameEntity: ready?.frameEntity ?? noop,
     selected,
+    duplicate: copy.duplicate,
     placement,
   })
 
   const camera = current?.camera ?? null
   const visible = current === null ? null : onScreen(current)
+
+  // Dragged with the button held, or grabbed with the keyboard — two gestures,
+  // one situation to describe, so the caption and the outline do not have to
+  // know which of them is going on.
+  const moving = gestures.dragging ?? gestures.grabbing?.entity ?? null
   const beingMoved =
-    gestures.dragging === null || open.state !== 'open'
+    moving === null || open.state !== 'open'
       ? null
-      : (open.scene.entities.find((one) => one.id === gestures.dragging) ?? null)
+      : (open.scene.entities.find((one) => one.id === moving) ?? null)
 
   return (
     <div
@@ -166,6 +174,8 @@ export function ViewportPanel(): ReactElement {
       data-scene-onscreen={visible === null ? '' : String(visible.count)}
       data-scene-picked={gestures.picked ?? ''}
       data-scene-dragging={gestures.dragging ?? ''}
+      data-scene-grabbing={gestures.grabbing?.entity ?? ''}
+      data-scene-grab-axis={gestures.grabbing?.axis ?? ''}
       data-play-state={mode.play.state}
       data-play-scene={mode.play.state === 'stopped' ? '' : mode.play.path}
       data-play-match={comparison?.kind ?? ''}
@@ -181,7 +191,9 @@ export function ViewportPanel(): ReactElement {
     >
       <Stage host={host} view={view} grab={grabOf(gestures, placing.stamping !== null && !mode.active)}>
         {/* No editor marks over a running game. */}
-        {current !== null && !mode.active && <SceneOverlay shown={current} selected={selected} />}
+        {current !== null && !mode.active && (
+          <SceneOverlay shown={current} selected={selected} axis={gestures.grabbing?.axis ?? null} />
+        )}
       </Stage>
 
       {mode.play.state !== 'stopped' ? (
@@ -200,6 +212,7 @@ export function ViewportPanel(): ReactElement {
           selected={selected}
           offScreen={offScreenIn(open, current, selected)}
           moving={beingMoved}
+          grab={gestures.grabbing}
           placing={placing}
           stampingName={
             placing.stamping === null ? null : (stamp.prefabName ?? basename(placing.stamping))
@@ -253,6 +266,9 @@ const noZoom = (_at: { x: number; y: number }, _direction: 1 | -1): void => {}
  * cursor at all. Space still wins over placing, here and there.
  */
 function grabOf(gestures: ReturnType<typeof useSceneGestures>, stamping: boolean): string {
+  // A grab is first because it is first everywhere: while one is running no
+  // other gesture can happen, so no other cursor can be honest.
+  if (gestures.grabbing !== null) return 'moving'
   if (gestures.panning) return 'holding'
   if (gestures.ready) return 'ready'
   if (stamping) return 'placing'
@@ -282,18 +298,42 @@ function usePlacement(
   const scale = current?.camera.scale ?? null
 
   /**
-   * Where the entity was when it was pressed.
+   * Where the entity was when the move began, and the undo run this move is.
    *
-   * A drag is applied as travel from the press rather than as a running sum of
-   * pointer wobbles: with snapping on, adding up rounded steps would let a
-   * sprite creep away from the pointer over a long drag and never come back.
+   * A move is applied as travel from where it started rather than as a running
+   * sum of pointer wobbles: with snapping on, adding up rounded steps would let
+   * a sprite creep away from the pointer over a long drag and never come back.
+   *
+   * The key is minted per gesture rather than per field, and that is what makes
+   * `Esc` able to take a move back exactly (`editor/store/documents.ts`): the
+   * run is identified by nothing else, so a key shared with the *previous* move
+   * of the same entity would see that one taken back too.
    */
-  const from = useRef<{ entity: string; x: number; y: number } | null>(null)
+  const from = useRef<{ entity: string; x: number; y: number; key: string } | null>(null)
+  const moves = useRef(0)
 
   const entities = open.state === 'open' ? open.scene.entities : null
 
-  return useMemo<ScenePlacement>(
-    () => ({
+  return useMemo<ScenePlacement>(() => {
+    /** Remembers where an entity is, so travel from here can be measured. */
+    const begin = (entityId: string): boolean => {
+      from.current = null
+      if (scenePath === null) return false
+
+      const entity = entities?.find((one) => one.id === entityId)
+      if (entity === undefined) return false
+
+      moves.current += 1
+      from.current = {
+        entity: entityId,
+        x: entity.transform.x,
+        y: entity.transform.y,
+        key: `${scenePath}#${entityId}#move${moves.current}`,
+      }
+      return true
+    }
+
+    return {
       pick: (at) => (current === null ? null : entityAt(current, at)),
 
       select: (entityId) => {
@@ -304,12 +344,11 @@ function usePlacement(
           return
         }
 
-        const entity = entities?.find((one) => one.id === entityId)
-        if (entity !== undefined) {
-          from.current = { entity: entityId, x: entity.transform.x, y: entity.transform.y }
-        }
+        begin(entityId)
         selection.selectEntity(scenePath, entityId)
       },
+
+      beginMove: (entityId) => begin(entityId),
 
       moveBy: (entityId, screenDx, screenDy, free) => {
         const start = from.current
@@ -322,19 +361,15 @@ function usePlacement(
         const wanted = { x: start.x + screenDx / scale, y: start.y - screenDy / scale }
         const at = free ? freePoint(wanted) : snapPoint(wanted, placing.snap)
 
-        editDocument(
-          scenePath,
-          { label: 'Move entity', merge: `${scenePath}#${entityId}#drag` },
-          (document) => {
-            if (document.format !== SCENE_FORMAT) return
-            // Re-found by id rather than remembered as an index: between the
-            // press and this move, a text editor may have changed the file.
-            const target = document.entities.find((one) => one.id === entityId)
-            if (target === undefined) return
-            target.transform.x = at.x
-            target.transform.y = at.y
-          },
-        )
+        editDocument(scenePath, { label: 'Move entity', merge: start.key }, (document) => {
+          if (document.format !== SCENE_FORMAT) return
+          // Re-found by id rather than remembered as an index: between the
+          // press and this move, a text editor may have changed the file.
+          const target = document.entities.find((one) => one.id === entityId)
+          if (target === undefined) return
+          target.transform.x = at.x
+          target.transform.y = at.y
+        })
       },
 
       drop: () => {
@@ -342,6 +377,23 @@ function usePlacement(
         // Always, even for a press that never moved: it seals the undo step, and
         // sealing one that was never opened costs nothing.
         sealEdits()
+      },
+
+      /**
+       * The move never happened.
+       *
+       * The whole run is handed back to the transaction API, which reverses it
+       * with the patches it already recorded. Writing the remembered position
+       * back as one more edit would be this feature implementing an inverse of
+       * its own — the exact thing document-level undo exists to make unnecessary
+       * (`editor-kernel` D7) — and it would leave a step on the stack that
+       * reverses nothing.
+       */
+      cancelMove: () => {
+        const start = from.current
+        from.current = null
+        if (start === null) return
+        abandonEdits(start.key)
       },
 
       stamping: placing.stamping !== null && current !== null && stamp.canPlace,
@@ -361,9 +413,8 @@ function usePlacement(
       },
 
       stopStamping: placing.stopStamping,
-    }),
-    [current, scenePath, scale, entities, selection, placing, stamp],
-  )
+    }
+  }, [current, scenePath, scale, entities, selection, placing, stamp])
 }
 
 // --- the canvas ------------------------------------------------------------
@@ -462,8 +513,10 @@ interface CaptionProps {
   prefabProblems: ReturnType<typeof prefabProblemsIn>
   selected: string | null
   offScreen: OffScreen
-  /** The entity being dragged right now, or null. */
+  /** The entity being moved right now, by either gesture, or null. */
   moving: Entity | null
+  /** The keyboard grab in progress, which is the half of `moving` with keys. */
+  grab: Grab | null
   /** What a press lands on, and whether a press is placing at all. */
   placing: Placing
   /** What is being repeat-placed, in words, or null when nothing is. */
@@ -488,6 +541,7 @@ function Caption({
   selected,
   offScreen,
   moving,
+  grab,
   placing,
   stampingName,
   onPlay,
@@ -580,21 +634,27 @@ function Caption({
        * both — it is written in the control row a few pixels to the right.
        */}
       {/*
-       * A drag says where it is putting the thing, in the level's own units, in
+       * A move says where it is putting the thing, in the level's own units, in
        * the place the human is already looking. It is also the only home a
        * modifier has: nothing else on screen could tell you Alt exists — and
        * the same is true of the way out of repeat-placing, which is why the
        * mode says its own name and its own key here rather than only in the
        * panel that switched it on.
+       *
+       * A grab needs it more than a drag does, and that is why the sentence
+       * differs: a grab is a mode with no button held, so the axis keys and the
+       * way out of it are things a human can only find out by being told.
        */}
       {stampingName !== null ? (
         <Note testId="viewport-stamping" title={`Every click in the level places another ${stampingName}. Esc stops it.`}>
           Placing <strong>{stampingName}</strong> — Esc to stop.
         </Note>
       ) : moving !== null ? (
-        <Note testId="viewport-dragging">
-          <strong>{moving.name}</strong> — {moving.transform.x}, {moving.transform.y}. Hold Alt to place it
-          anywhere.
+        <Note
+          testId={grab === null ? 'viewport-dragging' : 'viewport-grabbing'}
+          title={`${moving.name} — ${moving.transform.x}, ${moving.transform.y}. ${wholeAdvice(grab)}`}
+        >
+          <strong>{moving.name}</strong> — {moving.transform.x}, {moving.transform.y}. {advice(grab)}
         </Note>
       ) : offScreen.kind === 'all' ? (
         <Note bad testId="viewport-offscreen">Everything is off screen — press Home to bring it back.</Note>
@@ -645,6 +705,36 @@ function Caption({
       <CameraControls view={view} selected={selected} />
     </Bar>
   )
+}
+
+/**
+ * What to say to somebody in the middle of moving something.
+ *
+ * Three sentences for three situations, because they offer different keys: a
+ * drag has only the modifier, a free grab has the axis keys and the way out, and
+ * a locked one has to say which axis it is on and how to get off it. One
+ * sentence covering all three would be a list of everything the viewport can do,
+ * read by somebody who is holding a sprite in mid-air.
+ *
+ * Short, because the bar is one line beside the Play button and the snap, and a
+ * caption that is clipped in the middle of naming a key has not named it. The
+ * whole of it is next door, in the tooltip, on the same terms as every other
+ * note here.
+ */
+function advice(grab: Grab | null): string {
+  if (grab === null) return 'Hold Alt to place it anywhere.'
+  if (grab.axis === null) return 'X or Y locks an axis, Esc puts it back.'
+  return `Locked to ${grab.axis.toUpperCase()} — Esc puts it back.`
+}
+
+/** The same advice for a panel with room for it, which is the tooltip's. */
+function wholeAdvice(grab: Grab | null): string {
+  if (grab === null) return 'Hold Alt to ignore the snap and place it anywhere.'
+  if (grab.axis === null) {
+    return 'X or Y holds it to one axis, a click puts it down, Esc puts it back where it was.'
+  }
+  const axis = grab.axis.toUpperCase()
+  return `Held to the ${axis} axis from where it started. ${axis} again frees it, a click puts it down, Esc puts it back where it was.`
 }
 
 /**

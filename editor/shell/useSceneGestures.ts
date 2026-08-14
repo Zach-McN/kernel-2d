@@ -1,9 +1,9 @@
-import { useEffect, useRef, useState, type RefObject } from 'react'
+import { useCallback, useEffect, useRef, useState, type RefObject } from 'react'
 
 import type { Point } from '../../runtime'
 
 /**
- * Driving the scene viewport with a mouse and two keys.
+ * Driving the scene viewport with a mouse and a handful of keys.
  *
  * **Left-press picks and places. Middle-drag and space-drag pan; the wheel zooms
  * toward the cursor.** That is what Godot, Unity's 2D view and Tiled have all
@@ -24,7 +24,22 @@ import type { Point } from '../../runtime'
  * placed only where the level was empty would place nothing at all on the first
  * level anybody tried it on.
  *
- * Three traps live in here, each of which fails silently:
+ * **A grab is a move with no button held, and while one is running it owns the
+ * picture.** `G` starts the selected entity moving with the pointer wherever the
+ * pointer happens to be — over the sprite, across the panel, or nowhere near it
+ * — and the travel is measured from where the pointer was when the key was
+ * pressed, so nothing jumps. It is Blender's, and it is worth having for the
+ * reason Blender has it: the sprite you are placing is usually the thing your
+ * cursor is covering. `X` and `Y` lock it to one axis *from where the entity
+ * started*, a press ends it, and `Esc` puts the entity back.
+ *
+ * Owning the picture is what makes the rest of it simple: while a grab is
+ * running, a press cannot select or pan, the wheel cannot zoom, and `F` cannot
+ * reframe. Every one of those changes either what the travel is measured
+ * against or what the entity is, and each would show up as the sprite jumping
+ * out from under the cursor.
+ *
+ * Four traps live in here, each of which fails silently:
  *
  * 1. **The wheel listener is attached by hand, non-passive.** React registers
  *    its own wheel handling passively at the root, so `preventDefault` inside an
@@ -37,6 +52,11 @@ import type { Point } from '../../runtime'
  * 3. **A bare letter must not fire while the human is typing.** The only other
  *    keyboard handler in the editor is modifier-only (`useUndoShortcuts`), so it
  *    never had to care; an `f` typed into an entity's name has to be an `f`.
+ * 4. **A grab has to be called off by anything that ends its world.** The window
+ *    losing focus, the level closing, Play starting, or the selection moving to
+ *    something else all leave a grab that is still running with no way for the
+ *    human to see it, and the next mouse movement over the picture would then
+ *    move an entity nobody was moving.
  */
 
 /** What the panel does about a press. Everything here is in CSS pixels. */
@@ -52,10 +72,23 @@ export interface ScenePlacement {
    * accumulate and the sprite cannot creep.
    */
   select: (entityId: string | null) => void
+  /**
+   * Remember where this entity is, without selecting it or moving it — what a
+   * grab starts with, since it has no press to record it on.
+   *
+   * False when there is nothing to move: no scene, or an entity that has gone.
+   * The gesture then never starts, rather than starting and doing nothing.
+   */
+  beginMove: (entityId: string) => boolean
   /** Total travel since the press. `free` is Alt: place it anywhere. */
   moveBy: (entityId: string, screenDx: number, screenDy: number, free: boolean) => void
   /** The press ended, whether or not anything moved. */
   drop: () => void
+  /**
+   * The move was called off: put the entity back where it started and leave no
+   * trace of it in the undo history.
+   */
+  cancelMove: () => void
   /**
    * True while every press puts a copy of something down instead of picking.
    *
@@ -79,9 +112,18 @@ export interface SceneGestureOptions {
   zoom: (at: Point, direction: 1 | -1) => void
   frameAll: () => void
   frameEntity: (entityId: string) => void
-  /** The selected entity, or null. What `F` frames. */
+  /** The selected entity, or null. What `F` frames and what `G` grabs. */
   selected: string | null
+  /** Shift-D: a copy of this entity, selected afterwards. */
+  duplicate: (entityId: string) => void
   placement: ScenePlacement
+}
+
+/** A grab in progress, as anything drawing it needs to know it. */
+export interface Grab {
+  entity: string
+  /** The axis the move is held to, or null while it is free in both. */
+  axis: 'x' | 'y' | null
 }
 
 export interface SceneGestures {
@@ -91,20 +133,35 @@ export interface SceneGestures {
   ready: boolean
   /** The entity under the pointer, or null. Drives the cursor. */
   picked: string | null
-  /** The entity being moved, or null. */
+  /** The entity being dragged with the button held, or null. */
   dragging: string | null
+  /** The keyboard grab in progress, or null. */
+  grabbing: Grab | null
+}
+
+/**
+ * A grab as the listeners hold it: the same thing, plus where the travel is
+ * being measured from.
+ *
+ * Null until the pointer is next seen over the picture, which is what makes
+ * `G` work with the cursor anywhere — including outside the panel, where there
+ * is no sensible origin until the hand comes back.
+ */
+interface LiveGrab extends Grab {
+  origin: Point | null
 }
 
 /** How far the pointer travels before a click becomes a drag, in CSS pixels. */
 const DRAG_THRESHOLD = 3
 
 export function useSceneGestures(options: SceneGestureOptions): SceneGestures {
-  const { host, enabled, pan, zoom, frameAll, frameEntity, selected, placement } = options
+  const { host, enabled, pan, zoom, frameAll, frameEntity, selected, duplicate, placement } = options
 
   const [panning, setPanning] = useState(false)
   const [ready, setReady] = useState(false)
   const [picked, setPicked] = useState<string | null>(null)
   const [dragging, setDragging] = useState<string | null>(null)
+  const [grabbing, setGrabbing] = useState<Grab | null>(null)
 
   // Read inside listeners that are attached once. Set during render so a
   // listener never sees a value from the render before last. `placement` in
@@ -118,6 +175,91 @@ export function useSceneGestures(options: SceneGestureOptions): SceneGestures {
   readyRef.current = ready
   const placementRef = useRef(placement)
   placementRef.current = placement
+  const duplicateRef = useRef(duplicate)
+  duplicateRef.current = duplicate
+
+  /**
+   * The grab, as the two listener sets share it.
+   *
+   * A ref rather than the state above, because the keyboard starts it and the
+   * pointer drives it: a grab read from state would be one render behind on the
+   * first mouse movement after `G`, and the entity would jump by however far the
+   * pointer travelled in that frame. The state is the copy React draws.
+   */
+  const grabRef = useRef<LiveGrab | null>(null)
+  /** Where the pointer was last seen over the picture, in client pixels. */
+  const pointerAt = useRef<Point | null>(null)
+  /** True while a button is held, so `G` cannot start a second move over a drag. */
+  const pressed = useRef(false)
+
+  /**
+   * The entity, moved to wherever the pointer has got to.
+   *
+   * Travel from the grab's own origin, never a sum of the movements in between
+   * — the same rule a drag keeps, and for the same reason: added-up rounded
+   * steps let a sprite creep away from the pointer and never come back.
+   */
+  const applyGrab = useCallback((free: boolean): void => {
+    const grab = grabRef.current
+    const at = pointerAt.current
+    if (grab === null || grab.origin === null || at === null) return
+
+    // A lock zeroes the travel on the other axis rather than remembering a
+    // second position, so the entity sits exactly where it started on that axis
+    // however far the pointer has wandered off it.
+    placementRef.current.moveBy(
+      grab.entity,
+      grab.axis === 'y' ? 0 : at.x - grab.origin.x,
+      grab.axis === 'x' ? 0 : at.y - grab.origin.y,
+      free,
+    )
+  }, [])
+
+  const endGrab = useCallback((how: 'drop' | 'cancel'): void => {
+    if (grabRef.current === null) return
+    grabRef.current = null
+    setGrabbing(null)
+    if (how === 'cancel') placementRef.current.cancelMove()
+    else placementRef.current.drop()
+  }, [])
+
+  const startGrab = useCallback((): void => {
+    if (grabRef.current !== null || pressed.current) return
+    // One mode at a time: while every press is placing a copy, a grab's own
+    // press-to-finish would be two meanings for one button (`placing.tsx`).
+    if (placementRef.current.stamping) return
+
+    const entity = selectedRef.current
+    if (entity === null || !placementRef.current.beginMove(entity)) return
+
+    grabRef.current = { entity, axis: null, origin: pointerAt.current }
+    setGrabbing({ entity, axis: null })
+  }, [])
+
+  /**
+   * `X` or `Y` while a grab is running.
+   *
+   * Pressing the axis it is already held to lets it go again, which is the only
+   * way back to moving freely without starting over — Blender spends the second
+   * press on local axes, and a 2D entity has none to offer.
+   *
+   * It moves the entity on the spot rather than waiting for the next mouse
+   * movement: the human presses `X` because they want the vertical travel gone
+   * *now*, and a lock that took effect on the next wobble would read as not
+   * having worked.
+   */
+  const lockGrab = useCallback(
+    (axis: 'x' | 'y', free: boolean): void => {
+      const grab = grabRef.current
+      if (grab === null) return
+
+      const held = grab.axis === axis ? null : axis
+      grabRef.current = { ...grab, axis: held }
+      setGrabbing({ entity: grab.entity, axis: held })
+      applyGrab(free)
+    },
+    [applyGrab],
+  )
 
   useEffect(() => {
     const element = host.current
@@ -148,10 +290,20 @@ export function useSceneGestures(options: SceneGestureOptions): SceneGestures {
       // an f into the entity's name field.
       element.focus({ preventScroll: true })
 
+      // A grab owns the picture, so finishing it is the whole of what this
+      // press does — it picks nothing, changes no selection and starts no pan.
+      // Above space, deliberately: a grab is a move already in progress and the
+      // human has to be able to put it down without letting go of anything.
+      if (grabRef.current !== null) {
+        if (left) endGrab('drop')
+        return
+      }
+
       // Space wins over everything, so a pan can start anywhere — including on
       // top of a sprite, which is exactly where the human will try it.
       if (middle || readyRef.current) {
         holding = { id: event.pointerId, x: event.clientX, y: event.clientY }
+        pressed.current = true
         element.setPointerCapture(event.pointerId)
         setPanning(true)
         return
@@ -171,10 +323,25 @@ export function useSceneGestures(options: SceneGestureOptions): SceneGestures {
       if (entity === null) return
 
       placing = { id: event.pointerId, entity, x: event.clientX, y: event.clientY, moved: false }
+      pressed.current = true
       element.setPointerCapture(event.pointerId)
     }
 
     const onPointerMove = (event: PointerEvent): void => {
+      // Kept up to date whatever else is going on, because it is what a grab
+      // started later measures its travel from.
+      pointerAt.current = { x: event.clientX, y: event.clientY }
+
+      const grab = grabRef.current
+      if (grab !== null) {
+        // The first sighting of the pointer since `G` is the origin rather than
+        // a movement. Without this a grab started with the cursor outside the
+        // panel would throw the entity across the level on the way back in.
+        if (grab.origin === null) grab.origin = pointerAt.current
+        else applyGrab(event.altKey)
+        return
+      }
+
       if (holding !== null && event.pointerId === holding.id) {
         const dx = event.clientX - holding.x
         const dy = event.clientY - holding.y
@@ -211,6 +378,7 @@ export function useSceneGestures(options: SceneGestureOptions): SceneGestures {
       if (holding !== null && event.pointerId === holding.id) {
         if (element.hasPointerCapture(event.pointerId)) element.releasePointerCapture(event.pointerId)
         holding = null
+        pressed.current = false
         setPanning(false)
         return
       }
@@ -218,6 +386,7 @@ export function useSceneGestures(options: SceneGestureOptions): SceneGestures {
       if (placing !== null && event.pointerId === placing.id) {
         if (element.hasPointerCapture(event.pointerId)) element.releasePointerCapture(event.pointerId)
         placing = null
+        pressed.current = false
         setDragging(null)
         // Always, even for a press that never moved: it seals the undo step, and
         // sealing one that was never opened costs nothing.
@@ -226,6 +395,11 @@ export function useSceneGestures(options: SceneGestureOptions): SceneGestures {
     }
 
     const onPointerLeave = (): void => {
+      // Where the pointer is stops being known, so a grab started while the hand
+      // is somewhere else does not measure its travel from a point it left ten
+      // minutes ago. A grab already running keeps the origin it has — its travel
+      // is from where it started, and the pointer is free to leave and come back.
+      if (grabRef.current === null) pointerAt.current = null
       if (holding === null && placing === null) setPicked(null)
     }
 
@@ -241,6 +415,10 @@ export function useSceneGestures(options: SceneGestureOptions): SceneGestures {
       // this the browser zooms the editor rather than the level.
       event.preventDefault()
       if (event.deltaY === 0) return
+      // Prevented but ignored while a grab is running: the scale is what turns
+      // the pointer's travel into level units, so zooming mid-grab would move
+      // the entity without the pointer having moved at all.
+      if (grabRef.current !== null) return
 
       zoom(pointIn(event), event.deltaY < 0 ? 1 : -1)
     }
@@ -265,12 +443,40 @@ export function useSceneGestures(options: SceneGestureOptions): SceneGestures {
       element.removeEventListener('mousedown', onMouseDown)
       element.removeEventListener('wheel', onWheel)
     }
-  }, [host, pan, zoom])
+  }, [host, pan, zoom, applyGrab, endGrab])
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
-      if (!enabledRef.current || event.ctrlKey || event.metaKey || event.altKey) return
+      if (!enabledRef.current || event.ctrlKey || event.metaKey) return
       if (isTyping(event.target)) return
+
+      const key = event.key.toLowerCase()
+
+      /*
+       * A grab owns the keyboard for as long as it runs, and it is asked before
+       * Alt is looked at rather than after: Alt is the modifier that ignores the
+       * snap, so it is exactly what the human is holding when they decide to
+       * lock an axis or call the whole thing off.
+       *
+       * Everything else is swallowed rather than passed on. `Home` and `F` both
+       * move the camera, and moving the camera mid-grab changes what the travel
+       * so far means.
+       */
+      if (grabRef.current !== null) {
+        if (event.key === 'Escape') {
+          event.preventDefault()
+          endGrab('cancel')
+        } else if (event.key === 'Enter') {
+          event.preventDefault()
+          endGrab('drop')
+        } else if (key === 'x' || key === 'y') {
+          event.preventDefault()
+          lockGrab(key, event.altKey)
+        }
+        return
+      }
+
+      if (event.altKey) return
 
       if (event.code === 'Space') {
         // Held rather than pressed, so it must not repeat into anything — and
@@ -294,11 +500,28 @@ export function useSceneGestures(options: SceneGestureOptions): SceneGestures {
         return
       }
 
-      if (event.key.toLowerCase() === 'f') {
+      if (key === 'f') {
         event.preventDefault()
         const entity = selectedRef.current
         // Nothing selected means nothing to frame. Home is the other key.
         if (entity !== null) frameEntity(entity)
+        return
+      }
+
+      // Nothing selected means nothing to grab — and no press is needed, which
+      // is the whole point: the cursor is usually on top of the thing being
+      // moved, so a gesture that had to start on the sprite is a gesture that
+      // starts by hiding it.
+      if (key === 'g') {
+        event.preventDefault()
+        startGrab()
+        return
+      }
+
+      if (key === 'd' && event.shiftKey) {
+        event.preventDefault()
+        const entity = selectedRef.current
+        if (entity !== null) duplicateRef.current(entity)
       }
     }
 
@@ -307,8 +530,13 @@ export function useSceneGestures(options: SceneGestureOptions): SceneGestures {
     }
 
     // Alt-tabbing away while holding space would otherwise leave the editor
-    // believing it is still held, and the next left-click would pan.
-    const onBlur = (): void => setReady(false)
+    // believing it is still held, and the next left-click would pan. A grab is
+    // worse: it is driven by a pointer this window can no longer see, so it
+    // would still be running — invisibly — when the human came back.
+    const onBlur = (): void => {
+      setReady(false)
+      endGrab('cancel')
+    }
 
     window.addEventListener('keydown', onKeyDown)
     window.addEventListener('keyup', onKeyUp)
@@ -319,9 +547,27 @@ export function useSceneGestures(options: SceneGestureOptions): SceneGestures {
       window.removeEventListener('keyup', onKeyUp)
       window.removeEventListener('blur', onBlur)
     }
-  }, [frameAll, frameEntity])
+  }, [frameAll, frameEntity, startGrab, endGrab, lockGrab])
 
-  return { panning, ready: ready && enabled, picked: enabled ? picked : null, dragging }
+  /*
+   * The two ways a grab can be ended by something other than the human.
+   *
+   * A level closing or Play starting takes the picture away, and the selection
+   * moving to something else — which only another panel can do, since a press in
+   * this one is consumed by the grab — leaves a move running on an entity whose
+   * outline is no longer on screen. Both put the entity back rather than
+   * dropping it where it happens to be: nothing was decided, so nothing should
+   * be kept.
+   */
+  useEffect(() => {
+    if (!enabled) endGrab('cancel')
+  }, [enabled, endGrab])
+
+  useEffect(() => {
+    if (grabRef.current !== null && grabRef.current.entity !== selected) endGrab('cancel')
+  }, [selected, endGrab])
+
+  return { panning, ready: ready && enabled, picked: enabled ? picked : null, dragging, grabbing }
 }
 
 /** Whether a key belongs to whatever the human is typing into. */

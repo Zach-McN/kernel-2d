@@ -91,6 +91,10 @@ export const editDocument: DocumentStore['editDocument'] = (path, intent, recipe
 export const undo: DocumentStore['undo'] = () => (editingSuspended ? false : store.undo())
 export const redo: DocumentStore['redo'] = () => (editingSuspended ? false : store.redo())
 
+/** Gated with the edits it takes back: a cancelled gesture writes, like any other. */
+export const abandonEdits: DocumentStore['abandonEdits'] = (mergeKey) =>
+  editingSuspended ? false : store.abandonEdits(mergeKey)
+
 export const { sealEdits, peekUndo, peekRedo, beginRead, adoptFromDisk, flushSaves } = store
 
 export type { Document }
