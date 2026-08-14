@@ -36,6 +36,14 @@ export interface StartOptions {
  * Vite comes up first so its address can go in the sidecar's banner, and a
  * sidecar that refuses to start takes the window down with it rather than
  * leaving a half-started editor pointed at nothing.
+ *
+ * **The browser is opened last, deliberately.** Letting Vite open it as part of
+ * starting means the page loads while the sidecar is still sweeping `.meta`
+ * files, its first call is proxied to a port nothing is listening on yet, and
+ * the terminal prints `http proxy error: ECONNREFUSED` above the banner. The
+ * editor recovers on its own — it has a connecting state and retries — so the
+ * error is a lie about a working editor, which is the worst kind to leave in a
+ * launcher a human reads.
  */
 export async function startEditor(config: SidecarConfig, options: StartOptions): Promise<RunningEditor> {
   // The editor talks to the sidecar through Vite's proxy, so the browser never
@@ -55,7 +63,7 @@ export async function startEditor(config: SidecarConfig, options: StartOptions):
     // Vite's own startup box is replaced by the sidecar banner, so starting the
     // editor prints one thing rather than two.
     logLevel: 'warn',
-    server: { open: options.open },
+    server: { open: false },
   })
   await editor.listen()
 
@@ -63,6 +71,10 @@ export async function startEditor(config: SidecarConfig, options: StartOptions):
 
   try {
     const sidecar = await startSidecar(config, { editorUrl: url })
+
+    // Now, and not before: the page's first call to the sidecar is answered by
+    // a sidecar that exists.
+    if (options.open) editor.openBrowser()
 
     return {
       url,
