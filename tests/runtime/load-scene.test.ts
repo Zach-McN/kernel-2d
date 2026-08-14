@@ -88,6 +88,30 @@ describe('loading a level', () => {
     })
   })
 
+  it('loads a texture named inside a component it has no schema for', async () => {
+    // A game's systems can spawn entities mid-run — a projectile, a monster a
+    // wave calls in — and nothing can fetch once a level is moving. So any
+    // `texture`-named reference in any component is part of what the level
+    // draws, and it has to be in the request before anything starts.
+    const arrowTexture = 'assets/textures/projectiles/arrow.png'
+    const tower = entity('e1', 'Archer post', {
+      ...sprite(knightTexture, KNIGHT_META_ID),
+      tower: { damage: 1, projectile: { texture: { id: 'feedbead00112233', path: arrowTexture } } },
+    })
+
+    const reader = readerOver({
+      'scenes/one.json': scene(tower),
+      [`${knightTexture}.meta`]: textureMeta(KNIGHT_META_ID),
+      [`${arrowTexture}.meta`]: textureMeta('feedbead00112233'),
+    })
+
+    const result = await loadScene(reader, 'scenes/one.json')
+    if (!result.ok) throw new Error(result.problem)
+
+    expect(result.problems).toEqual([])
+    expect(Object.keys(result.request.textures).sort()).toEqual([knightTexture, arrowTexture].sort())
+  })
+
   it('carries the pivot and the slicing through untouched', async () => {
     const meta: AssetMeta = {
       ...textureMeta(KNIGHT_META_ID),

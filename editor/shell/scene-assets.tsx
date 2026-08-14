@@ -2,7 +2,7 @@ import { createContext, useContext, useMemo, type ReactElement, type ReactNode }
 
 import type { AssetMeta, TextureImportSettings } from '../../runtime/formats/meta-schema'
 import { ASSET_META_FORMAT, metaPathFor } from '../../runtime/formats/meta-schema'
-import { spriteOf, type Entity } from '../../runtime/formats/scene-schema'
+import { textureRefsOf, type Entity } from '../../runtime/formats/scene-schema'
 import type { SceneTexture } from '../../runtime'
 import { MetaViewSchema } from '../../sidecar/meta-view-schema'
 import type { ProjectTree } from '../../sidecar/tree-schema'
@@ -67,13 +67,20 @@ export interface SceneAssets {
 
 const EMPTY: SceneAssets = { textures: {}, problems: {}, loading: false }
 
-/** The textures a level's entities point at, deduplicated, with the id each recorded. */
+/**
+ * The textures a level's entities point at, deduplicated, with the id each
+ * recorded.
+ *
+ * Every `texture`-named reference in every component, not only the sprite's —
+ * the same walk the runtime's own loader does (`textureRefsOf`), because the
+ * editing picture and the Play picture must want the same set or a texture a
+ * game's systems spawn things from would resolve in one and not the other.
+ */
 function texturesWantedBy(entities: readonly Entity[]): Map<string, string> {
   const byPath = new Map<string, string>()
   for (const entity of entities) {
-    const sprite = spriteOf(entity)
-    if (sprite !== null && !byPath.has(sprite.texture.path)) {
-      byPath.set(sprite.texture.path, sprite.texture.id)
+    for (const ref of textureRefsOf(entity)) {
+      if (!byPath.has(ref.path)) byPath.set(ref.path, ref.id)
     }
   }
   return byPath

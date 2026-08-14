@@ -398,6 +398,54 @@ export function assetRefsOf(holder: ComponentHolder): AssetRef[] {
   return refs
 }
 
+/**
+ * Every texture this entity or prefab names, wherever it names one: the sprite
+ * component's, and any reference sitting under a field called `texture` at any
+ * depth inside any component — including component types the kernel has no
+ * schema for.
+ *
+ * **The field name is the contract, and it is the whole of it.** A game's own
+ * components carry data the kernel cannot know the shape of (the component map
+ * is open on purpose), yet the art they name still has to be loaded before a
+ * level runs — a game's systems may spawn entities mid-run, and a spawned
+ * entity can only draw a texture that arrived with the level. Walking for one
+ * agreed name lets authored content declare that art without the kernel
+ * learning a single genre word: whatever `{ "texture": { id, path } }` sits
+ * inside, it is a texture, because that is what the word means everywhere the
+ * kernel already uses it.
+ *
+ * Anything under a `texture` key that is not an `AssetRef` is skipped rather
+ * than reported, exactly as in `assetRefsOf` above: this answers "what art does
+ * this name", and a malformed reference simply names none.
+ *
+ * The walk trusts that an entity is a JSON document — finite and acyclic —
+ * which `copyEntity` already states as the format's definition.
+ */
+export function textureRefsOf(holder: ComponentHolder): AssetRef[] {
+  const refs: AssetRef[] = []
+
+  const walk = (value: unknown): void => {
+    if (value === null || typeof value !== 'object') return
+    if (Array.isArray(value)) {
+      for (const item of value) walk(item)
+      return
+    }
+    for (const [key, inside] of Object.entries(value)) {
+      if (key === 'texture') {
+        const parsed = AssetRefSchema.safeParse(inside)
+        if (parsed.success) {
+          refs.push(parsed.data)
+          continue
+        }
+      }
+      walk(inside)
+    }
+  }
+
+  walk(holder.components)
+  return refs
+}
+
 /** The component types on this entity or prefab that the kernel has no schema for. */
 export function unknownComponentTypesOf(holder: ComponentHolder): string[] {
   return Object.keys(holder.components)

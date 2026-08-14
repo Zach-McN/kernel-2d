@@ -13,6 +13,7 @@ import {
   serializeScene,
   spinOf,
   spriteOf,
+  textureRefsOf,
   unknownComponentTypesOf,
   type Entity,
   type Scene,
@@ -360,5 +361,68 @@ describe('every file a document points at', () => {
       expect(isKnownComponentType(type)).toBe(true)
     }
     expect(Object.keys(COMPONENT_REFERENCE_FIELDS).sort()).toEqual(['prefab', 'sprite'])
+  })
+})
+
+describe('every texture a document names', () => {
+  it('finds the sprite texture, exactly as the sprite reader does', () => {
+    expect(textureRefsOf(knight)).toEqual([
+      { id: 'a3f90011deadbeef', path: 'assets/textures/characters/knight-idle.png' },
+    ])
+  })
+
+  it('finds a texture named inside a component the kernel has no schema for', () => {
+    // The case this walk exists for: a game's own component declaring the art
+    // for something its systems will spawn mid-run. The kernel knows nothing
+    // about towers; it knows what the word `texture` means.
+    const tower: Entity = {
+      ...defaultEntity('abc123', 'Archer post'),
+      components: {
+        tower: {
+          damage: 1,
+          projectile: { texture: { id: 'arrow-meta-id', path: 'assets/textures/projectiles/arrow.png' }, unitsPerSecond: 160 },
+        },
+      },
+    }
+
+    expect(textureRefsOf(tower)).toEqual([
+      { id: 'arrow-meta-id', path: 'assets/textures/projectiles/arrow.png' },
+    ])
+  })
+
+  it('finds a texture inside an array, because authored lists are ordinary data', () => {
+    const spawner: Entity = {
+      ...defaultEntity('abc123', 'Spawner'),
+      components: {
+        waves: {
+          list: [
+            { texture: { id: 'runner-id', path: 'assets/textures/monsters/runner.png' }, count: 5 },
+            { texture: { id: 'brute-id', path: 'assets/textures/monsters/brute.png' }, count: 2 },
+          ],
+        },
+      },
+    }
+
+    expect(textureRefsOf(spawner).map((ref) => ref.id)).toEqual(['runner-id', 'brute-id'])
+  })
+
+  it('skips a texture field that does not hold a reference', () => {
+    const broken: Entity = {
+      ...defaultEntity('abc123', 'Broken'),
+      components: {
+        tower: { projectile: { texture: 'arrow.png' } },
+        other: { texture: { path: 'no-id.png' } },
+      },
+    }
+
+    expect(textureRefsOf(broken)).toEqual([])
+  })
+
+  it('finds nothing on an entity that names none', () => {
+    expect(textureRefsOf(defaultEntity('abc123', 'Empty'))).toEqual([])
+  })
+
+  it('reads a prefab the same way it reads an entity, because both hold components', () => {
+    expect(textureRefsOf({ components: knight.components })).toEqual(textureRefsOf(knight))
   })
 })

@@ -53,6 +53,7 @@ export {
   serializeScene,
   spinOf,
   spriteOf,
+  textureRefsOf,
   unknownComponentTypesOf,
   type AssetRef,
   type ComponentHolder,

@@ -6,7 +6,7 @@ import {
   SCENE_FORMAT,
   SceneSchema,
   prefabRefOf,
-  spriteOf,
+  textureRefsOf,
   type Entity,
   type Scene,
 } from '../formats/scene-schema.js'
@@ -192,6 +192,12 @@ async function readPrefabs(
  * prefab it points at — which is why this runs after prefab resolution and not
  * beside it.
  *
+ * "Draw" is read broadly on purpose: every `texture`-named reference in every
+ * component is collected (`textureRefsOf`), not only the sprite's. A game's
+ * systems may spawn entities while the level runs — a projectile, a monster a
+ * wave calls in — and the art those will wear has to be in this request before
+ * anything moves, because nothing can fetch mid-run.
+ *
  * A texture with no readable `.meta` is left out rather than drawn with defaults.
  * Defaults would put the pivot in the middle and treat a sprite sheet as one
  * image, and a sprite silently drawn in the wrong place with the wrong frame is
@@ -204,8 +210,9 @@ async function readTextures(
 ): Promise<Record<string, SceneTexture>> {
   const wanted = new Map<string, string>()
   for (const entity of entities) {
-    const sprite = spriteOf(entity)
-    if (sprite !== null && !wanted.has(sprite.texture.path)) wanted.set(sprite.texture.path, sprite.texture.id)
+    for (const ref of textureRefsOf(entity)) {
+      if (!wanted.has(ref.path)) wanted.set(ref.path, ref.id)
+    }
   }
 
   const textures: Record<string, SceneTexture> = {}
