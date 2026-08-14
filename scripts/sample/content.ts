@@ -24,6 +24,7 @@ import {
   type Entity,
   type Scene,
 } from '../../runtime/formats/scene-schema.js'
+import { GENERATED_BY } from '../marking.js'
 import { sampleAssetId, sampleEntityId } from './ids.js'
 import { PixelCanvas, drawSprite, type Colour } from './png.js'
 import { decay, encodeWav, sine } from './wav.js'
@@ -50,7 +51,7 @@ import { decay, encodeWav, sine } from './wav.js'
  * broken cases are produced by tests against a throwaway copy instead.
  */
 
-export const GENERATED_BY = 'claude-opus-5'
+export { GENERATED_BY }
 
 export interface SampleFile {
   /** Project-relative, forward-slashed. */

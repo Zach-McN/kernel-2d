@@ -45,6 +45,16 @@ describe('filling a project folder with sample content', () => {
     }
   })
 
+  it('leaves the folder clickable, not only openable by typing a path', () => {
+    const report = build()
+
+    expect(report.written).toContain('Open editor.cmd')
+    expect(fs.existsSync(project.file('Open editor.cmd'))).toBe(true)
+    // It carries its marking in a comment, so it must not also get a `.meta` —
+    // that would put a launcher in the Assets panel as though it were art.
+    expect(fs.existsSync(project.file('Open editor.cmd.meta'))).toBe(false)
+  })
+
   it('writes images a picture viewer can actually open', () => {
     build()
 

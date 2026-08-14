@@ -1,6 +1,11 @@
 # Normalize all text files to LF in the repo and working tree
 * text=auto eol=lf
 
+# Except a launcher: cmd.exe is its only reader and is the one reader still
+# entitled to care about carriage returns. None is committed here — this line is
+# what a game folder copies, and `scripts/launcher/write.ts` writes them.
+*.cmd text eol=crlf
+
 # Binary assets — never normalized
 *.png binary
 *.jpg binary

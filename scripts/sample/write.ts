@@ -8,7 +8,9 @@ import {
   metaPathFor as appendMetaSuffix,
   serializeMeta,
 } from '../../runtime/formats/meta-schema.js'
-import { GENERATED_BY, sampleFiles, type SampleFile } from './content.js'
+import { writeLauncher } from '../launcher/write.js'
+import { GENERATED_BY, marksItself } from '../marking.js'
+import { sampleFiles, type SampleFile } from './content.js'
 import { sampleAssetId } from './ids.js'
 
 /**
@@ -51,6 +53,13 @@ export function writeSampleProject(projectPath: string, options: WriteOptions = 
       fs.writeFileSync(metaPathFor(absolute), meta(file, generatedAt))
     }
   }
+
+  // A folder full of content that still has to be opened by typing a path is
+  // half a sample. The launcher is not sample content — it is the same file
+  // every project gets — so it is written by its own generator, under the same
+  // never-overwrite-unmarked rule.
+  const launcher = writeLauncher(projectPath, { generatedAt })
+  ;(launcher.written ? report.written : report.skipped).push(launcher.path)
 
   return report
 }
@@ -95,20 +104,11 @@ function isOurs(absolutePath: string, file: SampleFile): boolean {
     // `.meta` — a settings file beside a `.ts` would be the asset pipeline
     // annotating something that is not an asset, and it would show up in the
     // Assets panel as one. So the marker is a comment, and finding it is a text
-    // search rather than a parse.
+    // search rather than a parse (`scripts/marking.ts`).
     case 'comment':
       return marksItself(absolutePath)
     case 'sidecar':
       return fs.existsSync(metaPathFor(absolutePath)) && hasMarker(metaPathFor(absolutePath))
-  }
-}
-
-/** The marker as a source file carries it: in a comment, not in a structure. */
-function marksItself(absolutePath: string): boolean {
-  try {
-    return fs.readFileSync(absolutePath, 'utf8').includes('generatedBy')
-  } catch {
-    return false
   }
 }
 

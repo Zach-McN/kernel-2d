@@ -8,13 +8,19 @@ It is kept current by the definition of done in `CLAUDE.md`: a session that
 changes what you can do, or how you do it, changes this page in the same commit.
 If this page and the editor disagree, the editor is right and the page is a bug.
 
-Last true as of: **a settable snap, and placing by clicking** (2026-08-13).
+Last true as of: **a game folder you open by double-clicking it** (2026-08-13).
 
 ---
 
 ## Running it
 
-Everything needs one terminal, in the `kernel-2d` folder.
+**The short version: open your game folder in Explorer and double-click
+`Open editor.cmd`.** A black window appears and the editor opens in your browser
+a few seconds later. That window *is* the editor running — leave it alone, and
+close it when you are finished. Everything below is the same thing typed out, and
+the other commands that have no button.
+
+Everything below needs one terminal, in the `kernel-2d` folder.
 
 **Make a project to work in.** The folder has to exist first — the command fills
 a folder, it does not create one:
@@ -45,6 +51,18 @@ npm run editor -- ../my-game
 
 Add `--port 7332` if it says the port is busy — usually another editor still
 running. Ctrl-C stops both halves.
+
+**Give a folder its button.** Writes `Open editor.cmd` into it, which is the
+double-click above. A folder made by `npm run sample-project` already has one;
+run this for a folder that does not, and again if you ever move a game folder or
+the `kernel-2d` folder — the button remembers where the other one was:
+
+```bash
+npm run launcher -- ../my-game
+```
+
+It will not touch a file of that name that it did not write itself, so a launcher
+you have edited by hand is safe.
 
 **Make a folder that plays your game:**
 
@@ -91,8 +109,8 @@ anywhere and open each with the same command.
 **Your first real game folder is `../games/tower-defense`**, and it is a different
 thing from the sample. The sample is a scratch folder full of generated content to
 try the editor against; the game folder is yours, it is its own repository, and its
-`docs/GENRE-SPEC.md` is the document that decides what gets built in it. Open it the
-same way:
+`docs/GENRE-SPEC.md` is the document that decides what gets built in it. Open it by
+double-clicking `Open editor.cmd` inside it, or the long way:
 
 ```bash
 npm run editor -- ../games/tower-defense
@@ -115,8 +133,8 @@ watches that folder and would start annotating the copies.
 
 If a session changed the editor or the game runtime, a browser refresh is enough
 and usually not even that. If it changed the filesystem service, the launcher, or
-a dependency, press Ctrl-C and run `npm run editor` again. A session should tell
-you which.
+a dependency, close the black window and double-click again (or press Ctrl-C and
+re-run the command). A session should tell you which.
 
 An exported folder is a snapshot and does not update itself. After a session
 changes the runtime, or after you change your levels, run `npm run export` again.
