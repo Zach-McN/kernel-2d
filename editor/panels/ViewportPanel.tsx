@@ -1,20 +1,24 @@
 import { useEffect, useMemo, useRef, type ReactElement, type ReactNode, type RefObject } from 'react'
 
-import { describeLoadProblem, inSceneUnits, type SceneRequest, type ShownScene } from '../../runtime'
+import { describeLoadProblem, inSceneUnits, toScenePoint, type SceneRequest, type ShownScene } from '../../runtime'
 import { SCENE_FORMAT, type Entity } from '../../runtime/formats/scene-schema'
 import { basename } from '../shell/asset-kinds'
 import { entityAt, onScreen } from '../shell/drawn-entities'
 import { useOpenScene, type OpenSceneState } from '../shell/open-scene'
+import { usePlacing, type Placing } from '../shell/placing'
 import { comparePictures, describeComparison, type PlayComparison } from '../shell/play-comparison'
 import { usePlayMode, type PlayState } from '../shell/play-mode'
 import { useRunningLevel } from '../shell/running-level'
 import { describeProblem, problemsIn, useSceneAssets } from '../shell/scene-assets'
 import { describePrefabProblem, prefabProblemsIn, useResolvedScene } from '../shell/scene-prefabs'
 import { useDrawScene, useSceneView, type SceneViewState } from '../shell/scene-view-context'
+import { freePoint, snapPoint } from '../shell/snap'
 import { useSceneGestures, type ScenePlacement } from '../shell/useSceneGestures'
 import { useSelection } from '../shell/selection'
+import { usePlacePrefab } from '../shell/usePlacePrefab'
 import { describeZoom } from '../shell/zoom'
 import { editDocument, sealEdits } from '../store/open-documents'
+import { NumberField } from './NumberField'
 import { SceneOverlay, describeScene } from './SceneOverlay'
 
 /**
@@ -111,7 +115,9 @@ export function ViewportPanel(): ReactElement {
   const selected = selection.selected.kind === 'entity' ? selection.selected.entity : null
   const ready = view.state === 'ready' ? view : null
 
-  const placement = usePlacement(open, current)
+  const placing = usePlacing()
+  const stamp = usePlacePrefab(placing.stamping)
+  const placement = usePlacement(open, current, placing, stamp)
   const gestures = useSceneGestures({
     host,
     enabled: current !== null && !mode.active,
@@ -173,7 +179,7 @@ export function ViewportPanel(): ReactElement {
       data-play-units={runningLevel === null ? '' : JSON.stringify(runningLevel.units)}
       data-play-steps={runningLevel === null ? '' : String(runningLevel.steps)}
     >
-      <Stage host={host} view={view} grab={grabOf(gestures)}>
+      <Stage host={host} view={view} grab={grabOf(gestures, placing.stamping !== null && !mode.active)}>
         {/* No editor marks over a running game. */}
         {current !== null && !mode.active && <SceneOverlay shown={current} selected={selected} />}
       </Stage>
@@ -194,6 +200,10 @@ export function ViewportPanel(): ReactElement {
           selected={selected}
           offScreen={offScreenIn(open, current, selected)}
           moving={beingMoved}
+          placing={placing}
+          stampingName={
+            placing.stamping === null ? null : (stamp.prefabName ?? basename(placing.stamping))
+          }
           onPlay={mode.start}
           // Not merely "there is a picture": a level's textures arrive one at a
           // time, so a report can be a real report of this level with half of it
@@ -235,10 +245,17 @@ const noop = (): void => {}
 const noPan = (_dx: number, _dy: number): void => {}
 const noZoom = (_at: { x: number; y: number }, _direction: 1 | -1): void => {}
 
-/** Which cursor the stage offers, in the order the gestures take priority. */
-function grabOf(gestures: ReturnType<typeof useSceneGestures>): string {
+/**
+ * Which cursor the stage offers, in the order the gestures take priority.
+ *
+ * The same order the press itself is decided in, and it has to be: a cursor
+ * that promised something other than what the button would do is worse than no
+ * cursor at all. Space still wins over placing, here and there.
+ */
+function grabOf(gestures: ReturnType<typeof useSceneGestures>, stamping: boolean): string {
   if (gestures.panning) return 'holding'
   if (gestures.ready) return 'ready'
+  if (stamping) return 'placing'
   if (gestures.dragging !== null) return 'moving'
   if (gestures.picked !== null) return 'pick'
   return ''
@@ -254,7 +271,12 @@ function grabOf(gestures: ReturnType<typeof useSceneGestures>): string {
  * this feature contains no undo code at all (`editor-kernel` D7). The merge key
  * carries the entity's id, so dragging one sprite and then another is two steps.
  */
-function usePlacement(open: OpenSceneState, current: ShownScene | null): ScenePlacement {
+function usePlacement(
+  open: OpenSceneState,
+  current: ShownScene | null,
+  placing: Placing,
+  stamp: ReturnType<typeof usePlacePrefab>,
+): ScenePlacement {
   const selection = useSelection()
   const scenePath = open.state === 'open' ? open.path : null
   const scale = current?.camera.scale ?? null
@@ -297,7 +319,8 @@ function usePlacement(open: OpenSceneState, current: ShownScene | null): ScenePl
         // Screen y counts down and the level's counts up, so the vertical
         // travel is subtracted. The scale is the only part of the camera that
         // matters here: a drag is a distance, not a place.
-        const at = placeAt(start.x + screenDx / scale, start.y - screenDy / scale, free)
+        const wanted = { x: start.x + screenDx / scale, y: start.y - screenDy / scale }
+        const at = free ? freePoint(wanted) : snapPoint(wanted, placing.snap)
 
         editDocument(
           scenePath,
@@ -320,23 +343,27 @@ function usePlacement(open: OpenSceneState, current: ShownScene | null): ScenePl
         // sealing one that was never opened costs nothing.
         sealEdits()
       },
-    }),
-    [current, scenePath, scale, entities, selection],
-  )
-}
 
-/**
- * Where a drag puts an entity.
- *
- * Whole level units unless Alt is held, because a level laid out on whole
- * numbers is one whose pixel art lands on the pixel grid and whose file is
- * readable. Free placement is still rounded — to three decimals, which is finer
- * than the closest zoom can resolve — because the alternative is seventeen
- * digits of floating-point noise in somebody's level.
- */
-function placeAt(x: number, y: number, free: boolean): { x: number; y: number } {
-  if (!free) return { x: Math.round(x), y: Math.round(y) }
-  return { x: Math.round(x * 1000) / 1000, y: Math.round(y * 1000) / 1000 }
+      stamping: placing.stamping !== null && current !== null && stamp.canPlace,
+
+      /**
+       * A press, turned into a place in the level.
+       *
+       * **Inverted through the camera the renderer *drew* with, not the one it
+       * was asked for.** They differ by less than a device pixel — the nudge
+       * that keeps pixel art crisp (`phaser4-runtime` P5) — which at 8× is an
+       * eighth of a level unit: small enough to read as noise, and large enough
+       * to drop a tile on the wrong side of a snap boundary.
+       */
+      stampAt: (at) => {
+        if (current === null) return
+        stamp.placeAt(toScenePoint(at, current.drawnWith, current.canvasSize))
+      },
+
+      stopStamping: placing.stopStamping,
+    }),
+    [current, scenePath, scale, entities, selection, placing, stamp],
+  )
 }
 
 // --- the canvas ------------------------------------------------------------
@@ -437,6 +464,10 @@ interface CaptionProps {
   offScreen: OffScreen
   /** The entity being dragged right now, or null. */
   moving: Entity | null
+  /** What a press lands on, and whether a press is placing at all. */
+  placing: Placing
+  /** What is being repeat-placed, in words, or null when nothing is. */
+  stampingName: string | null
   onPlay: () => void
   /** False until there is a settled picture of this level to run — and to check against. */
   canPlay: boolean
@@ -457,6 +488,8 @@ function Caption({
   selected,
   offScreen,
   moving,
+  placing,
+  stampingName,
   onPlay,
   canPlay,
 }: CaptionProps): ReactElement {
@@ -549,12 +582,19 @@ function Caption({
       {/*
        * A drag says where it is putting the thing, in the level's own units, in
        * the place the human is already looking. It is also the only home a
-       * modifier has: nothing else on screen could tell you Alt exists.
+       * modifier has: nothing else on screen could tell you Alt exists — and
+       * the same is true of the way out of repeat-placing, which is why the
+       * mode says its own name and its own key here rather than only in the
+       * panel that switched it on.
        */}
-      {moving !== null ? (
+      {stampingName !== null ? (
+        <Note testId="viewport-stamping" title={`Every click in the level places another ${stampingName}. Esc stops it.`}>
+          Placing <strong>{stampingName}</strong> — Esc to stop.
+        </Note>
+      ) : moving !== null ? (
         <Note testId="viewport-dragging">
           <strong>{moving.name}</strong> — {moving.transform.x}, {moving.transform.y}. Hold Alt to place it
-          between whole units.
+          anywhere.
         </Note>
       ) : offScreen.kind === 'all' ? (
         <Note bad testId="viewport-offscreen">Everything is off screen — press Home to bring it back.</Note>
@@ -601,6 +641,7 @@ function Caption({
         </button>
       </span>
 
+      <SnapControls placing={placing} />
       <CameraControls view={view} selected={selected} />
     </Bar>
   )
@@ -707,6 +748,50 @@ function PlayCaption({
 
       {stop}
     </Bar>
+  )
+}
+
+/**
+ * What a drag and a press land on, as two numbers.
+ *
+ * In the viewport's own bar rather than in the Inspector, because it is a
+ * property of how this window behaves and not of any document — the same
+ * argument that keeps it out of the level file, one layer up. It is beside the
+ * zoom for the same reason: both are settings of the surface rather than of the
+ * thing being looked at.
+ *
+ * **Two fields, and the second one is not an ornament.** A step alone describes
+ * a grid through the origin, which is the wrong grid for any level whose sprites
+ * hang off their middles — see `editor/shell/snap.ts`, which is where the
+ * arithmetic and the reasoning both live.
+ *
+ * Deliberately absent while a level is running, along with the whole editing
+ * caption: nothing can be placed then, so a control offering to change where it
+ * would land is a control lying about what it does.
+ */
+function SnapControls({ placing }: { placing: Placing }): ReactElement {
+  const { snap, setSnap } = placing
+
+  return (
+    <span className="viewport__snap" data-testid="scene-snap" data-snap-step={snap.step} data-snap-offset={snap.offset}>
+      <span className="viewport__snap-label">Snap</span>
+      <NumberField
+        testId="scene-snap-step"
+        title="How far apart the positions a drag or a click can land on are, in scene units. 0 places freely."
+        value={snap.step}
+        min={0}
+        step={1}
+        onCommit={(step) => setSnap({ ...snap, step })}
+      />
+      <span className="viewport__snap-label">from</span>
+      <NumberField
+        testId="scene-snap-offset"
+        title="Where that grid starts, in scene units. A step of 16 from 8 lands on 8, 24, 40 — the middles of 16-unit tiles."
+        value={snap.offset}
+        step={1}
+        onCommit={(offset) => setSnap({ ...snap, offset })}
+      />
+    </span>
   )
 }
 

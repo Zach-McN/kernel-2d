@@ -547,6 +547,26 @@ body {
  */
 .scene .viewport__bar {
   flex-wrap: nowrap;
+  /*
+   * And it is the same height whatever is in it, which is the same constraint
+   * as the one above rather than a second one — wrapping was simply the first
+   * way found to break it.
+   *
+   * The bar is the only thing between the stage and the bottom of the panel, so
+   * every pixel it takes is a pixel the canvas does not have. Play mode swaps
+   * the whole caption for a different one, so a bar whose height came from its
+   * tallest control would resize the canvas at the moment Play was pressed —
+   * and the check that the running level was drawn exactly as the editing view
+   * had it refuses to compare two different canvases, correctly. It reads as
+   * "cannot be checked", which sounds like a limitation and is a layout bug.
+   *
+   * So: centred rather than baseline-aligned, because a text input's baseline
+   * sits lower in its box than a paragraph's and pushes the line box taller;
+   * and a floor at the height of the tallest control, so the two captions
+   * measure the same even though they hold different things.
+   */
+  align-items: center;
+  min-height: 26px;
 }
 
 .scene .viewport__note {
@@ -556,8 +576,38 @@ body {
   text-overflow: ellipsis;
 }
 
+/*
+ * The snap and the zoom are one cluster held to the right-hand end, and the
+ * snap is the one carrying the gap. `.viewport__zoom` has `margin-left: auto`
+ * of its own, shared with the texture tab; leaving that in place as well would
+ * split the free space between the two groups and let them drift apart as the
+ * caption changed length.
+ */
 .scene .viewport__zoom {
   flex-shrink: 0;
+  margin-left: 0;
+}
+
+.scene .viewport__snap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.viewport__snap-label {
+  color: var(--shell-text-dim);
+}
+
+/*
+ * Wide enough for four digits and no wider. The inspector's number fields fill
+ * their row, which is right in a column of labelled fields and wrong in a bar
+ * whose whole job is to stay on one line.
+ */
+.viewport__snap .control--number {
+  width: 5ch;
+  flex: none;
 }
 
 /*
@@ -611,6 +661,16 @@ body {
 .scene .viewport__stage[data-grab='pick'],
 .scene .viewport__stage[data-grab='moving'] {
   cursor: move;
+}
+
+/*
+ * Every press puts another copy down. `copy` rather than `crosshair` because
+ * that is what it is doing, and because the cursor is the only thing that
+ * follows the hand — the caption saying so is at the bottom of the panel, which
+ * is not where somebody clicking twenty times is looking.
+ */
+.scene .viewport__stage[data-grab='placing'] {
+  cursor: copy;
 }
 
 /* Focused only so a press can take focus off a text field; never outlined. */

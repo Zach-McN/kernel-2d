@@ -20,6 +20,7 @@ import { usePlacePrefab } from '../shell/usePlacePrefab'
 import { editDocument, sealEdits } from '../store/open-documents'
 import { Field, Note, Row, Section } from './fields'
 import { NumberField } from './NumberField'
+import { PlaceByClicking } from './PlaceByClicking'
 import { TexturePicker } from './TexturePicker'
 
 /**
@@ -329,6 +330,12 @@ function FromPrefab({
           >
             Place another
           </button>
+          {/* And the same again for "another twenty", from the same door. */}
+          <PlaceByClicking
+            prefabPath={source.path}
+            canPlace={placing.canPlace}
+            testId="entity-place-by-clicking"
+          />
         </span>
       </div>
 

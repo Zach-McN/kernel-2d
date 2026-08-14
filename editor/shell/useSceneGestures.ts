@@ -15,8 +15,14 @@ import type { Point } from '../../runtime'
  * the tempting shape is a second pointer layer on the same element for the new
  * button — which is two listeners racing to interpret one gesture, and the first
  * thing it breaks is space-drag starting on top of a sprite. So the rules live
- * here, in order: space wins, then whatever is under the pointer, then empty
- * space.
+ * here, in order: space wins, then repeat-placing, then whatever is under the
+ * pointer, then empty space.
+ *
+ * **Repeat-placing sits above "whatever is under the pointer" on purpose.** A
+ * board being drawn is covered by its own backdrop, so nearly every press that
+ * means "put another one here" lands on top of something — and a mode that
+ * placed only where the level was empty would place nothing at all on the first
+ * level anybody tried it on.
  *
  * Three traps live in here, each of which fails silently:
  *
@@ -50,6 +56,18 @@ export interface ScenePlacement {
   moveBy: (entityId: string, screenDx: number, screenDy: number, free: boolean) => void
   /** The press ended, whether or not anything moved. */
   drop: () => void
+  /**
+   * True while every press puts a copy of something down instead of picking.
+   *
+   * Read on each press rather than turned into a second gesture surface: the
+   * whole reason this hook exists is that one element cannot have two opinions
+   * about one `pointerdown`.
+   */
+  stamping: boolean
+  /** A press landed while stamping. Nothing is selected and nothing is dragged. */
+  stampAt: (at: Point) => void
+  /** Esc. Harmless when nothing is being stamped. */
+  stopStamping: () => void
 }
 
 export interface SceneGestureOptions {
@@ -136,6 +154,15 @@ export function useSceneGestures(options: SceneGestureOptions): SceneGestures {
         holding = { id: event.pointerId, x: event.clientX, y: event.clientY }
         element.setPointerCapture(event.pointerId)
         setPanning(true)
+        return
+      }
+
+      // Placing a copy is the whole of what this press does: it does not pick,
+      // it does not change the selection, and it starts no drag. Twenty of them
+      // in a row leave the Inspector exactly where it was, which is what makes
+      // the twenty-first as cheap as the first.
+      if (placementRef.current.stamping) {
+        placementRef.current.stampAt(pointIn(event))
         return
       }
 
@@ -250,6 +277,14 @@ export function useSceneGestures(options: SceneGestureOptions): SceneGestures {
         // it must not scroll the page or re-press a focused button either.
         event.preventDefault()
         if (!event.repeat) setReady(true)
+        return
+      }
+
+      // The way out of a mode, wherever the hand is. Not cancelled, because
+      // Escape means "stop what you are doing" everywhere else in a browser too
+      // and there is nothing here worth taking it away from.
+      if (event.key === 'Escape') {
+        placementRef.current.stopStamping()
         return
       }
 

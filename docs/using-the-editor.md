@@ -8,7 +8,7 @@ It is kept current by the definition of done in `CLAUDE.md`: a session that
 changes what you can do, or how you do it, changes this page in the same commit.
 If this page and the editor disagree, the editor is right and the page is a bug.
 
-Last true as of: **your game's own code running** (2026-08-13).
+Last true as of: **a settable snap, and placing by clicking** (2026-08-13).
 
 ---
 
@@ -253,6 +253,21 @@ placement keeps its own position, rotation and scale. Select an instance and the
 Inspector offers *Open prefab* and *Place another*, and tells you how many
 instances the level has.
 
+**Place by clicking** is the button for putting a lot of them down. Press it and
+every click in the picture puts another one where you clicked, on the snap,
+until you press `Esc` or press the button again. It is on the prefab's panel and
+on any instance of it, so you can start from either.
+
+Two things it deliberately does *not* do, because both would stop you at the
+second one: it does not select what it places, so the Inspector stays on the
+prefab and the panel does not jump about; and it does not care what is already
+under the pointer, so clicking on top of your backdrop puts a tile down rather
+than picking the backdrop up. The bar under the picture names what you are
+placing the whole time it is on, and the cursor changes.
+
+Everything else still works while it is on — `Ctrl-Z` takes them back one at a
+time, space-drag still pans, and the wheel still zooms.
+
 ### The viewport
 
 | Gesture | What it does |
@@ -262,13 +277,37 @@ instances the level has.
 | `Home` | Frame the whole level |
 | `F` | Frame the selected entity |
 | `−` `+` buttons | Zoom a whole step at a time |
-| Drag a sprite | Move it, on whole level units |
-| Hold `Alt` while dragging | Place it between whole units |
+| Drag a sprite | Move it, landing on the snap |
+| Hold `Alt` while dragging | Ignore the snap and put it anywhere |
+| `Esc` | Stop placing by clicking |
 
 Zoom is always a whole number of screen pixels per level unit, so pixel art never
 lands half on a pixel. Each level remembers where you were looking for as long as
 the window is open. Where you are looking is never saved into the level, so undo
 never reverses a pan.
+
+#### The snap
+
+Two numbers in the bar under the picture, **Snap** and **from**, decide where a
+drag or a click is allowed to put something.
+
+- **Snap** is how far apart those positions are, in level units. It starts at
+  `1`, which is the whole units everything landed on before. Set it to `16` and
+  things land sixteen apart.
+- **from** is where that grid starts. `16 from 0` reaches 0, 16, 32; `16 from 8`
+  reaches 8, 24, 40.
+
+That second number matters more than it looks. A sprite hangs off the *middle* of
+its position, so a board of 16-unit tiles laid corner to corner has its tiles at
+8, 24, 40 — and a grid starting at 0 cannot land on any of them. If you are
+tiling something, the offset is usually half the step.
+
+`0` in the first box turns snapping off altogether, which is what holding `Alt`
+does for one drag.
+
+**It is not saved anywhere.** Like the zoom and where you are looking, it belongs
+to the window: reload and it is back to `1 from 0`. It never reaches your level,
+so `Ctrl-Z` cannot see it either.
 
 ### Play mode
 
@@ -447,8 +486,9 @@ the editor takes the change.
 - **Select more than one thing at a time.**
 - **Rotate or scale handles in the viewport.** Position is the one thing the
   picture can change; everything else is typed in the Inspector.
-- **A grid, rulers or a settable snap size.** Dragging lands on whole units and
-  `Alt` frees it; nothing is configurable.
+- **A grid or rulers you can see.** The snap is two numbers in the bar and
+  nothing is drawn for it, so a board lines up without ever showing you the
+  lines it lined up to.
 - **Two levels open at once.**
 - **Saved panel layouts.** Drag the panels wherever you like; the arrangement
   resets when the page reloads.

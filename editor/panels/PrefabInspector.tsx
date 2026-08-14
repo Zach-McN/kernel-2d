@@ -9,6 +9,7 @@ import { instancesOf, useResolvedScene } from '../shell/scene-prefabs'
 import { usePlacePrefab } from '../shell/usePlacePrefab'
 import { editDocument, sealEdits } from '../store/open-documents'
 import { Field, Note, Section } from './fields'
+import { PlaceByClicking } from './PlaceByClicking'
 import { TexturePicker } from './TexturePicker'
 
 /**
@@ -117,6 +118,11 @@ export function PrefabInspector({
                 >
                   Place in {basename(placing.scenePath)}
                 </button>
+                <PlaceByClicking
+                  prefabPath={path}
+                  canPlace={placing.canPlace}
+                  testId="prefab-place-by-clicking"
+                />
               </span>
             </div>
             <Field
@@ -127,6 +133,8 @@ export function PrefabInspector({
             <Note data-testid="prefab-place-note">
               It lands in the middle of what the Viewport is showing, and is selected — one drag moves it
               where you want it, and the one you placed offers a Place another of its own.
+              <em> Place by clicking</em> puts one down wherever you click instead, as many times as you
+              like; the Viewport says so while it is on, and Esc stops it.
             </Note>
           </>
         )}

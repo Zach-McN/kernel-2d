@@ -7,6 +7,7 @@ import { AssetMetaProvider } from './asset-meta-context'
 import { LayoutProvider, useLayout } from './layout-context'
 import { OpenSceneProvider } from './open-scene'
 import { PANEL_COMPONENTS, layOutPanels } from './panels'
+import { PlacingProvider } from './placing'
 import { PlayModeProvider } from './play-mode'
 import { ProjectProvider } from './project-context'
 import { SceneAssetsProvider } from './scene-assets'
@@ -42,6 +43,10 @@ import { ViewportProvider } from './viewport-context'
  * Prefabs sit *above* textures deliberately: an instance's picture is named by
  * its prefab, so which textures a level needs cannot be known until every prefab
  * it points at has been read.
+ *
+ * How a press in the picture places things sits next to selection and depends on
+ * nothing, for the same reason selection does not: it is a fact about this
+ * window rather than about anything on disk.
  */
 export function App(): ReactElement {
   const connection = useSidecarStatus()
@@ -60,23 +65,25 @@ export function App(): ReactElement {
   return (
     <ProjectProvider>
       <SelectionProvider>
-        <AssetMetaProvider>
-          <OpenSceneProvider>
-            <ScenePrefabsProvider>
-              <SceneAssetsProvider>
-                <ViewportProvider>
-                  <SceneViewProvider>
-                    <PlayModeProvider>
-                      <LayoutProvider>
-                        <Shell connection={connection} />
-                      </LayoutProvider>
-                    </PlayModeProvider>
-                  </SceneViewProvider>
-                </ViewportProvider>
-              </SceneAssetsProvider>
-            </ScenePrefabsProvider>
-          </OpenSceneProvider>
-        </AssetMetaProvider>
+        <PlacingProvider>
+          <AssetMetaProvider>
+            <OpenSceneProvider>
+              <ScenePrefabsProvider>
+                <SceneAssetsProvider>
+                  <ViewportProvider>
+                    <SceneViewProvider>
+                      <PlayModeProvider>
+                        <LayoutProvider>
+                          <Shell connection={connection} />
+                        </LayoutProvider>
+                      </PlayModeProvider>
+                    </SceneViewProvider>
+                  </ViewportProvider>
+                </SceneAssetsProvider>
+              </ScenePrefabsProvider>
+            </OpenSceneProvider>
+          </AssetMetaProvider>
+        </PlacingProvider>
       </SelectionProvider>
     </ProjectProvider>
   )

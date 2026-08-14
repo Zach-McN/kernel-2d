@@ -6,6 +6,7 @@ import { readDocumentFromDisk, writeDocumentToDisk } from '../store/document-dis
 import { deleteFileOnDisk, moveFileOnDisk } from '../store/file-disk'
 import { adoptFromDisk, beginRead, currentSaveFailures, flushSaves } from '../store/open-documents'
 import { useProject } from './project-context'
+import { usePlacing } from './placing'
 import { documentPathsIn, movedPath, pointsAt, rewriteReferences, usesOf } from './references'
 import { useSceneCameraMoved } from './scene-view-context'
 import { useSelection } from './selection'
@@ -111,11 +112,13 @@ const PROJECT_FILE = 'project.json'
 export function useFileMoves(): FileMoves {
   const project = useProject()
   const selection = useSelection()
+  const placing = usePlacing()
   const cameraMoved = useSceneCameraMoved()
 
   const tree = project.state === 'ready' ? project.tree : null
 
   const { selectedFilePath, openScene, selectFile, selectNothing, setOpenScene } = selection
+  const { stamping, startStamping, stopStamping } = placing
 
   const findUses = useCallback(
     async (target: string): Promise<UseReport> => plan(tree, target),
@@ -161,10 +164,18 @@ export function useFileMoves(): FileMoves {
           setOpenScene(moved)
         }
       }
+      // Repeat-placing is keyed on a path too, so it needs the same treatment
+      // as the camera (`editor-ui` U30). Without it, renaming the prefab you
+      // are half way through drawing a board with leaves every further click
+      // silently placing nothing.
+      if (stamping !== null) {
+        const moved = movedPath(stamping, from, to)
+        if (moved !== null) startStamping(moved)
+      }
 
       return { ok: true, note: noteFor(failed, to) }
     },
-    [tree, selectedFilePath, openScene, selectFile, setOpenScene, cameraMoved],
+    [tree, selectedFilePath, openScene, selectFile, setOpenScene, cameraMoved, stamping, startStamping],
   )
 
   const remove = useCallback(
@@ -184,10 +195,13 @@ export function useFileMoves(): FileMoves {
 
       if (selectedFilePath !== null && pointsAt(selectedFilePath, path)) selectNothing()
       if (openScene !== null && pointsAt(openScene, path)) setOpenScene(null)
+      // A mode whose subject has been deleted is over. Left on, every click
+      // would go on meaning "place one" and place nothing.
+      if (stamping !== null && pointsAt(stamping, path)) stopStamping()
 
       return { ok: true, note: null }
     },
-    [selectedFilePath, openScene, selectNothing, setOpenScene],
+    [selectedFilePath, openScene, selectNothing, setOpenScene, stamping, stopStamping],
   )
 
   return { findUses, move, remove }
