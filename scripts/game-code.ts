@@ -58,8 +58,14 @@ import { toPosixPath } from '../sidecar/paths.js'
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 
-/** The runtime's public surface — what the alias points at. */
-const RUNTIME_ENTRY = path.join(REPO_ROOT, 'runtime', 'index.ts')
+/**
+ * What the alias points at: the game-facing surface, not the full barrel.
+ *
+ * The barrel reaches the renderer and therefore Phaser and therefore `window`,
+ * and a game's own tests run in plain Node — `runtime/game/api.ts` says the
+ * rest.
+ */
+const RUNTIME_ENTRY = path.join(REPO_ROOT, 'runtime', 'game', 'api.ts')
 
 /** What a game folder calls the kernel. A package name, never a path. */
 export const KERNEL_RUNTIME_ALIAS = 'kernel-2d/runtime'

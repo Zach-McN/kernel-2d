@@ -1,4 +1,5 @@
 import type { Entity } from '../formats/scene-schema.js'
+import { inputEntity, writePressed } from './input.js'
 import { createLoop, type LoopOptions } from './loop.js'
 import { stepSystems, type System } from './system.js'
 
@@ -62,6 +63,17 @@ export interface RunLevelOptions {
   /** Draws the level as it is now. Called only on a frame where at least one step ran. */
   draw: (entities: readonly Entity[]) => void
   /**
+   * The keys pressed since last asked, as `KeyboardEvent.code` values — asked
+   * once per frame that runs a step, and forgotten by the asker once answered.
+   *
+   * Optional because a test driving systems needs no keyboard, and absent means
+   * absent: no input entity joins the level at all. When present, the runner
+   * injects the carrier (`input.ts`) and hands each batch of presses to exactly
+   * one step — the first step of the frame that drained them, so a press is
+   * acted on once however many catch-up steps that frame runs.
+   */
+  input?: () => string[]
+  /**
    * Told how the run is going, no more often than `notifyEveryMs` of simulated
    * time. Optional, because a shipped game has nobody to tell.
    */
@@ -95,6 +107,12 @@ export function runLevel(options: RunLevelOptions): RunningLevel {
   const loop = createLoop(options.loop ?? {})
   const notifyEveryMs = options.notifyEveryMs ?? NOTIFY_EVERY_MS
 
+  // The input carrier joins the copy, never the caller's list — it is run
+  // state in the strictest sense, and it exists only when something feeds it.
+  const drain = options.input
+  const carrier = drain === undefined ? null : inputEntity()
+  if (carrier !== null) entities.push(carrier)
+
   const state = (): RunState => ({ steps: loop.steps, elapsedMs: loop.elapsedMs, entities })
 
   /** Simulated time at the last notification, or null before the first one. */
@@ -104,7 +122,15 @@ export function runLevel(options: RunLevelOptions): RunningLevel {
   const unsubscribe = options.onFrame((frameMs) => {
     if (!running) return
 
+    let firstStepOfFrame = true
     const ran = loop.advance(frameMs, (dtSeconds) => {
+      // Drained inside the step rather than before the frame, because most
+      // frames at a high refresh rate run no steps — draining on one of those
+      // would throw a press away between steps.
+      if (carrier !== null && drain !== undefined) {
+        writePressed(carrier, firstStepOfFrame ? drain() : [])
+        firstStepOfFrame = false
+      }
       stepSystems(options.systems, entities, dtSeconds)
     })
 
@@ -112,7 +138,11 @@ export function runLevel(options: RunLevelOptions): RunningLevel {
     // ordinary case on a display faster than the step rate.
     if (ran === 0) return
 
-    options.draw(entities)
+    // The carrier is what the systems see, never what the picture holds: it
+    // draws nothing, stands nowhere, and is not part of the level anybody
+    // authored — a report that listed it would put runner bookkeeping into
+    // every consumer's idea of "the level's entities".
+    options.draw(carrier === null ? entities : entities.filter((one) => one !== carrier))
 
     const watch = options.watch
     if (watch === undefined) return

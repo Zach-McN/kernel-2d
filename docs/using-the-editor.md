@@ -485,9 +485,14 @@ is answered before anything has moved. A second later the running level and the
 editing view disagree, because one of them is playing. If the two ever disagree
 at the start, the bar names every difference in pixels.
 
-**Nothing responds to you yet.** There is no input: no keys, no clicks, nothing
-a player could do. A level runs; nobody plays it. There is no collision and no
-sound either. Those arrive with the first game.
+**The keyboard belongs to the game while it runs.** Any key you press reaches
+the game's own code, which decides what — if anything — it means; in the tower
+defense, the spacebar calls the next wave. Typing in a panel's text field is
+still typing, and pressing Stop gives the keyboard back to the editor. An
+exported folder hears the same keys the same way.
+
+**Clicks do not reach the game yet.** There is no pointer input, no collision
+and no sound. Each arrives when a game needs it, exactly as the keyboard did.
 
 ### Which level the game starts on
 

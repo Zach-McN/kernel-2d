@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 
 import { currentSystems } from 'virtual:game-systems'
 
-import { inSceneUnits, runLevel, type DrawnInScene, type Entity, type ShownScene } from '../../runtime'
+import { collectKeys, inSceneUnits, runLevel, type DrawnInScene, type Entity, type ShownScene } from '../../runtime'
 import { useSceneView } from './scene-view-context'
 
 /**
@@ -66,6 +66,13 @@ export function useRunningLevel(entities: readonly Entity[] | null, ready: boole
   useEffect(() => {
     if (entities === null || !ready || redraw === null || onFrame === null) return
 
+    // The keyboard belongs to the game while a level runs (`runtime/web/keyboard.ts`
+    // skips anything editable, so panels keep their text fields). The blur is
+    // for the button the human just clicked to start playing: still focused, it
+    // would swallow the game's spacebar and press Stop with it.
+    if (document.activeElement instanceof HTMLElement) document.activeElement.blur()
+    const keys = collectKeys(window)
+
     /**
      * The renderer's report of the most recent frame.
      *
@@ -79,6 +86,7 @@ export function useRunningLevel(entities: readonly Entity[] | null, ready: boole
       entities,
       systems: currentSystems(),
       onFrame,
+      input: keys.drain,
       draw: (moved) => {
         latest = redraw(moved)
       },
@@ -92,6 +100,7 @@ export function useRunningLevel(entities: readonly Entity[] | null, ready: boole
     })
 
     return () => {
+      keys.stop()
       level.stop()
       setPicture(null)
     }

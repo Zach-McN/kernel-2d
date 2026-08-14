@@ -1,5 +1,6 @@
 import { PROJECT_FORMAT, ProjectSchema } from '../formats/project-schema'
 import { runLevel } from '../game/run-level'
+import { collectKeys } from './keyboard'
 import type { System } from '../game/system'
 import { framing } from '../scene/coordinates'
 import { inSceneUnits, type DrawnInScene } from '../scene/drawn-in-scene'
@@ -27,10 +28,12 @@ import { createSceneView, type SceneRequest, type ShownScene } from '../scene/sc
  * strong sense, not merely the same drawing. Time here is Phaser's ticker cut into
  * fixed steps, exactly as it is there.
  *
- * **What this deliberately is still not.** It is not input: nothing responds to a
- * key or a pointer, so a level runs and nobody plays it yet. It is not a scene
- * manager: there is one startup level and no way to reach a second. It is not
- * physics. Each of those arrives with the first real game, and none is faked here.
+ * **What this deliberately is still not.** It is not a scene manager: there is
+ * one startup level and no way to reach a second. It is not physics. It is not a
+ * pointer: the keyboard reaches the game (`keyboard.ts`, the same collector the
+ * editor's play mode wires), a click does not. Each of those arrives when a real
+ * game demands it, and none is faked here — the keyboard arrived exactly that
+ * way, with tower-defense's Call Wave.
  *
  * **The page says what went wrong, in the runtime's own words.** `describeLoadProblem`
  * has always lived in the runtime precisely so a shipped game can say it cannot find
@@ -227,6 +230,9 @@ export async function startGame(host: HTMLElement, systems: readonly System[]): 
     entities: level.request.scene.entities,
     systems,
     onFrame: view.onFrame,
+    // The same collector the editor's play mode wires, so a key means the same
+    // thing in a shipped folder as it does behind the Play button.
+    input: collectKeys(window).drain,
     draw: (moved) => {
       const redrawn = view.redraw(moved)
       if (redrawn !== null) shown = redrawn
