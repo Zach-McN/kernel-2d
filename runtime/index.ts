@@ -164,3 +164,9 @@ export {
 } from './game/input'
 
 export { collectKeys, type KeyCollector } from './web/keyboard'
+
+export { DOOR_ENTITY_ID, doorIn, openDoor, takeDoor } from './game/door'
+
+export { STORY_ENTITY_ID, factOf, factsIn, learn, sceneIn, storyEntity } from './game/story'
+
+export { storyStore, type StoryStore } from './web/story-store'

@@ -1,6 +1,7 @@
 import { PROJECT_FORMAT, ProjectSchema } from '../formats/project-schema'
-import { runLevel } from '../game/run-level'
+import { runLevel, type RunningLevel } from '../game/run-level'
 import { collectKeys } from './keyboard'
+import { storyStore } from './story-store'
 import type { System } from '../game/system'
 import { framing, toScenePoint } from '../scene/coordinates'
 import type { ScenePoint } from '../game/input'
@@ -29,12 +30,13 @@ import { createSceneView, type SceneRequest, type ShownScene } from '../scene/sc
  * strong sense, not merely the same drawing. Time here is Phaser's ticker cut into
  * fixed steps, exactly as it is there.
  *
- * **What this deliberately is still not.** It is not a scene manager: there is
- * one startup level and no way to reach a second. It is not physics. It is not a
- * pointer: the keyboard reaches the game (`keyboard.ts`, the same collector the
- * editor's play mode wires), a click does not. Each of those arrives when a real
- * game demands it, and none is faked here — the keyboard arrived exactly that
- * way, with tower-defense's Call Wave.
+ * **What this deliberately is still not.** It is not physics, and it is not a
+ * scene *graph*: one level runs at a time, and the only way to another is the
+ * game itself asking through the door seam (`runtime/game/door.ts`) — which
+ * arrived, like the keyboard and the pointer before it, when a real game
+ * demanded it: tower-defense's level select. The story seam (`story.ts`)
+ * arrived on the same day and the same terms, so a shipped folder remembers
+ * which levels are done across visits.
  *
  * **The page says what went wrong, in the runtime's own words.** `describeLoadProblem`
  * has always lived in the runtime precisely so a shipped game can say it cannot find
@@ -240,24 +242,63 @@ export async function startGame(host: HTMLElement, systems: readonly System[]): 
     )
   })
 
-  runLevel({
-    entities: level.request.scene.entities,
-    systems,
-    onFrame: view.onFrame,
-    input: () => {
-      const sample = { pressed: keys.drain(), clicked }
-      clicked = []
-      return sample
-    },
-    draw: (moved) => {
-      const redrawn = view.redraw(moved)
-      if (redrawn !== null) shown = redrawn
-    },
-    watch: (state) => {
-      steps = state.steps
-      report('drawn', startupScene)
-    },
-  })
+  // The game's memory, kept under the page's own path: one exported folder,
+  // one story, however many exported games share a host.
+  const store = storyStore(window.location.pathname)
+
+  /** The scene the game is in now — the startup scene until a door says otherwise. */
+  let sceneNow = startupScene
+  let current: RunningLevel | null = null
+
+  /**
+   * The host's half of the door seam: load the asked-for scene with the same
+   * loader everything uses, stop the run that asked, draw and start the new
+   * one. A door to a scene that cannot be loaded is refused with the sentence
+   * on the page and the current run keeps running — a menu with one bad
+   * banner should not brick the game.
+   */
+  const travel = async (next: string): Promise<void> => {
+    const arrived = await loadScene(reader, next)
+    if (!arrived.ok) {
+      say(arrived.problem, true)
+      return
+    }
+
+    current?.stop()
+    sceneNow = next
+    problems = arrived.problems
+    await draw(arrived.request)
+    report('drawn', sceneNow)
+    say(caption(arrived.request, shown, arrived.problems), arrived.problems.length > 0)
+    begin(arrived.request)
+  }
+
+  const begin = (request: SceneRequest): void => {
+    current = runLevel({
+      entities: request.scene.entities,
+      systems,
+      onFrame: view.onFrame,
+      input: () => {
+        const sample = { pressed: keys.drain(), clicked }
+        clicked = []
+        return sample
+      },
+      door: (next) => {
+        void travel(next)
+      },
+      story: { scene: sceneNow, recall: store.recall, remember: store.remember },
+      draw: (moved) => {
+        const redrawn = view.redraw(moved)
+        if (redrawn !== null) shown = redrawn
+      },
+      watch: (state) => {
+        steps = state.steps
+        report('drawn', sceneNow)
+      },
+    })
+  }
+
+  begin(level.request)
 
   return handle
 }

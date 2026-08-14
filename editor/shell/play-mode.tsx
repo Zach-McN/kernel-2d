@@ -68,6 +68,14 @@ export type PlayState =
   | {
       state: 'running'
       path: string
+      /**
+       * The level that was open when Play was pressed — the anchor play mode
+       * stops with if the rest of the window moves on. It stays put while the
+       * game travels through doors, which is exactly what makes travelling
+       * survivable: `path` says where the game is, `opened` says whose Play
+       * button this run belongs to.
+       */
+      opened: string
       /** What the runtime's loader made of the file. Handed to the renderer as-is. */
       request: SceneRequest
       /** References the loader could not resolve. The level runs regardless. */
@@ -76,12 +84,14 @@ export type PlayState =
        * The editing view's own report, from the instant before Play was pressed.
        * What the running picture is checked against **on its first frame**, and
        * on no frame after that — a level that is running moves, and the editing
-       * view does not.
+       * view does not. **Null for a level arrived at through a door**: the
+       * editing view is of some other level, and comparing across that would
+       * announce differences nobody caused.
        */
-      baseline: ShownScene
+      baseline: ShownScene | null
     }
   /** It could not be started, and this is the sentence saying why. */
-  | { state: 'failed'; path: string; problem: string }
+  | { state: 'failed'; path: string; problem: string; opened?: string }
 
 export interface PlayMode {
   play: PlayState
@@ -90,6 +100,14 @@ export interface PlayMode {
   /** Starts the open level. Does nothing when one is already running. */
   start: () => void
   stop: () => void
+  /**
+   * Travels: swaps the running level for the named scene, loaded from disk the
+   * same way Play loads one. This is the host's half of the runtime's door
+   * seam (`runtime/game/door.ts`), and it exists for the game's own reasons —
+   * a level select, a victory banner leading home — never for the editor's.
+   * Does nothing when nothing is running.
+   */
+  go: (scene: string) => void
 }
 
 const PlayModeContext = createContext<PlayMode | null>(null)
@@ -166,12 +184,38 @@ export function PlayModeProvider({ children }: { children: ReactNode }): ReactEl
         return
       }
 
-      setPlay({ state: 'running', path, request: result.request, problems: result.problems, baseline })
+      setPlay({ state: 'running', path, opened: path, request: result.request, problems: result.problems, baseline })
     })()
   }, [])
 
   const stop = useCallback(() => {
     setPlay({ state: 'stopped' })
+  }, [])
+
+  const go = useCallback((scene: string) => {
+    const { project: tree } = latest.current
+
+    void (async () => {
+      const result = await loadScene(projectReaderFor(tree.state === 'ready' ? tree.tree : null), scene)
+
+      // Decided against what is true when the file comes back, not when the
+      // door was opened: a run the human stopped while the scene loaded stays
+      // stopped, and only a run still running travels.
+      setPlay((current) => {
+        if (current.state !== 'running') return current
+        if (!result.ok) {
+          return { state: 'failed', path: scene, problem: result.problem, opened: current.opened }
+        }
+        return {
+          state: 'running',
+          path: scene,
+          opened: current.opened,
+          request: result.request,
+          problems: result.problems,
+          baseline: null,
+        }
+      })
+    })()
   }, [])
 
   /*
@@ -185,10 +229,17 @@ export function PlayModeProvider({ children }: { children: ReactNode }): ReactEl
   const openPath = open.state === 'open' ? open.path : null
   useEffect(() => {
     if (play.state === 'stopped') return
-    if (play.path !== openPath) setPlay({ state: 'stopped' })
+    // The anchor is the level whose Play button this run belongs to — not
+    // wherever the game has travelled to since (`go`), which the open document
+    // knows nothing about.
+    const anchor = play.state === 'running' ? play.opened : (play.opened ?? play.path)
+    if (anchor !== openPath) setPlay({ state: 'stopped' })
   }, [play, openPath])
 
-  const value = useMemo<PlayMode>(() => ({ play, active, start, stop }), [play, active, start, stop])
+  const value = useMemo<PlayMode>(
+    () => ({ play, active, start, stop, go }),
+    [play, active, start, stop, go],
+  )
 
   return <PlayModeContext.Provider value={value}>{children}</PlayModeContext.Provider>
 }

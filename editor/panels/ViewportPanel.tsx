@@ -1,6 +1,13 @@
 import { useEffect, useMemo, useRef, type ReactElement, type ReactNode, type RefObject } from 'react'
 
-import { describeLoadProblem, inSceneUnits, toScenePoint, type SceneRequest, type ShownScene } from '../../runtime'
+import {
+  describeLoadProblem,
+  inSceneUnits,
+  storyStore,
+  toScenePoint,
+  type SceneRequest,
+  type ShownScene,
+} from '../../runtime'
 import { SCENE_FORMAT, type Entity } from '../../runtime/formats/scene-schema'
 import { basename } from '../shell/asset-kinds'
 import { entityAt, onScreen } from '../shell/drawn-entities'
@@ -8,7 +15,8 @@ import { useOpenScene, type OpenSceneState } from '../shell/open-scene'
 import { usePlacing, type Placing } from '../shell/placing'
 import { comparePictures, describeComparison, type PlayComparison } from '../shell/play-comparison'
 import { usePlayMode, type PlayState } from '../shell/play-mode'
-import { useRunningLevel } from '../shell/running-level'
+import { useProject } from '../shell/project-context'
+import { useRunningLevel, type RunSeams } from '../shell/running-level'
 import { describeProblem, problemsIn, useSceneAssets } from '../shell/scene-assets'
 import { describePrefabProblem, prefabProblemsIn, useResolvedScene } from '../shell/scene-prefabs'
 import { useDrawScene, useSceneView, type SceneViewState } from '../shell/scene-view-context'
@@ -108,6 +116,20 @@ export function ViewportPanel(): ReactElement {
     running !== null && view.state === 'ready' && view.shownFor === running.request ? current : null
   const comparison = usePlayComparison(running, playing, open)
 
+  // The game's two ways out of its own entity list: a door asks play mode to
+  // travel, and the story sleeps in the browser's storage under the project's
+  // name — the same facts an exported folder of this game would keep.
+  const project = useProject()
+  const projectName = project.state === 'ready' ? project.tree.projectName : null
+  const seams = useMemo<RunSeams | null>(() => {
+    if (running === null || projectName === null) return null
+    const store = storyStore(projectName)
+    return {
+      door: mode.go,
+      story: { scene: running.path, recall: store.recall, remember: store.remember },
+    }
+  }, [running, projectName, mode.go])
+
   // Time starts here, and only once the picture above exists — so the level is
   // compared with the editing view on the frame it started, before any system
   // has moved anything. Everything after that frame is the runtime's, drawn
@@ -117,6 +139,7 @@ export function ViewportPanel(): ReactElement {
     playing !== null,
     host,
     playing,
+    seams,
   )
 
   const selected = selection.selected.kind === 'entity' ? selection.selected.entity : null
@@ -264,6 +287,9 @@ function usePlayComparison(
 
   return useMemo(() => {
     if (running === null || playing === null) return null
+    // A level arrived at through a door has no baseline: the editing view is
+    // of some other level, and a comparison across that would be noise.
+    if (running.baseline === null) return null
     // Names come from the level being edited, so a difference reads "Knight is
     // drawn 4px left" rather than naming an id at somebody.
     const names = new Map((entities ?? []).map((entity) => [entity.id, entity.name]))

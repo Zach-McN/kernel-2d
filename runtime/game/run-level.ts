@@ -1,6 +1,8 @@
 import type { Entity } from '../formats/scene-schema.js'
+import { DOOR_ENTITY_ID, takeDoor } from './door.js'
 import { NOTHING, inputEntity, writeInput, type InputSample } from './input.js'
 import { createLoop, type LoopOptions } from './loop.js'
+import { factsIn, storyEntity } from './story.js'
 import { stepSystems, type System } from './system.js'
 
 /**
@@ -76,6 +78,28 @@ export interface RunLevelOptions {
    */
   input?: () => InputSample
   /**
+   * Told when the game asks to be in another scene (`door.ts`): the game
+   * pushed the door entity, the runner took it at the end of the frame, and
+   * what "opening a scene" means — loading it, stopping this run, starting
+   * that one — is entirely the host's. Fired at most once per run, because a
+   * host that is already leaving has no use for a second destination. Absent
+   * means doors go nowhere: the ask stays in the level for a test to read.
+   */
+  door?: (scene: string) => void
+  /**
+   * What the game remembers between runs, and which scene this is (`story.ts`).
+   * When present, the runner injects the story carrier with `recall`'s facts,
+   * and calls `remember` at the end of any frame that changed them — with the
+   * whole map, which is the natural unit for something kept as one small text.
+   * Absent means absent: no carrier joins the level, nothing is remembered.
+   */
+  story?: {
+    /** The project-relative path of the scene being run, stated by the host. */
+    scene: string
+    recall: () => Record<string, unknown>
+    remember: (facts: Record<string, unknown>) => void
+  }
+  /**
    * Told how the run is going, no more often than `notifyEveryMs` of simulated
    * time. Optional, because a shipped game has nobody to tell.
    */
@@ -115,6 +139,15 @@ export function runLevel(options: RunLevelOptions): RunningLevel {
   const carrier = drain === undefined ? null : inputEntity()
   if (carrier !== null) entities.push(carrier)
 
+  // The story carrier likewise: recalled once, at the moment the run starts.
+  const story = options.story
+  const memory = story === undefined ? null : storyEntity(story.scene, story.recall())
+  if (memory !== null) entities.push(memory)
+  /** The facts as last remembered, for telling a change from a re-statement. */
+  let remembered = memory === null ? '' : JSON.stringify(factsIn(entities))
+  /** A host is told about one door per run; it is already on its way out. */
+  let doored = false
+
   const state = (): RunState => ({ steps: loop.steps, elapsedMs: loop.elapsedMs, entities })
 
   /** Simulated time at the last notification, or null before the first one. */
@@ -140,11 +173,35 @@ export function runLevel(options: RunLevelOptions): RunningLevel {
     // ordinary case on a display faster than the step rate.
     if (ran === 0) return
 
-    // The carrier is what the systems see, never what the picture holds: it
-    // draws nothing, stands nowhere, and is not part of the level anybody
-    // authored — a report that listed it would put runner bookkeeping into
-    // every consumer's idea of "the level's entities".
-    options.draw(carrier === null ? entities : entities.filter((one) => one !== carrier))
+    // Whatever the run learned this frame, the host now remembers — compared
+    // as text because that is what the host keeps, and only on change so a
+    // quiet run costs a comparison and nothing more.
+    if (memory !== null && story !== undefined) {
+      const learned = JSON.stringify(factsIn(entities))
+      if (learned !== remembered) {
+        remembered = learned
+        story.remember(factsIn(entities))
+      }
+    }
+
+    // The carriers are what the systems see, never what the picture holds:
+    // they draw nothing, stand nowhere, and are not part of the level anybody
+    // authored — a report that listed them would put runner bookkeeping into
+    // every consumer's idea of "the level's entities". A level carrying none
+    // of them is handed over as-is, so what the systems mutate *is* what gets
+    // drawn, identity included.
+    const hidden = (one: Entity): boolean => one === carrier || one === memory || one.id === DOOR_ENTITY_ID
+    options.draw(entities.some(hidden) ? entities.filter((one) => !hidden(one)) : entities)
+
+    // A door the game opened this frame, told to the host after the picture —
+    // the host will stop this run, and a half-drawn last frame helps nobody.
+    if (options.door !== undefined && !doored) {
+      const scene = takeDoor(entities)
+      if (scene !== null) {
+        doored = true
+        options.door(scene)
+      }
+    }
 
     const watch = options.watch
     if (watch === undefined) return

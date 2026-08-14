@@ -42,3 +42,7 @@ export {
   type InputSample,
   type ScenePoint,
 } from './input.js'
+
+export { DOOR_ENTITY_ID, doorIn, openDoor } from './door.js'
+
+export { STORY_ENTITY_ID, factOf, factsIn, learn, sceneIn, storyEntity } from './story.js'

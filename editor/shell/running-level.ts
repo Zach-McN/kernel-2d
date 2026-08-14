@@ -59,6 +59,14 @@ export interface RunningPicture {
   units: DrawnInScene[]
 }
 
+/** The host's half of the runtime's door and story seams, both optional. */
+export interface RunSeams {
+  /** Told when the game asks for another scene (`runtime/game/door.ts`). */
+  door?: (scene: string) => void
+  /** Which scene this is, and where its memory sleeps (`runtime/game/story.ts`). */
+  story?: { scene: string; recall: () => Record<string, unknown>; remember: (facts: Record<string, unknown>) => void }
+}
+
 /**
  * @param entities the running level's entities, or null when nothing is running.
  *   Copied by the runner, so what is passed here is never touched.
@@ -71,12 +79,15 @@ export interface RunningPicture {
  *   click landed before the first step has drawn.
  * @param started the report of the frame the level started on, the fallback
  *   above.
+ * @param seams the door and the story, read through a ref at the moment a run
+ *   starts — a re-rendered seam object must not restart a level.
  */
 export function useRunningLevel(
   entities: readonly Entity[] | null,
   ready: boolean,
   host: React.RefObject<HTMLElement | null>,
   started: ShownScene | null,
+  seams: RunSeams | null = null,
 ): RunningPicture | null {
   const view = useSceneView()
   const redraw = view.state === 'ready' ? view.redraw : null
@@ -89,6 +100,9 @@ export function useRunningLevel(
   // "a different run", which a redrawn starting frame is not.
   const startedRef = useRef(started)
   startedRef.current = started
+
+  const seamsRef = useRef(seams)
+  seamsRef.current = seams
 
   useEffect(() => {
     if (entities === null || !ready || redraw === null || onFrame === null) return
@@ -129,6 +143,11 @@ export function useRunningLevel(
     }
     surface?.addEventListener('pointerdown', onPointerDown)
 
+    // The story is captured as the run starts — its facts are recalled once —
+    // while the door forwards through the ref, so the handler a later render
+    // brought is the one a late click travels through.
+    const story = seamsRef.current?.story
+
     const level = runLevel({
       entities,
       systems: currentSystems(),
@@ -138,6 +157,8 @@ export function useRunningLevel(
         clicked = []
         return sample
       },
+      door: (scene) => seamsRef.current?.door?.(scene),
+      ...(story === undefined ? {} : { story }),
       draw: (moved) => {
         latest = redraw(moved)
       },
