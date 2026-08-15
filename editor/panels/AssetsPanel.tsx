@@ -1,11 +1,11 @@
-import { useRef, useState, type MouseEvent, type ReactElement } from 'react'
+import { useEffect, useRef, useState, type MouseEvent, type ReactElement } from 'react'
 
 import { formatBytes } from '../../sidecar/bytes'
 import type { ProjectTree } from '../../sidecar/tree-schema'
 import { showsGrid, showsTree, useAssetBrowsing } from '../shell/asset-browsing'
 import { basename, findNode, folderPathsIn, parentOf } from '../shell/asset-kinds'
 import { assetRowsFor, type AssetRow } from '../shell/asset-rows'
-import { spotIn, type Spot } from '../shell/floating'
+import { spotIn, type Room, type Spot } from '../shell/floating'
 import { useProject } from '../shell/project-context'
 import { pointsAt } from '../shell/references'
 import { useSelection } from '../shell/selection'
@@ -26,22 +26,24 @@ import { SplitHandle } from './SplitHandle'
  * file it annotates — is decided in `asset-rows.ts`, because the Inspector has
  * to count a folder's contents the same way this lists them.
  *
- * It is also the one panel that makes a file, and **making one is a menu with
- * two doors**: the `+` on the bar, and a right-click on the empty part of the
- * browser. Neither is a permanent row, because the panel's job is to show the
- * folder and a control used once an afternoon should not hold room that is
- * looked at all day. The menu itself is `NewDocument.tsx`; what is here is the
- * one anchor both doors open — one menu, never two, the same shape the entity
- * right-click window keeps (`editor-ui` U44).
+ * **Every verb this panel has is behind a right-click now, and the panel itself
+ * is the folder and one sentence.** A right-click on a file or folder offers
+ * rename, move, delete and make-one-here; a right-click on the background offers
+ * make-one-here alone; the `+` on the bar is the same card again for a hand that
+ * has not learned the press. Three doors, **one** menu state, so two can never be
+ * on screen at once — the shape the entity right-click window keeps
+ * (`editor-ui` U44).
  *
- * Only the *background* of the browser opens it. A right-click on a file or a
- * folder is left to the browser's own menu, because there is nothing built for
- * a file yet and a dead right-click is worse than the one the machine offers.
+ * Which menu a press opens is decided by what it landed on, which is the reading
+ * every file browser has trained every hand to expect: a file gets the things you
+ * do *to* a file, the background gets the thing you do *in* a folder.
  *
  * Where a level goes is the human's decision, taken from what they have selected
  * — no folder name is written into the code, because `scenes/` is a convention
- * in the folder map and not a fact this editor is allowed to rely on. The menu
- * says the whole path before anything is committed, from either door.
+ * in the folder map and not a fact this editor is allowed to rely on. The card
+ * says the whole path before anything is committed, from every door. "Make one
+ * in *this* folder" needs no argument of its own for the same reason: the press
+ * that opened the menu selected the folder.
  *
  * **There are three ways to look at the same folder**, chosen behind the cog and
  * held above the layout in `asset-browsing.tsx`: the tree, the icon grid, and
@@ -51,28 +53,25 @@ import { SplitHandle } from './SplitHandle'
  * whichever half is on screen.
  *
  * The panel is a column that does not scroll: the bar keeps its place at the
- * top, each half of the split scrolls on its own, and the controls are a footer
+ * top, each half of the split scrolls on its own, and one line of hint sits
  * under both. A single scroller would mean walking down the tree in the split
  * view carried the grid's first row off the top of the panel.
  *
- * **The controls hold a fixed share of the panel and scroll inside it, and that
- * is load-bearing rather than tidiness.** What they contain changes with the
- * selection: the rename row is not there until something is selected, and it
- * says a different number of things about a folder than about a file. If the
- * browser resized when they did, the first press of a double-click would bring
- * the rename row into existence, every tile would move, and the second press
- * would land on whatever slid into that spot — the folder never opens, nothing
- * reports an error, and the panel simply does not respond to a double-click.
- * That is how this was found.
+ * **That hint line replaced a footer that had to be a fixed share of the panel,
+ * and the reason it had to be is worth keeping.** The footer held the rename
+ * controls, whose contents changed with the selection — so if it had sized
+ * itself to them, the first press of a double-click would have brought the
+ * rename row into existence, moved every tile, and left the second press landing
+ * on whatever slid into that spot: the folder never opens, nothing reports an
+ * error, and the panel simply does not respond to a double-click. That is how it
+ * was found, and reserving a fixed share was the fix. Moving those controls into
+ * a floating menu answers it the other way — nothing down there changes any more
+ * — so the reservation is gone and the browser has the room. It is `editor-ui`
+ * UG8 in a panel with no canvas in it: **what a gesture is aimed at must not be
+ * moved by the first half of that gesture**, and a floating card moves nothing.
  *
- * **So the footer keeps its share even when it holds nothing**, which is why
- * with nothing selected it says where the two doors to the new-file menu are
- * rather than sitting blank. The room is already spoken for; a sentence in it is
- * free, and it is the only place on screen that could teach a gesture that is
- * now behind a right-click.
- *
- * It is `editor-ui` UG8 in a panel with no canvas in it: **what a gesture is
- * aimed at must not be moved by the first half of that gesture.**
+ * The sentence stays because a gesture nobody is told about is a gesture nobody
+ * uses, and there is nowhere else on screen that could name a right-click.
  */
 export function AssetsPanel(): ReactElement {
   const project = useProject()
@@ -95,14 +94,36 @@ export function AssetsPanel(): ReactElement {
   // view, where there is no folder to be inside of.
   useFolderHistoryButtons({ surface: browseSurface, enabled: showsGrid(browsing.view) })
 
-  // The make-a-file menu, and which door opened it. One piece of state for both,
-  // so the `+` and the right-click can never both be showing one (`editor-ui`
-  // U44); `at` is in the panel's own pixels and only the right-click has one.
-  const [newDocument, setNewDocument] = useState<NewDocumentAnchor | null>(null)
+  // **One menu, three doors.** The `+`, a right-click on the background, and a
+  // right-click on a file are three ways into two cards, and only ever one of
+  // them may be on screen (`editor-ui` U44) — so they share one piece of state
+  // rather than one each. `at` is in the panel's own pixels, which is why the
+  // bar's door has none: it hangs under its own button.
+  const [menu, setMenu] = useState<AssetMenu | null>(null)
   const panel = useRef<HTMLDivElement | null>(null)
-  const dismissBrowserMenu = useMenuDismiss(newDocument?.from === 'browser', () => {
-    setNewDocument(null)
+  const dismissMenu = useMenuDismiss(menu !== null && menu.kind !== 'bar', () => {
+    setMenu(null)
   })
+
+  /**
+   * The two things that take the file menu's subject away: the file leaving the
+   * project, and the selection moving off it.
+   *
+   * Both are the entity window's ways-out one panel over, and both have to be
+   * here rather than derived at render, or the menu would come back the next
+   * time that path happened to be selected again. A rename is *both* of them at
+   * once — the old path stops existing and the selection follows the new one —
+   * which is why a successful rename needs no closing code of its own.
+   */
+  const tree = project.state === 'ready' ? project.tree : null
+  const selectedPath = selection.selectedFilePath
+  useEffect(() => {
+    setMenu((was) => {
+      if (was?.kind !== 'file') return was
+      if (was.path !== selectedPath) return null
+      return tree === null || findNode(tree, was.path) === null ? null : was
+    })
+  }, [tree, selectedPath])
 
   const reveal = (path: string): void => {
     browsing.revealParents(path)
@@ -111,31 +132,45 @@ export function AssetsPanel(): ReactElement {
 
   /** It exists: show it, select it, and put the menu away. */
   const created = (path: string): void => {
-    setNewDocument(null)
+    setMenu(null)
     reveal(path)
   }
 
+  /** Where a card opened by this press should sit, in the panel's own pixels. */
+  const spotFor = (event: MouseEvent<HTMLElement>, room: Room): Spot => {
+    const box = panel.current?.getBoundingClientRect()
+    return spotIn(
+      box,
+      { x: event.clientX - (box?.left ?? 0), y: event.clientY - (box?.top ?? 0) },
+      room,
+    )
+  }
+
   /**
-   * A right-click in the browser, which offers to make a file *here*.
+   * A right-click in the browser, which asks about whatever it landed on.
    *
-   * Only the background: a press that landed on a row or a tile is somebody
-   * else's, and is left to the browser's own menu rather than being swallowed
-   * into a menu that would say nothing about the file under the cursor.
+   * **Two menus, one press, and which one is decided by the target** — a file or
+   * folder gets the three things you do *to* a file, the background gets the one
+   * thing you do *in* a folder. That is the same reading a file browser has
+   * trained every hand to expect, and it is why the row does not stop the press
+   * itself (`editor-ui` U44's gotcha: React's `stopPropagation` stops the native
+   * event too, and this one has to stay observable).
    */
   const onBrowserContextMenu = (event: MouseEvent<HTMLDivElement>): void => {
-    if (!(event.target instanceof HTMLElement)) return
-    if (event.target.closest('[data-asset-path]') !== null) return
+    const row = event.target instanceof HTMLElement ? event.target.closest('[data-asset-path]') : null
+    const path = row instanceof HTMLElement ? row.getAttribute('data-asset-path') : null
 
     event.preventDefault()
-    const box = panel.current?.getBoundingClientRect()
-    setNewDocument({
-      from: 'browser',
-      at: spotIn(
-        box,
-        { x: event.clientX - (box?.left ?? 0), y: event.clientY - (box?.top ?? 0) },
-        NEW_DOCUMENT_ROOM,
-      ),
-    })
+
+    if (path === null) {
+      setMenu({ kind: 'browser', at: spotFor(event, NEW_DOCUMENT_ROOM) })
+      return
+    }
+
+    // Selected as well as asked about, so the row, the Inspector and this menu
+    // all describe one file — what the entity window's right-click does.
+    selection.selectFile(path)
+    setMenu({ kind: 'file', path, at: spotFor(event, FILE_MENU_ROOM) })
   }
 
   if (project.state === 'loading') {
@@ -150,14 +185,19 @@ export function AssetsPanel(): ReactElement {
     )
   }
 
-  const tree = project.tree
-  // One answer for both doors, so a file made from the bar and a file made from
-  // a right-click land in the same place.
+  const shown = project.tree
+  // One answer for every door, so a file made from the bar, from a right-click
+  // on the background, and from a right-click on a folder all land in the same
+  // place — the last of those being the whole of "make a level in this folder",
+  // since the press selected the folder on its way in.
   const folder = folderFor(
     selection.selectedFilePath,
-    tree,
+    shown,
     showsGrid(browsing.view) ? browsing.folder : null,
   )
+  // The file the file-menu is about, or null. Null is also how it closes when
+  // its file has gone: there is nothing to draw.
+  const subject = menu?.kind === 'file' ? findNode(shown, menu.path) : null
 
   return (
     <div
@@ -165,7 +205,8 @@ export function AssetsPanel(): ReactElement {
       data-testid="assets-panel"
       data-live={project.live}
       data-view={browsing.view}
-      data-new-document={newDocument?.from ?? ''}
+      data-new-document={menu?.kind === 'bar' ? 'bar' : menu?.kind === 'browser' ? 'browser' : ''}
+      data-file-menu={subject?.path ?? ''}
       ref={panel}
     >
       {!project.live && (
@@ -175,14 +216,14 @@ export function AssetsPanel(): ReactElement {
       )}
 
       <AssetBar
-        projectName={tree.projectName}
+        projectName={shown.projectName}
         newDocument={{
-          open: newDocument?.from === 'bar',
+          open: menu?.kind === 'bar',
           toggle: () => {
-            setNewDocument((was) => (was?.from === 'bar' ? null : { from: 'bar' }))
+            setMenu((was) => (was?.kind === 'bar' ? null : { kind: 'bar' }))
           },
           close: () => {
-            setNewDocument(null)
+            setMenu(null)
           },
           folder,
           onCreated: created,
@@ -203,7 +244,7 @@ export function AssetsPanel(): ReactElement {
             }
           >
             <ul className="assets__tree" role="tree" aria-label="Project folder">
-              {assetRowsFor(tree.tree.children).map((row) => (
+              {assetRowsFor(shown.tree.children).map((row) => (
                 <AssetNode
                   key={row.node.path}
                   row={row}
@@ -221,7 +262,7 @@ export function AssetsPanel(): ReactElement {
               ))}
             </ul>
 
-            {tree.tree.children.length === 0 && (
+            {shown.tree.children.length === 0 && (
               <p className="assets__message">This project folder is empty.</p>
             )}
           </div>
@@ -231,58 +272,118 @@ export function AssetsPanel(): ReactElement {
 
         {showsGrid(browsing.view) && (
           <div className="assets__pane assets__pane--grid" data-testid="assets-icons">
-            <AssetGrid tree={tree} />
+            <AssetGrid tree={shown} />
           </div>
         )}
       </div>
 
-      {newDocument?.from === 'browser' && (
+      {menu?.kind === 'browser' && (
         <div
           className="assets__menu assets__menu--new assets__menu--at"
           role="menu"
           data-testid="assets-new-menu"
-          style={newDocument.at}
-          ref={dismissBrowserMenu.box}
-          onKeyDown={dismissBrowserMenu.onKeyDown}
+          style={menu.at}
+          ref={dismissMenu.box}
+          onKeyDown={dismissMenu.onKeyDown}
         >
           <NewDocument folder={folder} onCreated={created} />
         </div>
       )}
 
-      <div className="assets__tools">
-        {selection.selectedFilePath === null ? (
-          // The footer's room is spoken for either way (see above), so the empty
-          // case is where the gesture that is now behind a right-click gets
-          // taught. There is nowhere else on screen that could say it.
-          <p className="assets__hint" data-testid="assets-hint">
-            Right-click the empty space above — or press <strong>+</strong> in the bar — to make a
-            level or prefab. Select a file to rename, move or delete it.
-          </p>
-        ) : (
-          // Keyed on the path, so selecting a different file starts the row over
-          // rather than leaving somebody else's typed name, refusal or half-pressed
-          // Delete sitting under it (`editor-ui` UG5, answered by remounting rather
-          // than by comparing).
-          <MoveOrDelete
-            key={selection.selectedFilePath}
-            path={selection.selectedFilePath}
-            tree={tree}
-            onMoved={reveal}
-          />
-        )}
-      </div>
+      {menu?.kind === 'file' && subject !== null && (
+        <div
+          className="assets__menu assets__menu--file assets__menu--at"
+          role="menu"
+          data-testid="assets-file-menu"
+          data-file={subject.path}
+          style={menu.at}
+          ref={dismissMenu.box}
+          onKeyDown={dismissMenu.onKeyDown}
+        >
+          <header className="entity-popover__bar">
+            <span className="entity-popover__name" title={subject.path}>
+              {subject.name}
+            </span>
+            <button
+              type="button"
+              className="entity-popover__close"
+              data-testid="assets-file-menu-close"
+              aria-label="Close"
+              title="Close (Esc)"
+              onClick={() => {
+                setMenu(null)
+              }}
+            >
+              ✕
+            </button>
+          </header>
+
+          {/* Keyed on the path, so a menu opened on a different file starts the
+              control over rather than leaving somebody else's typed name,
+              refusal or half-pressed Delete under it (`editor-ui` UG5, answered
+              by remounting rather than by comparing). */}
+          <MoveOrDelete key={subject.path} path={subject.path} tree={shown} onMoved={reveal} />
+
+          {/* The third thing a hand wants here, and it is the *other* menu: a
+              press hands over to the make-a-file card at the same spot, which
+              already puts the file in this folder because the press that opened
+              this menu selected it. */}
+          <div className="assets__menu-foot">
+            <button
+              type="button"
+              className="control control--action"
+              data-testid="assets-file-menu-new"
+              title={`Make a level or prefab in ${folder === '' ? 'the top of the project' : folder}`}
+              onClick={() => {
+                setMenu({ kind: 'browser', at: menu.at })
+              }}
+            >
+              New level or prefab here
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* The footer is one unchanging sentence now, which is what lets it be as
+          small as its own text: everything that used to live here is behind a
+          right-click, so nothing in it grows or shrinks with the selection and
+          the browser above can no longer be resized under a double-click
+          (`editor-ui` UG8, finally answered by removal rather than by
+          reservation). It stays because a gesture nobody is told about is a
+          gesture nobody uses, and there is nowhere else on screen to say it. */}
+      <p className="assets__hint" data-testid="assets-hint">
+        Right-click a file to rename, move or delete it — or the empty space, or{' '}
+        <strong>+</strong> in the bar, to make a level or prefab.
+      </p>
     </div>
   )
 }
 
 /**
- * The make-a-file menu: which door opened it, and where it sits.
+ * The one menu this panel has open, if any: which of the three doors opened it,
+ * and — for the two that were opened by a press — where it sits.
  *
- * The bar's door has no point — the menu hangs under the button by CSS, the way
- * the cog's does — and the browser's is placed where the press landed. Two cases
- * rather than an optional point, so neither door can be read as the other.
+ * A union rather than a pair of flags and an optional point, for `selection.tsx`'s
+ * reason: a pair can spell states that are not real (a bar menu with a point, a
+ * file menu with no file) and every reader would then have to know which
+ * combinations to ignore. The bar's case carries no point because that card
+ * hangs under its own button by CSS, the way the cog's does.
  */
-type NewDocumentAnchor = { from: 'bar' } | { from: 'browser'; at: Spot }
+type AssetMenu =
+  | { kind: 'bar' }
+  | { kind: 'browser'; at: Spot }
+  | { kind: 'file'; path: string; at: Spot }
+
+/**
+ * Roughly how much room the file menu needs, for deciding which side of the
+ * press to open on (`../shell/floating.ts`).
+ *
+ * Bigger than the make-a-file card because it holds a name, a folder chooser,
+ * two buttons and a line of destination — and it grows again when it has a
+ * refusal or a list of what still uses the file to show, which is exactly why
+ * the card is pinned by the edge nearest the press rather than by its top.
+ */
+const FILE_MENU_ROOM: Room = { width: 258, height: 212 }
 
 // --- making a level --------------------------------------------------------
 
@@ -431,6 +532,12 @@ function MoveOrDelete({
           className="control control--text"
           data-testid="move-file-name"
           aria-label={`New name for ${basename(path)}`}
+          // The cursor lands here when the menu opens, which is both the
+          // ordinary thing to want and the thing that makes `Esc` work: the
+          // menu's Escape is handled on its own subtree rather than on the
+          // window (`../shell/useMenuDismiss.ts`), so with the focus still out
+          // on the row that opened it, the key would never reach the menu.
+          autoFocus
           value={name}
           onChange={(event) => {
             setName(event.target.value)

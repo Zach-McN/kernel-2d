@@ -8,7 +8,7 @@ It is kept current by the definition of done in `CLAUDE.md`: a session that
 changes what you can do, or how you do it, changes this page in the same commit.
 If this page and the editor disagree, the editor is right and the page is a bug.
 
-Last true as of: **the right-click window renames, frames, duplicates and deletes** (2026-08-15).
+Last true as of: **right-clicking a file renames, moves or deletes it** (2026-08-15).
 
 ---
 
@@ -231,18 +231,19 @@ way back and forward, and where you put the split — and moving the panel to a
 different corner of the window loses none of it. Every tile currently wears a plain
 folder or blank-page symbol: **pictures of your actual art come later**.
 
-The strip at the bottom — renaming, moving, deleting — keeps a fixed share of the
-panel and scrolls inside it, so nothing you are pointing at ever shifts while you
-are clicking on it. With nothing selected it says where to go to make a level.
-Drag the panel's top edge up if you want more room for tiles.
+**Everything you can do to a file is behind a right-click**, so the panel itself
+is the folder and one line of reminder at the bottom. Nothing under the listing
+grows or shrinks as you click about, which means a double-click never has the
+folder move out from under it.
 
 ### Making a level or a prefab
 
-Two ways in, and they open the same little menu:
+Three ways in, and they open the same little menu:
 
 - **The `+` in the bar**, to the left of the cog.
 - **Right-click the empty space** in the folder listing — under the tiles, or
   below the last row of the tree.
+- **Right-click a file or folder** and press *New level or prefab here*.
 
 The menu holds a name, **New scene** and **New prefab**, and a line saying the
 whole path it is about to create before anything is committed. It closes on
@@ -252,17 +253,21 @@ waiting for you next time.
 
 **Where it goes follows what you have selected**: the selected folder, the
 selected file's folder, or the folder the tiles are standing in — and the path
-line says which, every time. `.json` is added for you and never doubled.
-
-A right-click *on* a file or a folder is not this menu; nothing is built for that
-yet, so your browser's own menu appears there.
+line says which, every time. `.json` is added for you and never doubled. That is
+also why *New level or prefab here* needs no folder of its own: right-clicking
+picked the folder on its way in.
 
 ### Renaming, moving and deleting
 
-Select anything in the Assets panel and a row appears at the bottom of the panel:
-its name, the folder it is in, and a line showing exactly where it is about to end
-up. Type a new name and press **Rename**, or pick another folder and press
-**Move**. It is one operation either way, and the button says which one it will be.
+**Right-click a file or folder in the Assets panel** and a little menu opens on
+it, with the cursor already in the name field: its name, the folder it is in, and
+a line showing exactly where it is about to end up. Type a new name and press
+**Rename**, or pick another folder and press **Move**. It is one operation either
+way, and the button says which one it will be.
+
+`Esc` closes the menu, and so does pressing anywhere else or selecting another
+file. A folder gets the same menu without **Delete** — deleting one, with
+everything inside it, is still a job for Explorer.
 
 **Everything that pointed at it follows.** Every level and prefab that drew that
 picture keeps drawing it, every level that placed that prefab keeps placing it,
@@ -1004,12 +1009,11 @@ the editor takes the change.
   alphabetically, the same order the tree uses, and everything in the folder is
   shown.
 - **Drag a file from one folder into another.** Files drag *into the level*, not
-  into other folders; moving one is still the name field and the folder chooser at
-  the bottom of the panel.
-- **Right-click a file or folder in the Assets panel.** The right-click that
-  means something there is the one on the empty space, which offers to make a
-  level or prefab. On a file you get your browser's own menu, because nothing —
-  rename, delete, reveal in Explorer — has been built for that press yet.
+  into other folders; moving one is still the name field and the folder chooser
+  in its right-click menu.
+- **Reveal a file in Explorer, or open it in another application.** The
+  right-click menu on a file renames, moves, deletes and makes a new file beside
+  it, and that is all it offers.
 - **Drag a file into the Outliner, or onto an entity to give it that texture.**
   The level's picture is the only place a *file* drop means anything — the only
   thing that drops into the Outliner is its own rows, to reorder them.

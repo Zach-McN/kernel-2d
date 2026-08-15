@@ -416,26 +416,21 @@ body {
 }
 
 /*
- * The controls get a fixed share of the panel and scroll inside it, so what
- * they hold cannot change the size of the browser above them.
+ * What the footer became: one sentence naming the right-click, sized by its own
+ * text.
  *
- * That is the whole point rather than tidiness: their contents change with the
- * selection — the rename row is not there until something is selected — and a
- * browser that resized when they did would move every tile out from under the
- * pointer between the two halves of a double-click. See AssetsPanel.tsx.
- *
- * A share and a ceiling rather than a number of pixels: the number would be a
- * guess about a font (UG10), and either half alone is wrong — a proportion
- * wastes a big panel, a fixed height swallows a small one.
- *
- * Smaller since making a file left for a menu: what stays is the rename row and
- * the sentence shown in its place, and the room given back is the browser's.
+ * It used to be a fixed share of the panel — a reservation, so that controls
+ * appearing and disappearing with the selection could not resize the browser
+ * between the two halves of a double-click (UG8). Nothing down here changes any
+ * more, so the reservation is gone and the room is the browser's.
  */
-.assets__tools {
+.assets__hint {
   flex: none;
-  height: min(35%, 124px);
-  overflow: auto;
+  margin: 0;
+  padding: 6px 12px;
   border-top: 1px solid var(--shell-line);
+  color: var(--shell-text-dim);
+  opacity: 0.75;
 }
 
 .assets__body {
@@ -548,15 +543,6 @@ body {
   flex: 1;
 }
 
-/* What the footer says when nothing is selected: where the two doors to the
-   new-file menu are. The room is already spoken for (see AssetsPanel.tsx), so
-   this costs nothing and is the only place the right-click could be taught. */
-.assets__hint {
-  margin: 0;
-  padding: 8px 12px;
-  color: var(--shell-text-dim);
-  opacity: 0.75;
-}
 
 .assets__new-row .control--text {
   flex: 1;
@@ -763,6 +749,12 @@ body {
 
 .assets__menu {
   position: absolute;
+  /* Border-box, because the ceiling `spotIn` hands down is the room in the
+     panel — and a content-box ceiling would be that room *plus* this card's
+     padding and border, which is ten pixels of card hanging out of a panel
+     that hides its overflow. The stylesheet is content-box everywhere else, so
+     this is stated here rather than globally. */
+  box-sizing: border-box;
   top: calc(100% + 4px);
   right: 0;
   z-index: 5;
@@ -784,13 +776,74 @@ body {
 
 /*
  * The same card again, put where the right-click landed instead of under a
- * button — so the two doors open one menu that looks like one menu. Positioned
- * against the panel, which is the box `spotIn` clamped it to
- * (`editor/shell/floating.ts`).
+ * button — so every door opens one menu that looks like one menu. Positioned
+ * against the panel, which is the box `spotIn` measured it against
+ * (`editor/shell/floating.ts`): `top` or `bottom` is set inline, whichever edge
+ * is nearest the press, so a card that grows a refusal grows away from it.
+ *
+ * A card that grows a great deal — a delete that has to list four files still
+ * using it — scrolls inside itself rather than being clipped by a panel that
+ * hides its overflow. The ceiling itself arrives as an inline number of pixels,
+ * because a percentage one silently resolves to nothing against a panel whose
+ * height is not definite (`editor/shell/floating.ts`).
  */
 .assets__menu--at {
   top: auto;
   right: auto;
+  overflow-y: auto;
+}
+
+/*
+ * The file menu: the same card, holding the rename controls.
+ *
+ * **A width rather than a minimum**, because those controls were built as a row
+ * across the foot of a panel and a floating box is shrink-to-fit: left to
+ * themselves the name, the folder chooser and two buttons ask for 550 pixels and
+ * get them, which is a menu wider than the panel it belongs to.
+ */
+.assets__menu--file {
+  width: 250px;
+}
+
+.assets__menu--file .assets__move {
+  border-top: 0;
+  padding: 6px;
+}
+
+/*
+ * So inside a menu that row stacks: the name and the folder take the full width
+ * — a path is read, and a chooser that shows half a folder name chooses nothing
+ * — and the two buttons share the line under them.
+ */
+.assets__menu--file .assets__new-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.assets__menu--file .assets__new-row > .control--text,
+.assets__menu--file .assets__new-row > .control--choice {
+  grid-column: 1 / -1;
+  width: 100%;
+  min-width: 0;
+}
+
+/* A folder has no Delete, so its Rename takes the whole line rather than half
+   of one with a gap beside it. */
+.assets__menu--file .assets__new-row > .control--action:only-of-type {
+  grid-column: 1 / -1;
+}
+
+/* The hand-over to the make-a-file card, under a line: everything above it is
+   about the file that was pressed, and this is about the folder it is in. */
+.assets__menu-foot {
+  display: flex;
+  padding: 6px;
+  border-top: 1px solid var(--shell-line);
+}
+
+.assets__menu-foot .control--action {
+  flex: 1;
 }
 
 .assets__menu-item {
@@ -1270,10 +1323,14 @@ body {
  * for the same reason the menus are — the entity's name is the human's word,
  * not chrome.
  */
+/* Taller than the panel it belongs to, it scrolls inside itself rather than
+   being clipped — the ceiling arrives inline (`editor/shell/floating.ts`). */
 .entity-popover {
   position: absolute;
+  box-sizing: border-box;
   z-index: 6;
   width: 216px;
+  overflow-y: auto;
   padding: 4px;
   border: 1px solid var(--shell-line);
   border-radius: var(--shell-radius);

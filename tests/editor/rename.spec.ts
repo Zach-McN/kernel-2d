@@ -7,7 +7,7 @@ import { expect, test, type Page } from '@playwright/test'
 
 import { showPanel } from './panels.js'
 import { restoreProjectAfterEach } from './restore-project.js'
-import { selectAsset } from './select-asset.js'
+import { openFileMenu, selectAsset } from './select-asset.js'
 import { editorTestProjectPath } from './test-project.js'
 
 /**
@@ -59,7 +59,7 @@ const problem = (page: Page) => page.getByTestId('move-file-problem')
 const uses = (page: Page) => page.getByTestId('move-file-uses')
 
 async function moveIt(page: Page, from: string, to: { name?: string; folder?: string }): Promise<void> {
-  await selectAsset(page, from)
+  await openFileMenu(page, from)
   if (to.name !== undefined) await name(page).fill(to.name)
   if (to.folder !== undefined) await folder(page).selectOption(to.folder)
   await apply(page).click()
@@ -220,7 +220,7 @@ test('deleting a file names what still uses it, and takes a second press', async
   await openScene(page)
 
   try {
-    await selectAsset(page, HEART)
+    await openFileMenu(page, HEART)
     await remove(page).click()
 
     await expect(uses(page)).toContainText(LEVEL_ONE)
@@ -248,7 +248,7 @@ test('deleting a file nothing uses says so, and still takes a second press', asy
   const text = fs.readFileSync(fileIn(source), 'utf8')
 
   try {
-    await selectAsset(page, source)
+    await openFileMenu(page, source)
     await remove(page).click()
 
     await expect(uses(page)).toContainText('Nothing else in the project uses')
@@ -290,7 +290,7 @@ test('the project settings cannot be renamed out from under an export', async ({
 })
 
 test('a folder offers no way to delete it, and says so', async ({ page }) => {
-  await selectAsset(page, UI_FOLDER)
+  await openFileMenu(page, UI_FOLDER)
 
   await expect(remove(page)).toHaveCount(0)
   await expect(page.getByTestId('move-file-folder-note')).toContainText('renamed or moved')

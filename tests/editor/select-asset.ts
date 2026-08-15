@@ -61,3 +61,18 @@ export async function openNewDocument(page: Page): Promise<void> {
   await page.getByTestId('assets-new-document').click()
   await expect(page.getByTestId('assets-new-menu')).toBeVisible()
 }
+
+/**
+ * Opens the menu that renames, moves and deletes a file — a right-click on its
+ * row.
+ *
+ * That control used to be a permanent row under the folder listing, so a test
+ * only had to select the file. It is a floating menu now, and every test that
+ * drives it opens the menu first. Selecting first as well, through the helper
+ * above, is what walks the tree open so there is a row to press on.
+ */
+export async function openFileMenu(page: Page, assetPath: string): Promise<void> {
+  await selectAsset(page, assetPath)
+  await assetRow(page, assetPath).click({ button: 'right' })
+  await expect(page.getByTestId('assets-file-menu')).toHaveAttribute('data-file', assetPath)
+}

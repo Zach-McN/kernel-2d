@@ -45,11 +45,22 @@ export interface Room {
  *
  * `top` or `bottom`, never both: which one is present is which edge of the card
  * is anchored, and so which way it grows.
+ *
+ * **`maxHeight` is a number of pixels rather than a percentage in the
+ * stylesheet, and that is a fix rather than a preference.** A percentage
+ * `max-height` resolves against a containing block with a *definite* height; a
+ * panel that gets its size from a flex parent has a height that measures 262 and
+ * is not definite, so `max-height: calc(100% - 16px)` silently computes to none
+ * and a card that outgrows its panel is clipped by the panel's hidden overflow
+ * with no scrollbar to say so. The measurement is right here in this function,
+ * so it is stated as pixels and the question never arises.
  */
 export interface Spot {
   left: number
   top?: number
   bottom?: number
+  /** The room between the anchored edge and the far edge of the panel. */
+  maxHeight: number
 }
 
 /** The margin a card keeps from every edge of its panel, in CSS pixels. */
@@ -59,26 +70,47 @@ const EDGE = 8
 const ACROSS = 12
 const DOWN = 8
 
-export function spotIn(panel: DOMRect | undefined, at: Point, room: Room): Spot {
+export function spotIn(panel: DOMRect | undefined, at: Point, wants: Room): Spot {
   const width = panel?.width ?? 0
   const height = panel?.height ?? 0
 
   // Sideways it only ever slides. A card has a fixed width, so it never grows
   // into the edge it was moved away from — the whole reason the vertical case
   // needs more than this.
-  const left = Math.max(EDGE, Math.min(at.x + ACROSS, width - room.width))
+  const left = Math.max(EDGE, Math.min(at.x + ACROSS, width - wants.width))
 
-  const fitsBelow = at.y + DOWN + room.height <= height
-  const fitsAbove = at.y - DOWN - room.height >= EDGE
+  /** Pinned by its top, with the room between there and the bottom edge. */
+  const below = (top: number): Spot => ({ left, top, maxHeight: room(height - top - EDGE) })
+  /** Pinned by its bottom, with the room between there and the top edge. */
+  const above = (bottom: number): Spot => ({ left, bottom, maxHeight: room(height - bottom - EDGE) })
 
-  // Above the press, pinned by the bottom so it grows upward. Only when there
-  // is genuinely no room below: below is the ordinary reading of "next to".
-  if (!fitsBelow && fitsAbove) {
-    return { left, bottom: Math.max(EDGE, height - (at.y - DOWN)) }
-  }
+  const fitsBelow = at.y + DOWN + wants.height <= height
+  const fitsAbove = at.y - DOWN - wants.height >= EDGE
 
-  // Below the press — or, when the panel is too small to hold the card either
-  // way up, pinned to the near edge and allowed to be cramped. The alternative
-  // to cramped is off screen.
-  return { left, top: Math.max(EDGE, Math.min(at.y + DOWN, height - room.height)) }
+  // Below the press: the ordinary reading of "next to", and the card grows
+  // downward into the room that made it the right choice.
+  if (fitsBelow) return below(at.y + DOWN)
+
+  // Above the press, pinned by the bottom so it grows upward instead.
+  if (fitsAbove) return above(Math.max(EDGE, height - (at.y - DOWN)))
+
+  /*
+   * **Neither: the card is too tall for this panel, and it is pinned to a panel
+   * edge rather than placed relative to the press at all.**
+   *
+   * The obvious last resort — slide it up until it fits — computes a top from
+   * the reservation, which is a hand-written number for a card that grows. The
+   * moment it grows past that number the extra hangs off the bottom of a panel
+   * that hides its overflow, and the human is looking at a menu with its buttons
+   * cut off. Pinned to an edge with the room stated, whatever the card does is
+   * bounded by the panel and turns into a scroll.
+   *
+   * The near edge, so it is at least on the side of the panel the hand is.
+   */
+  return at.y * 2 > height ? above(EDGE) : below(EDGE)
+}
+
+/** Never a useless or negative ceiling, however small the panel measures. */
+function room(available: number): number {
+  return Math.max(80, available)
 }

@@ -32,7 +32,7 @@ test.beforeEach(async ({ page }) => {
 
 test('the panel shows no make-a-file row until it is asked for', async ({ page }) => {
   await expect(page.getByTestId('new-document')).toBeHidden()
-  // The footer says where the two doors are instead of sitting blank.
+  // One line under the folder listing names the press instead.
   await expect(page.getByTestId('assets-hint')).toContainText('Right-click')
 })
 
@@ -88,12 +88,13 @@ test('right-clicking the empty part of the browser opens the same menu, where th
   expect(await gapFrom(menu, spot)).toBeLessThan(40)
 })
 
-test('right-clicking a file opens nothing — that press is not this menu', async ({ page }) => {
+test('right-clicking a file opens the other menu — that press is about the file', async ({ page }) => {
   await showTree(page)
 
   await page.locator('[data-asset-path="project.json"]').click({ button: 'right' })
 
   await expect(page.getByTestId('assets-new-menu')).toBeHidden()
+  await expect(page.getByTestId('assets-file-menu')).toBeVisible()
 })
 
 test('a level made from the right-click lands where the menu said, and the menu goes away', async ({
