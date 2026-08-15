@@ -4,7 +4,7 @@ import path from 'node:path'
 import { expect, test, type Locator, type Page } from '@playwright/test'
 
 import { restoreProjectAfterEach } from './restore-project.js'
-import { selectAsset, showTree } from './select-asset.js'
+import { openNewDocument, selectAsset, showTree } from './select-asset.js'
 import { editorTestProjectPath } from './test-project.js'
 
 /**
@@ -90,6 +90,7 @@ function textures(page: Page): Promise<string[]> {
 
 async function makePrefab(page: Page, name: string): Promise<void> {
   await page.locator('[data-asset-path="prefabs"]').click()
+  await openNewDocument(page)
   const field = page.getByTestId('new-document-name')
   await field.click()
   await field.fill(name)
@@ -178,6 +179,7 @@ test('a new prefab is made where the preview said, and opens ready to fill in', 
   // double-click.
   await showTree(page)
   await page.locator('[data-asset-path="prefabs"]').click()
+  await openNewDocument(page)
   const field = page.getByTestId('new-document-name')
   await field.click()
   await field.fill('enemy-bat')
@@ -199,6 +201,7 @@ test('a name that is taken is refused, and the prefab that is there is left alon
 
   await showTree(page)
   await page.locator('[data-asset-path="prefabs"]').click()
+  await openNewDocument(page)
   const field = page.getByTestId('new-document-name')
   await field.click()
   await field.fill('enemy-slime')

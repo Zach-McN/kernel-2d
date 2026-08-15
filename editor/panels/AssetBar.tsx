@@ -1,10 +1,13 @@
-import { Fragment, useEffect, useRef, useState, type ReactElement } from 'react'
+import { Fragment, useRef, useState, type ReactElement } from 'react'
 
 import { useAssetBrowsing, showsGrid, type AssetView } from '../shell/asset-browsing'
+import { useMenuDismiss } from '../shell/useMenuDismiss'
+import { NewDocument } from './NewDocument'
 
 /**
  * The strip across the top of the Assets panel: where you are on the left, and
- * the cog that decides how you are looking at it on the right.
+ * on the right the `+` that makes a file and the cog that decides how you are
+ * looking at the folder.
  *
  * **The breadcrumb is only on screen when the grid is**, and that is the point
  * rather than an economy. A tree has no "current folder" — it can have six of
@@ -12,12 +15,25 @@ import { useAssetBrowsing, showsGrid, type AssetView } from '../shell/asset-brow
  * somewhere the human is not, which is worse than no sentence at all
  * (`editor-ui` U10). The bar itself stays, because the cog is how you get back.
  *
+ * **The `+` is the second door on the make-a-file menu**, the first being a
+ * right-click on the empty part of the browser. It is a button on the bar and
+ * the cog is not made into one, because the two are different kinds of thing:
+ * the cog is a setting, chosen once and lived with, and the `+` is an action,
+ * reached for whenever there is a level to start. Neither belongs in the
+ * other's menu.
+ *
  * The bar is a fixed height whatever is in it (`editor-ui` UG8): the two views
  * put different things in the left half, and a strip that grew a row when the
  * breadcrumb appeared would shorten the folder underneath it at the moment the
  * human changed view.
  */
-export function AssetBar({ projectName }: { projectName: string }): ReactElement {
+export function AssetBar({
+  projectName,
+  newDocument,
+}: {
+  projectName: string
+  newDocument: NewDocumentDoor
+}): ReactElement {
   const { view, setView, folder, openFolder } = useAssetBrowsing()
 
   return (
@@ -27,7 +43,58 @@ export function AssetBar({ projectName }: { projectName: string }): ReactElement
       ) : (
         <span className="assets__bar-filler" />
       )}
+      <NewDocumentButton door={newDocument} />
       <ViewSettings view={view} onPick={setView} />
+    </div>
+  )
+}
+
+/**
+ * The bar's half of the make-a-file menu.
+ *
+ * The panel owns whether it is open and where, because the other door — a
+ * right-click in the browser — opens the same menu and only one of them may be
+ * on screen at a time (`editor-ui` U44). This is a button and a place to hang
+ * the card, and nothing else.
+ */
+export interface NewDocumentDoor {
+  /** True while the menu is open *under this button*. */
+  open: boolean
+  toggle: () => void
+  close: () => void
+  /** Where a file made from here would go, and what to do once it exists. */
+  folder: string
+  onCreated: (path: string) => void
+}
+
+function NewDocumentButton({ door }: { door: NewDocumentDoor }): ReactElement {
+  const plus = useRef<HTMLButtonElement | null>(null)
+  const dismiss = useMenuDismiss(door.open, (how) => {
+    door.close()
+    if (how === 'escape') plus.current?.focus()
+  })
+
+  return (
+    <div className="assets__settings" ref={dismiss.box} onKeyDown={dismiss.onKeyDown}>
+      <button
+        type="button"
+        className="assets__cog"
+        ref={plus}
+        data-testid="assets-new-document"
+        aria-label="Make a level or prefab"
+        aria-haspopup="menu"
+        aria-expanded={door.open}
+        title="Make a level or prefab — or right-click the empty part of the browser"
+        onClick={door.toggle}
+      >
+        <PlusIcon />
+      </button>
+
+      {door.open && (
+        <div className="assets__menu assets__menu--new" role="menu" data-testid="assets-new-menu">
+          <NewDocument folder={door.folder} onCreated={door.onCreated} />
+        </div>
+      )}
     </div>
   )
 }
@@ -99,43 +166,20 @@ const VIEWS: readonly { id: AssetView; label: string; blurb: string }[] = [
  * then lived with for an afternoon, so it does not deserve permanent room next
  * to the breadcrumb, which is read on every click.
  *
- * It closes on Escape and on a press anywhere else. The Escape is handled on the
- * menu's own subtree rather than on the window, and the press is stopped from
- * travelling any further, because the viewport already owns Escape for calling
- * off a grab (`editor-ui` U33) — one key, and whichever thing is open should be
- * the one that hears it.
+ * It closes on Escape and on a press anywhere else — the shared behaviour every
+ * menu in the editor keeps (`../shell/useMenuDismiss.ts`), which this one was
+ * the first to spell out.
  */
 function ViewSettings({ view, onPick }: { view: AssetView; onPick: (view: AssetView) => void }): ReactElement {
   const [open, setOpen] = useState(false)
-  const box = useRef<HTMLDivElement | null>(null)
   const cog = useRef<HTMLButtonElement | null>(null)
-
-  useEffect(() => {
-    if (!open) return
-
-    const onPressElsewhere = (event: PointerEvent): void => {
-      const target = event.target
-      if (target instanceof Node && box.current?.contains(target) === true) return
-      setOpen(false)
-    }
-
-    window.addEventListener('pointerdown', onPressElsewhere)
-    return () => {
-      window.removeEventListener('pointerdown', onPressElsewhere)
-    }
-  }, [open])
+  const dismiss = useMenuDismiss(open, (how) => {
+    setOpen(false)
+    if (how === 'escape') cog.current?.focus()
+  })
 
   return (
-    <div
-      className="assets__settings"
-      ref={box}
-      onKeyDown={(event) => {
-        if (event.key !== 'Escape' || !open) return
-        event.stopPropagation()
-        setOpen(false)
-        cog.current?.focus()
-      }}
-    >
+    <div className="assets__settings" ref={dismiss.box} onKeyDown={dismiss.onKeyDown}>
       <button
         type="button"
         className="assets__cog"
@@ -179,6 +223,18 @@ function ViewSettings({ view, onPick }: { view: AssetView; onPick: (view: AssetV
         </div>
       )}
     </div>
+  )
+}
+
+/** A plus, drawn rather than typed, so it sits on the bar the way the cog does. */
+function PlusIcon(): ReactElement {
+  return (
+    <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">
+      <path
+        fill="currentColor"
+        d="M7.3 2.6h1.4v4.7h4.7v1.4H8.7v4.7H7.3V8.7H2.6V7.3h4.7Z"
+      />
+    </svg>
   )
 }
 

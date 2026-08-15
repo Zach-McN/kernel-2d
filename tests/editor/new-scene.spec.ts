@@ -4,7 +4,7 @@ import path from 'node:path'
 import { expect, test, type Page } from '@playwright/test'
 
 import { restoreProjectAfterEach } from './restore-project.js'
-import { selectAsset, showTree } from './select-asset.js'
+import { openNewDocument, selectAsset, showTree } from './select-asset.js'
 import { editorTestProjectPath } from './test-project.js'
 
 /**
@@ -15,6 +15,11 @@ import { editorTestProjectPath } from './test-project.js'
  * tests are written around that rather than around the button: where it went,
  * that it is immediately usable, and — most of all — that asking for one twice
  * leaves the first one alone.
+ *
+ * Making one is a menu now rather than a row under the browser, so every test
+ * here opens it first — and, because a menu closes on a press elsewhere, opens
+ * it *after* choosing the folder. The menu's own behaviour, and its second door
+ * on the browser's right-click, are `assets-new-menu.spec.ts`.
  *
  * Every file the editor can write is snapshotted and put back afterwards, and
  * anything that appeared is removed (V14), which is what keeps a level made by
@@ -45,14 +50,15 @@ async function nameIt(page: Page, name: string): Promise<void> {
 }
 
 /**
- * Selects the `scenes` folder in the tree, so that is where a new level would
- * go. The tree rather than the default icon view, because these tests then
- * look for the new file's row without walking into the folder — in the grid it
- * would be behind a double-click.
+ * Selects the `scenes` folder in the tree and opens the make-a-file menu, so
+ * that is where a new level would go. The tree rather than the default icon
+ * view, because these tests then look for the new file's row without walking
+ * into the folder — in the grid it would be behind a double-click.
  */
 async function inScenesFolder(page: Page): Promise<void> {
   await showTree(page)
   await page.locator('[data-asset-path="scenes"]').click()
+  await openNewDocument(page)
   await expect(page.getByTestId('new-document')).toBeVisible()
 }
 
@@ -94,18 +100,27 @@ test('the name field does not need the extension, and does not double it', async
 test('where it goes follows what is selected, rather than a folder written into the editor', async ({
   page,
 }) => {
+  // The menu is opened after each selection rather than once at the top,
+  // because choosing a file is a press elsewhere and a menu closes on one.
+  await showTree(page)
+  await openNewDocument(page)
   await nameIt(page, 'level-03')
   // Nothing selected: the top of the project.
   await expect(page.getByTestId('new-document-path')).toContainText('Will make level-03.json')
 
   await selectAsset(page, LEVEL_ONE)
+  await openNewDocument(page)
+  await nameIt(page, 'level-03')
   await expect(page.getByTestId('new-document-path')).toContainText('scenes/level-03.json')
 
   await page.locator('[data-asset-path="data"]').click()
+  await openNewDocument(page)
+  await nameIt(page, 'level-03')
   await expect(page.getByTestId('new-document-path')).toContainText('data/level-03.json')
 })
 
 test('it cannot be asked for until it has a name', async ({ page }) => {
+  await openNewDocument(page)
   await expect(page.getByTestId('new-scene-create')).toBeDisabled()
   await nameIt(page, 'level-03')
   await expect(page.getByTestId('new-scene-create')).toBeEnabled()
@@ -134,6 +149,7 @@ test('asking for a level that already exists says so, and leaves the first one a
 })
 
 test('a folder that does not exist is refused rather than made', async ({ page }) => {
+  await openNewDocument(page)
   await nameIt(page, 'chapter-two/level-03')
   await page.getByTestId('new-scene-create').click()
 

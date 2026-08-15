@@ -47,3 +47,17 @@ export async function showTree(page: Page): Promise<void> {
   await page.getByTestId('assets-view-list').click()
   await expect(panel).toHaveAttribute('data-view', 'list')
 }
+
+/**
+ * Opens the make-a-file menu from the `+` in the bar.
+ *
+ * Making a level is behind a menu rather than a permanent row, so every test
+ * that makes one opens it first — and, because the menu closes on a press
+ * anywhere else, opens it *after* selecting the folder it should go in. The
+ * other door is a right-click on the browser's background, which
+ * `assets-new-menu.spec.ts` is about.
+ */
+export async function openNewDocument(page: Page): Promise<void> {
+  await page.getByTestId('assets-new-document').click()
+  await expect(page.getByTestId('assets-new-menu')).toBeVisible()
+}

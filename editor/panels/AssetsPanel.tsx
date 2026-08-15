@@ -1,22 +1,22 @@
-import { useRef, useState, type ReactElement } from 'react'
+import { useRef, useState, type MouseEvent, type ReactElement } from 'react'
 
-import { defaultPrefab, type Prefab } from '../../runtime/formats/prefab-schema'
-import { defaultScene, type Scene } from '../../runtime/formats/scene-schema'
+import type { Point } from '../../runtime'
 import { formatBytes } from '../../sidecar/bytes'
 import type { ProjectTree } from '../../sidecar/tree-schema'
 import { showsGrid, showsTree, useAssetBrowsing } from '../shell/asset-browsing'
 import { basename, findNode, folderPathsIn, parentOf } from '../shell/asset-kinds'
 import { assetRowsFor, type AssetRow } from '../shell/asset-rows'
+import { spotIn } from '../shell/floating'
 import { useProject } from '../shell/project-context'
 import { pointsAt } from '../shell/references'
 import { useSelection } from '../shell/selection'
 import { NOT_DRAGGABLE, useAssetDrag, type AssetDragProps } from '../shell/useAssetDrag'
 import { useFileMoves, type Outcome, type UseReport } from '../shell/useFileMoves'
 import { useFolderHistoryButtons } from '../shell/useFolderHistoryButtons'
-import { createDocumentOnDisk } from '../store/document-disk'
-import { mintId } from '../store/ids'
+import { useMenuDismiss } from '../shell/useMenuDismiss'
 import { AssetBar } from './AssetBar'
 import { AssetGrid } from './AssetGrid'
+import { NewDocument, NEW_DOCUMENT_ROOM } from './NewDocument'
 import { SplitHandle } from './SplitHandle'
 
 /**
@@ -27,11 +27,22 @@ import { SplitHandle } from './SplitHandle'
  * file it annotates — is decided in `asset-rows.ts`, because the Inspector has
  * to count a folder's contents the same way this lists them.
  *
- * It is also the one panel that makes a file, which is why the row under the
- * folder shows the whole path it is about to create. Where a level goes is the
- * human's decision, taken from what they have selected — no folder name is
- * written into the code, because `scenes/` is a convention in the folder map and
- * not a fact this editor is allowed to rely on.
+ * It is also the one panel that makes a file, and **making one is a menu with
+ * two doors**: the `+` on the bar, and a right-click on the empty part of the
+ * browser. Neither is a permanent row, because the panel's job is to show the
+ * folder and a control used once an afternoon should not hold room that is
+ * looked at all day. The menu itself is `NewDocument.tsx`; what is here is the
+ * one anchor both doors open — one menu, never two, the same shape the entity
+ * right-click window keeps (`editor-ui` U44).
+ *
+ * Only the *background* of the browser opens it. A right-click on a file or a
+ * folder is left to the browser's own menu, because there is nothing built for
+ * a file yet and a dead right-click is worse than the one the machine offers.
+ *
+ * Where a level goes is the human's decision, taken from what they have selected
+ * — no folder name is written into the code, because `scenes/` is a convention
+ * in the folder map and not a fact this editor is allowed to rely on. The menu
+ * says the whole path before anything is committed, from either door.
  *
  * **There are three ways to look at the same folder**, chosen behind the cog and
  * held above the layout in `asset-browsing.tsx`: the tree, the icon grid, and
@@ -54,6 +65,12 @@ import { SplitHandle } from './SplitHandle'
  * would land on whatever slid into that spot — the folder never opens, nothing
  * reports an error, and the panel simply does not respond to a double-click.
  * That is how this was found.
+ *
+ * **So the footer keeps its share even when it holds nothing**, which is why
+ * with nothing selected it says where the two doors to the new-file menu are
+ * rather than sitting blank. The room is already spoken for; a sentence in it is
+ * free, and it is the only place on screen that could teach a gesture that is
+ * now behind a right-click.
  *
  * It is `editor-ui` UG8 in a panel with no canvas in it: **what a gesture is
  * aimed at must not be moved by the first half of that gesture.**
@@ -79,9 +96,47 @@ export function AssetsPanel(): ReactElement {
   // view, where there is no folder to be inside of.
   useFolderHistoryButtons({ surface: browseSurface, enabled: showsGrid(browsing.view) })
 
+  // The make-a-file menu, and which door opened it. One piece of state for both,
+  // so the `+` and the right-click can never both be showing one (`editor-ui`
+  // U44); `at` is in the panel's own pixels and only the right-click has one.
+  const [newDocument, setNewDocument] = useState<NewDocumentAnchor | null>(null)
+  const panel = useRef<HTMLDivElement | null>(null)
+  const dismissBrowserMenu = useMenuDismiss(newDocument?.from === 'browser', () => {
+    setNewDocument(null)
+  })
+
   const reveal = (path: string): void => {
     browsing.revealParents(path)
     selection.selectFile(path)
+  }
+
+  /** It exists: show it, select it, and put the menu away. */
+  const created = (path: string): void => {
+    setNewDocument(null)
+    reveal(path)
+  }
+
+  /**
+   * A right-click in the browser, which offers to make a file *here*.
+   *
+   * Only the background: a press that landed on a row or a tile is somebody
+   * else's, and is left to the browser's own menu rather than being swallowed
+   * into a menu that would say nothing about the file under the cursor.
+   */
+  const onBrowserContextMenu = (event: MouseEvent<HTMLDivElement>): void => {
+    if (!(event.target instanceof HTMLElement)) return
+    if (event.target.closest('[data-asset-path]') !== null) return
+
+    event.preventDefault()
+    const box = panel.current?.getBoundingClientRect()
+    setNewDocument({
+      from: 'browser',
+      at: spotIn(
+        box,
+        { x: event.clientX - (box?.left ?? 0), y: event.clientY - (box?.top ?? 0) },
+        NEW_DOCUMENT_ROOM,
+      ),
+    })
   }
 
   if (project.state === 'loading') {
@@ -97,18 +152,45 @@ export function AssetsPanel(): ReactElement {
   }
 
   const tree = project.tree
+  // One answer for both doors, so a file made from the bar and a file made from
+  // a right-click land in the same place.
+  const folder = folderFor(
+    selection.selectedFilePath,
+    tree,
+    showsGrid(browsing.view) ? browsing.folder : null,
+  )
 
   return (
-    <div className="assets" data-testid="assets-panel" data-live={project.live} data-view={browsing.view}>
+    <div
+      className="assets"
+      data-testid="assets-panel"
+      data-live={project.live}
+      data-view={browsing.view}
+      data-new-document={newDocument?.from ?? ''}
+      ref={panel}
+    >
       {!project.live && (
         <p className="assets__stale" data-testid="assets-stale">
           Not hearing about changes — this may be out of date.
         </p>
       )}
 
-      <AssetBar projectName={tree.projectName} />
+      <AssetBar
+        projectName={tree.projectName}
+        newDocument={{
+          open: newDocument?.from === 'bar',
+          toggle: () => {
+            setNewDocument((was) => (was?.from === 'bar' ? null : { from: 'bar' }))
+          },
+          close: () => {
+            setNewDocument(null)
+          },
+          folder,
+          onCreated: created,
+        }}
+      />
 
-      <div className="assets__body" ref={adoptBody}>
+      <div className="assets__body" ref={adoptBody} onContextMenu={onBrowserContextMenu}>
         {showsTree(browsing.view) && (
           <div
             className="assets__pane assets__pane--tree"
@@ -155,17 +237,29 @@ export function AssetsPanel(): ReactElement {
         )}
       </div>
 
-      <div className="assets__tools">
-        <NewDocument
-          folder={folderFor(
-            selection.selectedFilePath,
-            tree,
-            showsGrid(browsing.view) ? browsing.folder : null,
-          )}
-          onCreated={reveal}
-        />
+      {newDocument?.from === 'browser' && (
+        <div
+          className="assets__menu assets__menu--new assets__menu--at"
+          role="menu"
+          data-testid="assets-new-menu"
+          style={{ left: newDocument.at.x, top: newDocument.at.y }}
+          ref={dismissBrowserMenu.box}
+          onKeyDown={dismissBrowserMenu.onKeyDown}
+        >
+          <NewDocument folder={folder} onCreated={created} />
+        </div>
+      )}
 
-        {selection.selectedFilePath !== null && (
+      <div className="assets__tools">
+        {selection.selectedFilePath === null ? (
+          // The footer's room is spoken for either way (see above), so the empty
+          // case is where the gesture that is now behind a right-click gets
+          // taught. There is nowhere else on screen that could say it.
+          <p className="assets__hint" data-testid="assets-hint">
+            Right-click the empty space above — or press <strong>+</strong> in the bar — to make a
+            level or prefab. Select a file to rename, move or delete it.
+          </p>
+        ) : (
           // Keyed on the path, so selecting a different file starts the row over
           // rather than leaving somebody else's typed name, refusal or half-pressed
           // Delete sitting under it (`editor-ui` UG5, answered by remounting rather
@@ -181,6 +275,15 @@ export function AssetsPanel(): ReactElement {
     </div>
   )
 }
+
+/**
+ * The make-a-file menu: which door opened it, and where it sits.
+ *
+ * The bar's door has no point — the menu hangs under the button by CSS, the way
+ * the cog's does — and the browser's is placed where the press landed. Two cases
+ * rather than an optional point, so neither door can be read as the other.
+ */
+type NewDocumentAnchor = { from: 'bar' } | { from: 'browser'; at: Point }
 
 // --- making a level --------------------------------------------------------
 
@@ -205,123 +308,6 @@ function folderFor(selectedPath: string | null, tree: ProjectTree, browsed: stri
   if (node.kind === 'directory') return node.path
 
   return node.path.split('/').slice(0, -1).join('/')
-}
-
-/**
- * Making a level, or a prefab.
- *
- * The whole path is on screen before anything is committed, because this is the
- * one control in the editor that puts a file in somebody's project folder and
- * "where did it go?" is not a question a human should have to answer by
- * searching. Refusals are the service's own sentences, shown as they arrive —
- * it knows things this panel does not, like whether the name is already taken.
- *
- * One name field and two buttons rather than two rows, because the *path* is the
- * same question either way and only the contents differ. Which button was
- * pressed decides what goes inside; nothing about the file's name or folder says
- * which kind it is, and nothing later reads it that way (`editor-ui` U11).
- */
-function NewDocument({
-  folder,
-  onCreated,
-}: {
-  folder: string
-  onCreated: (path: string) => void
-}): ReactElement {
-  const [name, setName] = useState('')
-  const [problem, setProblem] = useState<string | null>(null)
-  const [busy, setBusy] = useState(false)
-
-  const typed = name.trim()
-  // `.json` is added rather than demanded, and left alone when it is already
-  // there, so nobody ends up with `level-03.json.json`.
-  const file = typed === '' ? '' : typed.endsWith('.json') ? typed : `${typed}.json`
-  const path = file === '' ? '' : folder === '' ? file : `${folder}/${file}`
-
-  const create = (document: Scene | Prefab): void => {
-    if (path === '' || busy) return
-
-    setBusy(true)
-    setProblem(null)
-
-    void createDocumentOnDisk(path, document)
-      .then(() => {
-        setName('')
-        // Selecting it is what opens it: a file becomes the open scene, or the
-        // prefab the Inspector is showing, because of the format inside it,
-        // which the shell reads when it is selected.
-        onCreated(path)
-      })
-      .catch((error: unknown) => {
-        setProblem(error instanceof Error ? error.message : String(error))
-      })
-      .finally(() => {
-        setBusy(false)
-      })
-  }
-
-  return (
-    <form
-      className="assets__new"
-      data-testid="new-document"
-      onSubmit={(event) => {
-        event.preventDefault()
-        create(defaultScene())
-      }}
-    >
-      <div className="assets__new-row">
-        <input
-          type="text"
-          className="control control--text"
-          data-testid="new-document-name"
-          placeholder="New level or prefab"
-          aria-label="Name for a new level or prefab"
-          value={name}
-          onChange={(event) => {
-            setName(event.target.value)
-            setProblem(null)
-          }}
-        />
-        <button
-          type="submit"
-          className="control control--action"
-          data-testid="new-scene-create"
-          disabled={path === '' || busy}
-        >
-          New scene
-        </button>
-        <button
-          type="button"
-          className="control control--action"
-          data-testid="new-prefab-create"
-          disabled={path === '' || busy}
-          // The prefab is named after the file it is going into, which is the
-          // name the human just typed — there is nothing else it could sensibly
-          // be, and it is editable the moment it opens.
-          onClick={() => create(defaultPrefab(mintId(), withoutJsonExtension(file)))}
-        >
-          New prefab
-        </button>
-      </div>
-
-      {path !== '' && (
-        <p className="assets__new-path" data-testid="new-document-path">
-          Will make <strong>{path}</strong>
-        </p>
-      )}
-
-      {problem !== null && (
-        <p className="assets__new-problem" data-testid="new-document-problem">
-          {problem}
-        </p>
-      )}
-    </form>
-  )
-}
-
-/** A file name without its `.json`, for naming what goes inside it. */
-function withoutJsonExtension(file: string): string {
-  return file.replace(/\.json$/i, '')
 }
 
 // --- renaming, moving and deleting -----------------------------------------

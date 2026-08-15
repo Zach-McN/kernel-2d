@@ -408,6 +408,7 @@ body {
  * grid off the top.
  */
 .assets {
+  position: relative;
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -426,10 +427,13 @@ body {
  * A share and a ceiling rather than a number of pixels: the number would be a
  * guess about a font (UG10), and either half alone is wrong — a proportion
  * wastes a big panel, a fixed height swallows a small one.
+ *
+ * Smaller since making a file left for a menu: what stays is the rename row and
+ * the sentence shown in its place, and the room given back is the browser's.
  */
 .assets__tools {
   flex: none;
-  height: min(40%, 150px);
+  height: min(35%, 124px);
   overflow: auto;
   border-top: 1px solid var(--shell-line);
 }
@@ -521,14 +525,37 @@ body {
   color: var(--shell-bad);
 }
 
-/* Making a level: the name, the button, and the path it is about to create. */
+/* Making a level: the name, the two buttons, and the path it is about to
+   create. It lives in a menu now — see `.assets__menu--new`. */
 .assets__new {
-  padding: 6px 12px 10px;
+  padding: 6px;
 }
 
 .assets__new-row {
   display: flex;
   gap: 6px;
+}
+
+/* The name has the width of the card; the two buttons share the row under it.
+   Side by side with the buttons — which is what this row was in the footer —
+   there is no room left to read a name in. */
+.assets__new > .control--text {
+  width: 100%;
+  margin-bottom: 6px;
+}
+
+.assets__new .control--action {
+  flex: 1;
+}
+
+/* What the footer says when nothing is selected: where the two doors to the
+   new-file menu are. The room is already spoken for (see AssetsPanel.tsx), so
+   this costs nothing and is the only place the right-click could be taught. */
+.assets__hint {
+  margin: 0;
+  padding: 8px 12px;
+  color: var(--shell-text-dim);
+  opacity: 0.75;
 }
 
 .assets__new-row .control--text {
@@ -745,6 +772,25 @@ body {
   border-radius: var(--shell-radius);
   background: var(--shell-surface);
   box-shadow: 0 10px 26px rgba(0, 0, 0, 0.5);
+}
+
+/*
+ * The make-a-file menu: the same card as the cog's, holding a form instead of a
+ * list of choices. Wider, because a path has to be readable in it.
+ */
+.assets__menu--new {
+  min-width: 240px;
+}
+
+/*
+ * The same card again, put where the right-click landed instead of under a
+ * button — so the two doors open one menu that looks like one menu. Positioned
+ * against the panel, which is the box `spotIn` clamped it to
+ * (`editor/shell/floating.ts`).
+ */
+.assets__menu--at {
+  top: auto;
+  right: auto;
 }
 
 .assets__menu-item {

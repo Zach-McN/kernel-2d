@@ -231,10 +231,31 @@ way back and forward, and where you put the split — and moving the panel to a
 different corner of the window loses none of it. Every tile currently wears a plain
 folder or blank-page symbol: **pictures of your actual art come later**.
 
-The controls at the bottom — making a level, renaming, deleting — keep a fixed
-share of the panel and scroll inside it, so nothing you are pointing at ever
-shifts while you are clicking on it. Drag the panel's top edge up if you want more
-room for tiles.
+The strip at the bottom — renaming, moving, deleting — keeps a fixed share of the
+panel and scrolls inside it, so nothing you are pointing at ever shifts while you
+are clicking on it. With nothing selected it says where to go to make a level.
+Drag the panel's top edge up if you want more room for tiles.
+
+### Making a level or a prefab
+
+Two ways in, and they open the same little menu:
+
+- **The `+` in the bar**, to the left of the cog.
+- **Right-click the empty space** in the folder listing — under the tiles, or
+  below the last row of the tree.
+
+The menu holds a name, **New scene** and **New prefab**, and a line saying the
+whole path it is about to create before anything is committed. It closes on
+`Esc`, on a press anywhere else, and as soon as the file is made — and what you
+had typed goes with it, so a name half typed into a menu you dismissed is not
+waiting for you next time.
+
+**Where it goes follows what you have selected**: the selected folder, the
+selected file's folder, or the folder the tiles are standing in — and the path
+line says which, every time. `.json` is added for you and never doubled.
+
+A right-click *on* a file or a folder is not this menu; nothing is built for that
+yet, so your browser's own menu appears there.
 
 ### Renaming, moving and deleting
 
@@ -291,8 +312,8 @@ pivot drawn over it, so you can see what the settings actually did.
 A level is a flat, ordered list of entities. **List order is draw order** — the
 last row is drawn in front.
 
-- **Assets panel** → *New scene* / *New prefab*, with a name and a folder. Also
-  **drag a file onto the level** — see below.
+- **Assets panel** → the `+` in the bar, or a right-click on the empty space, for
+  *New scene* / *New prefab*. Also **drag a file onto the level** — see below.
 - **Outliner** → add, duplicate, delete, and reorder — with the `↑` `↓` buttons,
   or by dragging a row to where it should sit. A line shows where it will land;
   `Ctrl-Z` takes either kind of reorder back in one press. Right-click a row for
@@ -936,6 +957,10 @@ the editor takes the change.
 - **Drag a file from one folder into another.** Files drag *into the level*, not
   into other folders; moving one is still the name field and the folder chooser at
   the bottom of the panel.
+- **Right-click a file or folder in the Assets panel.** The right-click that
+  means something there is the one on the empty space, which offers to make a
+  level or prefab. On a file you get your browser's own menu, because nothing —
+  rename, delete, reveal in Explorer — has been built for that press yet.
 - **Drag a file into the Outliner, or onto an entity to give it that texture.**
   The level's picture is the only place a *file* drop means anything — the only
   thing that drops into the Outliner is its own rows, to reorder them.

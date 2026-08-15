@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useMemo, useState, type ReactElement, type ReactNode } from 'react'
 
 import type { Point } from '../../runtime'
+import { spotIn, type Room } from './floating'
 
 /**
  * The right-click window: which entity it is about, and which panel it is
@@ -79,18 +80,16 @@ export function useEntityPopover(): EntityPopovers {
  * Wider than the window itself by the margin it is kept from the edge, and one
  * number for both panels: the window is the same size in either.
  */
-export const POPOVER_ROOM = { width: 240, height: 104 }
+export const POPOVER_ROOM: Room = { width: 240, height: 104 }
 
 /**
  * Where the window sits for a click at `at`, in the panel's own pixels.
  *
  * Next to the click, kept inside the panel. Shared by both doors so the window
  * cannot appear to behave like two different windows depending on which one
- * opened it.
+ * opened it — the clamp itself is `./floating.ts`, which the Assets panel's
+ * menu uses too.
  */
 export function popoverSpot(panel: DOMRect | undefined, at: Point): Point {
-  return {
-    x: Math.max(8, Math.min(at.x + 12, (panel?.width ?? 0) - POPOVER_ROOM.width)),
-    y: Math.max(8, Math.min(at.y + 8, (panel?.height ?? 0) - POPOVER_ROOM.height)),
-  }
+  return spotIn(panel, at, POPOVER_ROOM)
 }
