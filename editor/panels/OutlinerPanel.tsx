@@ -1,4 +1,4 @@
-import { useRef, useState, type DragEvent, type ReactElement, type ReactNode } from 'react'
+import { useRef, useState, type DragEvent, type MouseEvent, type ReactElement, type ReactNode } from 'react'
 
 import {
   SCENE_FORMAT,
@@ -9,6 +9,7 @@ import {
 } from '../../runtime/formats/scene-schema'
 import { basename } from '../shell/asset-kinds'
 import { freeName, namesIn } from '../shell/entity-names'
+import { useDeleteEntities } from '../shell/useDeleteEntities'
 import { useDuplicateEntity } from '../shell/useDuplicateEntity'
 import { useOpenScene } from '../shell/open-scene'
 import { useSceneAssets, type SceneAssets } from '../shell/scene-assets'
@@ -34,8 +35,23 @@ import { editDocument } from '../store/open-documents'
  * code being written here.
  *
  * Duplicating is the one that has moved out, to `../shell/useDuplicateEntity.ts`,
- * the day the viewport wanted the same copy from `Shift-D`. The button here is
- * still what it was; there is simply one implementation of what a copy is.
+ * the day the viewport wanted the same copy from `Shift-D`. Deleting followed it
+ * out to `../shell/useDeleteEntities.ts` the day the Delete key arrived, for the
+ * same reason. The buttons here are still what they were; there is simply one
+ * implementation of what a copy is and one of what a delete is.
+ *
+ * **A row click reads its modifiers**: plain replaces the selection, Shift adds
+ * to it, Ctrl takes away from it. The same three meanings a press in the picture
+ * has, deliberately — a modifier that meant one thing in the list and another
+ * over the level would be worse than no modifier at all. What is missing is the
+ * list idiom, Shift-as-range-from-the-last-click, and that is the trade: one
+ * meaning across both surfaces was worth more than the convenience, since the
+ * picture has no order to take a range along.
+ *
+ * Only Delete acts on the whole selection. Duplicate and the reorder arrows act
+ * on the primary entity — the last one clicked — because there is no plural
+ * version of either yet, and a button that quietly did one of six things would
+ * be the dishonest half of a feature.
  *
  * A row shows what its entity *draws*, which for an instance comes from the
  * prefab it points at. Everything it *changes* goes to the document, re-found by
@@ -56,6 +72,8 @@ export function OutlinerPanel(): ReactElement {
   // The same copy the viewport's Shift-D makes, so the button and the key can
   // never disagree about what a duplicate is (`editor/shell/useDuplicateEntity.ts`).
   const { duplicate } = useDuplicateEntity()
+  // And the same delete the viewport's Delete key does, for the same reason.
+  const removal = useDeleteEntities()
 
   // The row being dragged. A ref, not state: setting state inside `dragstart`
   // re-renders the row mid-gesture, which is the kind of DOM change Chromium
@@ -98,7 +116,12 @@ export function OutlinerPanel(): ReactElement {
 
   const path = open.path
   const entities = open.scene.entities
-  const selected = selection.selected.kind === 'entity' ? selection.selected.entity : null
+  // Two questions with two answers: which rows are highlighted, and which one
+  // the singular buttons act on. Both come off the same list — the one already
+  // narrowed to *this* level — so a selection left over from a level that has
+  // since been closed cannot highlight a row here or arm a button.
+  const selectedHere = new Set(removal.entities)
+  const selected = removal.entities.at(-1) ?? null
 
   /**
    * One transaction per action. The recipe re-finds the entity by id rather
@@ -123,12 +146,25 @@ export function OutlinerPanel(): ReactElement {
     selection.selectEntity(path, id)
   }
 
-  const remove = (id: string): void => {
-    change('Delete entity', (list) => {
-      const at = list.findIndex((entity) => entity.id === id)
-      if (at >= 0) list.splice(at, 1)
-    })
-    if (selected === id) selection.selectFile(path)
+  /**
+   * What a press on a row means, decided by the modifiers it arrived with.
+   *
+   * Shift-clicking anything inside a list makes the browser drag a text
+   * selection across it, which leaves the panel looking broken while a
+   * perfectly good selection is being built — so the press says no to that
+   * before it does anything else.
+   */
+  const clickRow = (id: string, event: MouseEvent<HTMLElement>): void => {
+    if (event.shiftKey) {
+      window.getSelection()?.removeAllRanges()
+      selection.addToSelection(path, id)
+      return
+    }
+    if (event.ctrlKey || event.metaKey) {
+      selection.removeFromSelection(id)
+      return
+    }
+    selection.selectEntity(path, id)
   }
 
   const move = (id: string, by: number): void => {
@@ -203,10 +239,16 @@ export function OutlinerPanel(): ReactElement {
           type="button"
           className="control control--action"
           data-testid="entity-delete"
-          disabled={selected === null}
-          onClick={() => selected !== null && remove(selected)}
+          data-delete-count={removal.entities.length}
+          title={
+            removal.entities.length > 1
+              ? `Remove all ${removal.entities.length} selected entities. One press of Ctrl-Z brings them all back.`
+              : 'Remove the selected entity. Ctrl-Z brings it back. The Delete key does the same.'
+          }
+          disabled={!removal.canDelete}
+          onClick={removal.deleteSelected}
         >
-          Delete
+          {removal.entities.length > 1 ? `Delete ${removal.entities.length}` : 'Delete'}
         </button>
         <button
           type="button"
@@ -278,7 +320,8 @@ export function OutlinerPanel(): ReactElement {
                 index={index}
                 entity={drawn}
                 fromPrefab={prefabRefOf(entity)?.path ?? null}
-                selected={entity.id === selected}
+                selected={selectedHere.has(entity.id)}
+                primary={entity.id === selected}
                 problem={problemFor(entity, drawn, assets, resolved)}
                 dropLine={
                   dropAt === index
@@ -287,7 +330,7 @@ export function OutlinerPanel(): ReactElement {
                       ? 'below'
                       : null
                 }
-                onSelect={() => selection.selectEntity(path, entity.id)}
+                onSelect={(event) => clickRow(entity.id, event)}
                 onDragStart={(event) => {
                   // The marker is all a `dragover` can see; the id itself rides
                   // in the ref, readable while the drag is happening (U35).
@@ -304,7 +347,13 @@ export function OutlinerPanel(): ReactElement {
         </ol>
       )}
 
-      <p className="outliner__note">The last one in the list is drawn in front — drag a row to reorder.</p>
+      {/* Where the modifiers are learned. A selection gesture nobody is told
+          about is a selection gesture nobody uses, and there is nowhere else on
+          screen that could mention Shift, Ctrl or the Delete key. */}
+      <p className="outliner__note">
+        The last one in the list is drawn in front — drag a row to reorder. Shift-click adds to the
+        selection, Ctrl-click takes away, Delete removes what is selected.
+      </p>
     </div>
   )
 }
@@ -362,10 +411,16 @@ interface RowProps {
   /** The prefab this is an instance of, or null when it is not one. */
   fromPrefab: string | null
   selected: boolean
+  /**
+   * The last row clicked, and so the one Duplicate and the reorder arrows act
+   * on. Always one of the selected rows, and marked apart from them so a
+   * selection of six says which of the six the singular buttons mean.
+   */
+  primary: boolean
   problem: string | null
   /** The edge the carried row would land on, for the line, or null. */
   dropLine: 'above' | 'below' | null
-  onSelect: () => void
+  onSelect: (event: MouseEvent<HTMLElement>) => void
   onDragStart: (event: DragEvent<HTMLElement>) => void
   onDragEnd: () => void
 }
@@ -375,6 +430,7 @@ function Row({
   entity,
   fromPrefab,
   selected,
+  primary,
   problem,
   dropLine,
   onSelect,
@@ -390,6 +446,7 @@ function Row({
         className="entity-row__button"
         data-entity-id={entity.id}
         data-selected={selected}
+        data-primary={primary}
         data-entity-problem={problem ?? ''}
         data-entity-prefab={fromPrefab ?? ''}
         draggable

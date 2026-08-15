@@ -19,20 +19,41 @@ import { describeZoom } from '../shell/zoom'
 
 interface SceneOverlayProps {
   shown: ShownScene
-  /** The selected entity's id, or null when the selection is not an entity. */
-  selected: string | null
+  /**
+   * Every selected entity, in the order they were selected — so the last one is
+   * the primary one, the one `F` frames and `G` grabs. Empty when the selection
+   * is not an entity.
+   */
+  selected: readonly string[]
   /** The axis a grab is held to, or null when nothing is being held to one. */
   axis: 'x' | 'y' | null
 }
 
+/**
+ * Every selected entity is outlined; the last one is outlined *and* crosshaired.
+ *
+ * The difference is not decoration. With six selected, exactly one of them is
+ * what the Inspector is describing and what the next `G` will move, and an
+ * overlay that drew all six identically would leave the human to find that out
+ * by pressing something. The primary mark is the mark a single selection has
+ * always had, so nothing changed for the commonest case.
+ *
+ * The list is walked rather than the scene, so an id that has gone — deleted
+ * between the report and this render — simply draws nothing.
+ */
 export function SceneOverlay({ shown, selected, axis }: SceneOverlayProps): ReactElement {
-  const entity = selected === null ? null : (shown.entities.find((one) => one.id === selected) ?? null)
+  const drawn = selected
+    .map((id) => shown.entities.find((one) => one.id === id) ?? null)
+    .filter((one): one is DrawnEntity => one !== null)
+  const primary = drawn.at(-1) ?? null
 
   return (
     <svg className="scene__overlay" data-testid="scene-overlay" aria-hidden="true">
       <Origin at={shown.sceneOrigin} />
-      {entity !== null && axis !== null && <Axis at={entity.origin} axis={axis} />}
-      {entity !== null && <Selected entity={entity} />}
+      {primary !== null && axis !== null && <Axis at={primary.origin} axis={axis} />}
+      {drawn.map((entity) => (
+        <Selected key={entity.id} entity={entity} primary={entity === primary} />
+      ))}
     </svg>
   )
 }
@@ -86,7 +107,8 @@ function Origin({ at }: { at: { x: number; y: number } }): ReactElement {
 }
 
 /**
- * The selected entity: its outline, and a crosshair on its position.
+ * A selected entity: its outline, and — for the primary one — a crosshair on
+ * its position.
  *
  * Both, because they answer different questions. The outline says which sprite
  * is selected; the crosshair says where the entity *is*, which is not the middle
@@ -95,11 +117,20 @@ function Origin({ at }: { at: { x: number; y: number } }): ReactElement {
  * whole of how a pivot is understood without reading a number.
  *
  * An entity with nothing to draw gets the crosshair alone. It is somewhere even
- * when it is nothing, and marking the spot beats leaving it unfindable.
+ * when it is nothing, and marking the spot beats leaving it unfindable — which
+ * is why a *secondary* entity with nothing to draw is the one case that gets no
+ * mark at all: a bare crosshair is this overlay's word for "the primary one is
+ * here", and spending it on something else would make six selected sprites
+ * unreadable to save one invisible entity.
  */
-function Selected({ entity }: { entity: DrawnEntity }): ReactElement {
+function Selected({ entity, primary }: { entity: DrawnEntity; primary: boolean }): ReactElement {
   return (
-    <g className="scene__selected" data-testid="scene-selected" data-selected-entity={entity.id}>
+    <g
+      className={primary ? 'scene__selected' : 'scene__selected scene__selected--also'}
+      data-testid="scene-selected"
+      data-selected-entity={entity.id}
+      data-selected-primary={primary}
+    >
       {entity.bounds !== null && (
         <rect
           className="scene__bounds"
@@ -110,16 +141,18 @@ function Selected({ entity }: { entity: DrawnEntity }): ReactElement {
           height={entity.bounds.height}
         />
       )}
-      <g
-        className="scene__handle"
-        data-testid="scene-selected-origin"
-        data-entity-x={entity.origin.x}
-        data-entity-y={entity.origin.y}
-      >
-        <line x1={entity.origin.x - 7} y1={entity.origin.y} x2={entity.origin.x + 7} y2={entity.origin.y} />
-        <line x1={entity.origin.x} y1={entity.origin.y - 7} x2={entity.origin.x} y2={entity.origin.y + 7} />
-        <circle cx={entity.origin.x} cy={entity.origin.y} r={2.5} />
-      </g>
+      {primary && (
+        <g
+          className="scene__handle"
+          data-testid="scene-selected-origin"
+          data-entity-x={entity.origin.x}
+          data-entity-y={entity.origin.y}
+        >
+          <line x1={entity.origin.x - 7} y1={entity.origin.y} x2={entity.origin.x + 7} y2={entity.origin.y} />
+          <line x1={entity.origin.x} y1={entity.origin.y - 7} x2={entity.origin.x} y2={entity.origin.y + 7} />
+          <circle cx={entity.origin.x} cy={entity.origin.y} r={2.5} />
+        </g>
+      )}
     </g>
   )
 }

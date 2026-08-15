@@ -14,6 +14,15 @@ import type { Point } from '../../runtime'
  * Right-*drag* is deliberately still unclaimed: it is a 3D flythrough idiom
  * and a click is not a drag.
  *
+ * **Shift and Ctrl turn the left press into three presses**, not two gestures:
+ * plain replaces the selection and starts a drag, Shift adds to it, Ctrl takes
+ * away from it, and neither modified press drags anything. That decision is
+ * made in the one place below that already decides what a press means, which is
+ * the whole point of the paragraph after this one. **`Delete` removes
+ * everything selected**, from here or from the Outliner — the key listener is
+ * on the window, which is why `Shift-D` has always worked with the hand in
+ * either panel.
+ *
  * **One place decides what a press means.** Placing arrived after panning, and
  * the tempting shape is a second pointer layer on the same element for the new
  * button — which is two listeners racing to interpret one gesture, and the first
@@ -62,6 +71,15 @@ import type { Point } from '../../runtime'
  *    move an entity nobody was moving.
  */
 
+/**
+ * What a press does to the selection, decided by the modifiers it arrived with.
+ *
+ * The same three the Outliner's rows read, and deliberately so: a modifier that
+ * meant one thing in the list and another over the picture would be worse than
+ * no modifier at all.
+ */
+export type SelectMode = 'replace' | 'add' | 'remove'
+
 /** What the panel does about a press. Everything here is in CSS pixels. */
 export interface ScenePlacement {
   /** What is at this point on the canvas, or null for empty space. */
@@ -73,8 +91,20 @@ export interface ScenePlacement {
    * moment the panel has to remember where the entity *was* — a drag is applied
    * as travel from the press, not as a sum of wobbles, so that rounding cannot
    * accumulate and the sprite cannot creep.
+   *
+   * A press that is not a plain one never begins a move: `add` and `remove` are
+   * about which entities are selected and nothing else.
    */
-  select: (entityId: string | null) => void
+  select: (entityId: string | null, mode: SelectMode) => void
+  /**
+   * The Delete key. Removes whatever is selected, in one step.
+   *
+   * Here rather than behind a window listener of its own, because this hook has
+   * already answered the four questions such a listener would have to re-answer
+   * — is the human typing, is a grab running, is a level playing, is there a
+   * scene at all — and a second listener would race this one on all four.
+   */
+  deleteSelected: () => void
   /**
    * Remember where this entity is, without selecting it or moving it — what a
    * grab starts with, since it has no press to record it on.
@@ -344,8 +374,20 @@ export function useSceneGestures(options: SceneGestureOptions): SceneGestures {
       }
 
       const entity = placementRef.current.pick(pointIn(event))
-      placementRef.current.select(entity)
+      const mode = modeOf(event)
+
+      // A modifier held over empty space changes nothing. Clearing would be the
+      // one thing that makes this gesture not worth using: a selection built up
+      // over six careful clicks, gone to a seventh that missed.
+      if (entity === null && mode !== 'replace') return
+
+      placementRef.current.select(entity, mode)
       if (entity === null) return
+
+      // Only a plain press starts a move. Shift and Ctrl are about *which*
+      // entities are selected, and a modified press that also began a drag
+      // would move one entity out of a set the human was still assembling.
+      if (mode !== 'replace') return
 
       placing = { id: event.pointerId, entity, x: event.clientX, y: event.clientY, moved: false }
       pressed.current = true
@@ -552,6 +594,21 @@ export function useSceneGestures(options: SceneGestureOptions): SceneGestures {
         return
       }
 
+      // Removes everything selected rather than the one entity `F` would frame
+      // — the whole selection is what the human built, and it is one press of
+      // Ctrl-Z to get it back (`editor/shell/useDeleteEntities.ts`).
+      //
+      // Every guard it needs has already run above it: `isTyping` keeps it out
+      // of a name field, `enabled` keeps it out of a running level, and the
+      // grab block keeps it out of a move in progress — a grab measures its
+      // travel against an entity, and deleting that entity mid-move would leave
+      // one running against nothing.
+      if (event.key === 'Delete') {
+        event.preventDefault()
+        placementRef.current.deleteSelected()
+        return
+      }
+
       if (key === 'd' && event.shiftKey) {
         event.preventDefault()
         const entity = selectedRef.current
@@ -602,6 +659,24 @@ export function useSceneGestures(options: SceneGestureOptions): SceneGestures {
   }, [selected, endGrab])
 
   return { panning, ready: ready && enabled, picked: enabled ? picked : null, dragging, grabbing }
+}
+
+/**
+ * What a press means for the selection, read off the modifiers.
+ *
+ * Shift before Ctrl when both are held, arbitrarily but consistently: one of
+ * them has to win, and the alternative — doing nothing — is a press that
+ * appears to have missed.
+ *
+ * `metaKey` counts as Ctrl for the Mac keyboards that reach this editor, the
+ * same pairing `useUndoShortcuts` makes. Ctrl-left-click on a Mac also raises a
+ * context menu, which this hook already suppresses over the picture, so taking
+ * the entity out of the selection is all that happens.
+ */
+function modeOf(event: PointerEvent): SelectMode {
+  if (event.shiftKey) return 'add'
+  if (event.ctrlKey || event.metaKey) return 'remove'
+  return 'replace'
 }
 
 /** Whether a key belongs to whatever the human is typing into. */

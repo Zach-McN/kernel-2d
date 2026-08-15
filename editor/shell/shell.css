@@ -1456,6 +1456,17 @@ body {
   stroke-dasharray: 4 3;
 }
 
+/* The other selected entities: the same outline, dimmed.
+
+   Dimmed rather than a different colour on purpose. A second colour would read
+   as a second *kind* of thing — the way the problem badges and the drop line
+   do — when these are the same kind of thing as the primary one and differ
+   only in which of them the Inspector happens to be describing. Still clearly
+   an outline, still clearly not the one with the crosshair. */
+.scene__selected--also .scene__bounds {
+  opacity: 0.55;
+}
+
 /* The selected entity's position, which is not the middle of its outline
    whenever the texture's pivot says otherwise. */
 .scene__handle line {
@@ -1562,6 +1573,15 @@ body {
 .entity-row__button[data-selected='true'] {
   background: var(--shell-accent-wash);
   box-shadow: inset 2px 0 0 var(--shell-accent);
+}
+
+/* Of several selected rows, the last one clicked is the primary one — what the
+   Inspector describes and what Duplicate and the reorder arrows act on. It keeps
+   the full marker; the others wear the accent as a hairline, the same way a tab
+   that is open-but-not-current does. Same colour throughout, because these rows
+   are the same kind of thing as each other. */
+.entity-row__button[data-selected='true'][data-primary='false'] {
+  box-shadow: inset 2px 0 0 var(--shell-accent-line);
 }
 
 .entity-row__name {

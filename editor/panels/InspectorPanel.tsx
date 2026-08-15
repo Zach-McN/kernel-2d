@@ -55,8 +55,23 @@ export function InspectorPanel(): ReactElement {
   // One panel, two kinds of thing to describe. Branching on the selection union
   // rather than on a pair of nullable fields is what makes "an entity in a
   // scene that is not open" an unwritable state rather than one to guard for.
+  //
+  // Several entities selected still describes one of them — the primary one,
+  // the last clicked — because there is no such thing as editing six transforms
+  // through one set of fields yet. What there *is* is a sentence saying so:
+  // six selected and one described, with nothing on screen admitting it, is the
+  // blank-panel-looks-broken failure this panel exists to avoid, wearing a
+  // different hat.
   if (selection.selected.kind === 'entity') {
-    return <EntityBody scene={selection.selected.scene} entity={selection.selected.entity} />
+    const { scene, entities } = selection.selected
+    const entity = entities.at(-1)
+    // An entity selection is never empty (`editor/shell/selection.tsx`), so the
+    // second half of this is unreachable rather than a state to design for —
+    // written out only because the invariant lives in that file rather than in
+    // the type, and a panel that silently rendered nothing would be the one
+    // failure this one exists to avoid.
+    if (entity === undefined) return <Empty>Nothing is selected.</Empty>
+    return <EntityBody scene={scene} entity={entity} alsoSelected={entities.length - 1} />
   }
 
   if (selection.selected.kind === 'none') {
@@ -68,7 +83,16 @@ export function InspectorPanel(): ReactElement {
 
 // --- an entity -------------------------------------------------------------
 
-function EntityBody({ scene, entity }: { scene: string; entity: string }): ReactElement {
+function EntityBody({
+  scene,
+  entity,
+  /** How many *other* entities are selected alongside this one. Usually zero. */
+  alsoSelected,
+}: {
+  scene: string
+  entity: string
+  alsoSelected: number
+}): ReactElement {
   const open = useOpenScene()
   const project = useProject()
   const assets = useSceneAssets()
@@ -103,6 +127,19 @@ function EntityBody({ scene, entity }: { scene: string; entity: string }): React
         <p className="inspector__path" data-testid="inspector-path">
           {scene}
         </p>
+        {/* Said in the header rather than as a note further down, because it
+            changes what every field below it means: they are about this one
+            entity, not about the group. */}
+        {alsoSelected > 0 && (
+          <p
+            className="inspector__path"
+            data-testid="inspector-also-selected"
+            data-also-selected={alsoSelected}
+            title={`${alsoSelected + 1} entities are selected. These fields change ${found.name} only — Delete removes all ${alsoSelected + 1}.`}
+          >
+            {alsoSelected + 1} selected — these fields change <strong>{found.name}</strong>.
+          </p>
+        )}
       </header>
 
       <EntityInspector

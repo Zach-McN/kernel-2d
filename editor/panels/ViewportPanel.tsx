@@ -25,6 +25,7 @@ import { freePoint, snapPoint } from '../shell/snap'
 import { useSceneDropTarget, type SceneDropTarget } from '../shell/useSceneDropTarget'
 import { useSceneGestures, type Grab, type ScenePlacement } from '../shell/useSceneGestures'
 import { useSelection } from '../shell/selection'
+import { useDeleteEntities } from '../shell/useDeleteEntities'
 import { useDuplicateEntity } from '../shell/useDuplicateEntity'
 import { usePlacePrefab } from '../shell/usePlacePrefab'
 import { describeZoom } from '../shell/zoom'
@@ -145,7 +146,11 @@ export function ViewportPanel(): ReactElement {
     running?.request.music ?? null,
   )
 
-  const selected = selection.selected.kind === 'entity' ? selection.selected.entity : null
+  // The primary entity — what `F` frames, what `G` grabs, what the caption
+  // names. The whole selection is next door, and only the outline and the
+  // Delete key are about all of it.
+  const selected = selection.selectedEntity
+  const removal = useDeleteEntities()
   const ready = view.state === 'ready' ? view : null
 
   // The right-click window: which entity it is about, where it sits in the
@@ -185,7 +190,7 @@ export function ViewportPanel(): ReactElement {
 
   const placing = usePlacing()
   const stamp = usePlacePrefab(placing.stamping)
-  const placement = usePlacement(open, current, placing, stamp, openPopover)
+  const placement = usePlacement(open, current, placing, stamp, openPopover, removal.deleteSelected)
   const copy = useDuplicateEntity()
   const gestures = useSceneGestures({
     host,
@@ -277,6 +282,11 @@ export function ViewportPanel(): ReactElement {
       data-scene-focus-y={camera === null ? '' : String(camera.focus.y)}
       data-scene-onscreen={visible === null ? '' : String(visible.count)}
       data-scene-picked={gestures.picked ?? ''}
+      // How many entities are selected, and which ones. Read from the outside
+      // as the answer to "did Shift-click add one" without going through the
+      // overlay's own marks.
+      data-scene-selected-count={String(removal.entities.length)}
+      data-scene-selected={removal.entities.join(' ')}
       data-popover-entity={popover?.entity ?? ''}
       data-scene-dragging={gestures.dragging ?? ''}
       data-scene-grabbing={gestures.grabbing?.entity ?? ''}
@@ -311,7 +321,11 @@ export function ViewportPanel(): ReactElement {
       >
         {/* No editor marks over a running game. */}
         {current !== null && !mode.active && (
-          <SceneOverlay shown={current} selected={selected} axis={gestures.grabbing?.axis ?? null} />
+          <SceneOverlay
+            shown={current}
+            selected={removal.entities}
+            axis={gestures.grabbing?.axis ?? null}
+          />
         )}
         {current !== null && !mode.active && popover !== null && popoverEntity !== null && open.state === 'open' && (
           <EntityPopover scenePath={open.path} entity={popoverEntity} at={popover.at} onClose={closePopover} />
@@ -431,6 +445,8 @@ function usePlacement(
   stamp: ReturnType<typeof usePlacePrefab>,
   /** A right-click landed: the panel opens or closes its window about it. */
   onContext: (entityId: string | null, at: Point) => void,
+  /** The Delete key, which is the Outliner's Delete button (`useDeleteEntities`). */
+  deleteSelected: () => void,
 ): ScenePlacement {
   const selection = useSelection()
   const scenePath = open.state === 'open' ? open.path : null
@@ -475,7 +491,7 @@ function usePlacement(
     return {
       pick: (at) => (current === null ? null : entityAt(current, at)),
 
-      select: (entityId) => {
+      select: (entityId, mode) => {
         from.current = null
 
         if (entityId === null || scenePath === null) {
@@ -483,9 +499,24 @@ function usePlacement(
           return
         }
 
+        if (mode === 'add') {
+          selection.addToSelection(scenePath, entityId)
+          return
+        }
+
+        if (mode === 'remove') {
+          selection.removeFromSelection(entityId)
+          return
+        }
+
+        // Only a plain press remembers where the entity was, because only a
+        // plain press can become a drag. Doing it for the others would leave a
+        // start position primed for a move that this press cannot begin.
         begin(entityId)
         selection.selectEntity(scenePath, entityId)
       },
+
+      deleteSelected,
 
       beginMove: (entityId) => begin(entityId),
 
@@ -555,7 +586,7 @@ function usePlacement(
 
       context: onContext,
     }
-  }, [current, scenePath, scale, entities, selection, placing, stamp, onContext])
+  }, [current, scenePath, scale, entities, selection, placing, stamp, onContext, deleteSelected])
 }
 
 // --- the canvas ------------------------------------------------------------
