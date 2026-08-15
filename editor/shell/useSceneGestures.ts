@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, type RefObject } from 'react'
 
 import type { Point } from '../../runtime'
 import { angleFrom, tooNear } from './rotate'
+import { alongAxis, factorFrom, reachFrom } from './scale'
 
 /**
  * Driving the scene viewport with a mouse and a handful of keys.
@@ -53,11 +54,21 @@ import { angleFrom, tooNear } from './rotate'
  * picture and about being taken away, this does identically, which is the point:
  * the second modal gesture is what turns "how a grab behaves" into a shape.
  *
+ * **`S` scales the selection, and it is `R` with a different number.** The turn
+ * measures a bearing from the pivot; the scale measures a *distance*, as a ratio
+ * against the distance the pointer was at when `S` was pressed — so half the
+ * reach is half the size, wherever the hand started. `X` and `Y` hold it to one
+ * axis, and that axis is the **sprite's own**, not the level's: an entity's
+ * `scaleX` stretches it along its own side however it is turned, which is what
+ * makes the lock mean the same thing on a rotated sprite as on a straight one
+ * (`./scale.ts`). Everything else — one press to confirm, `Esc` to put it back,
+ * `Ctrl` for the snap — is the turn's, unchanged.
+ *
  * **One modal gesture at a time, and it is now a rule rather than a
- * coincidence.** `R` is refused while a grab runs and `G` while a turn runs.
- * With one of them there was nothing to say; with two, "the selected entity is
- * being moved *and* turned by two gestures measuring from two origins" is a
- * state worth being unable to reach.
+ * coincidence.** Each of `G`, `R` and `S` is refused while either of the others
+ * runs. With one of them there was nothing to say; with three, "the selection is
+ * being moved *and* turned *and* scaled by gestures measuring from three
+ * origins" is a state worth being unable to reach.
  *
  * **A grab is a move with no button held, and while one is running it owns the
  * picture.** `G` starts the selected entity moving with the pointer wherever the
@@ -150,6 +161,26 @@ export interface ScenePlacement {
   turnBy: (degrees: number, invert: boolean) => number
   /** The turn is over: `drop` seals the undo step, `cancel` takes it all back. */
   endTurn: (how: 'drop' | 'cancel') => void
+  /**
+   * Remember where these entities are and how big they are, and say where they
+   * scale away from — in the host's own pixels, for the gizmo's line.
+   *
+   * The turn's twin, down to the null: nothing to scale means the gesture never
+   * starts, rather than starting and doing nothing.
+   */
+  beginScale: (entityIds: readonly string[]) => Point | null
+  /**
+   * Scale them all by this much from where they started, rigidly about the
+   * pivot. A pair, so a lock to one axis is a 1 in the other rather than a
+   * branch (`./scale.ts`). `invert` is `Ctrl`, exactly as it is for a move.
+   *
+   * **Returns the factor that actually landed**, for the reason `turnBy` does:
+   * the snap lives on the other side of this call, so with the grid on a pointer
+   * at ×1.17 grows the group by ×1.2, and the caption has to say what happened.
+   */
+  scaleBy: (factor: Point, invert: boolean) => Point
+  /** The scale is over: `drop` seals the undo step, `cancel` takes it all back. */
+  endScale: (how: 'drop' | 'cancel') => void
   /**
    * Remember where this entity is, without selecting it or moving it — what a
    * grab starts with, since it has no press to record it on.
@@ -261,6 +292,28 @@ export interface Turn {
   degrees: number
 }
 
+/**
+ * A scale in progress, as anything drawing it needs to know it.
+ *
+ * The turn's twin, carrying where to draw as well as what is happening, for the
+ * same reason: the overlay recomputes nothing, so the pivot and the pointer are
+ * already in the host's pixels here.
+ */
+export interface Scale {
+  /** Every entity being scaled, in selection order. */
+  entities: readonly string[]
+  /** What they scale away from, in the host's pixels. */
+  pivot: Point
+  /** Where the pointer is, in the host's pixels — where the gizmo sits. */
+  at: Point
+  /** How far out the pointer was when `S` was pressed, in the host's pixels. */
+  from: number
+  /** How much bigger they are so far, as applied to the document. */
+  factor: Point
+  /** The axis the scale is held to, or null while it is both. */
+  axis: 'x' | 'y' | null
+}
+
 export interface SceneGestures {
   /** True while the scene is being dragged under the pointer. */
   panning: boolean
@@ -274,6 +327,8 @@ export interface SceneGestures {
   grabbing: Grab | null
   /** The keyboard turn in progress, or null. */
   turning: Turn | null
+  /** The keyboard scale in progress, or null. */
+  scaling: Scale | null
 }
 
 /**
@@ -301,6 +356,19 @@ interface LiveTurn extends Turn {
   origin: number | null
 }
 
+/**
+ * A scale as the listeners hold it: the same thing, plus the reach it started
+ * at.
+ *
+ * Null until the pointer is next seen far enough from the pivot to measure
+ * from, which is the same treatment the other two modal gestures give their
+ * origins — `S` works with the hand anywhere, including outside the panel.
+ */
+interface LiveScale extends Scale {
+  /** The pointer's distance from the pivot when `S` was pressed, or null. */
+  origin: number | null
+}
+
 /** How far the pointer travels before a click becomes a drag, in CSS pixels. */
 const DRAG_THRESHOLD = 3
 
@@ -324,6 +392,7 @@ export function useSceneGestures(options: SceneGestureOptions): SceneGestures {
   const [dragging, setDragging] = useState<string | null>(null)
   const [grabbing, setGrabbing] = useState<Grab | null>(null)
   const [turning, setTurning] = useState<Turn | null>(null)
+  const [scaling, setScaling] = useState<Scale | null>(null)
 
   // Read inside listeners that are attached once. Set during render so a
   // listener never sees a value from the render before last. `placement` in
@@ -353,6 +422,8 @@ export function useSceneGestures(options: SceneGestureOptions): SceneGestures {
   const grabRef = useRef<LiveGrab | null>(null)
   /** The turn, held for the same reason and read by the same two listener sets. */
   const turnRef = useRef<LiveTurn | null>(null)
+  /** And the scale, which is the turn again with a distance instead of a bearing. */
+  const scaleRef = useRef<LiveScale | null>(null)
   /** Where the pointer was last seen over the picture, in client pixels. */
   const pointerAt = useRef<Point | null>(null)
   /**
@@ -441,13 +512,40 @@ export function useSceneGestures(options: SceneGestureOptions): SceneGestures {
   }, [])
 
   /**
-   * Whatever is being moved or turned, put down again under a modifier that has
-   * just changed.
+   * The entities, scaled to wherever the pointer has got to.
    *
-   * One function for both gestures so the `Ctrl` handler does not have to know
-   * which is running — it asks for "again, with this modifier" and gets it.
-   * A move replays its remembered travel; a turn re-measures, which is free
-   * because a turn's angle was never accumulated in the first place.
+   * The factor is **measured, not accumulated** — the pointer's distance from
+   * the pivot now over its distance when `S` was pressed — which is `applyTurn`'s
+   * rule and matters more here: multiplying a multiplied number means that
+   * scaling out and back does not return the group to the size it started at,
+   * and nothing on screen would say so.
+   *
+   * How far it *actually* scaled comes back from the placement rather than being
+   * assumed, because the snap lives there: with the grid on, a pointer at ×1.17
+   * grows the group by ×1.2, and the caption and the gizmo must say ×1.2.
+   */
+  const applyScale = useCallback((invert: boolean): void => {
+    const scale = scaleRef.current
+    const at = pointerInHost.current
+    if (scale === null || scale.origin === null || at === null) return
+    // Too near the middle for a distance to mean anything: keep the factor it
+    // has rather than letting a pixel of noise collapse the group to nothing.
+    if (tooNear(scale.pivot, at)) return
+
+    const wanted = factorFrom(scale.origin, reachFrom(scale.pivot, at))
+    const factor = placementRef.current.scaleBy(alongAxis(wanted, scale.axis), invert)
+    scaleRef.current = { ...scale, at, factor }
+    setScaling({ entities: scale.entities, pivot: scale.pivot, at, from: scale.from, factor, axis: scale.axis })
+  }, [])
+
+  /**
+   * Whatever is being moved, turned or scaled, put down again under a modifier
+   * that has just changed.
+   *
+   * One function for all three so the `Ctrl` handler does not have to know which
+   * is running — it asks for "again, with this modifier" and gets it. A move
+   * replays its remembered travel; a turn and a scale re-measure, which is free
+   * because neither was ever accumulated in the first place.
    */
   const reapply = useCallback(
     (invert: boolean): boolean => {
@@ -455,12 +553,16 @@ export function useSceneGestures(options: SceneGestureOptions): SceneGestures {
         applyTurn(invert)
         return true
       }
+      if (scaleRef.current !== null) {
+        applyScale(invert)
+        return true
+      }
       const move = lastMove.current
       if (move === null) return false
       placementRef.current.moveBy(move.entity, move.dx, move.dy, invert)
       return true
     },
-    [applyTurn],
+    [applyTurn, applyScale],
   )
 
   const endTurn = useCallback((how: 'drop' | 'cancel'): void => {
@@ -478,8 +580,8 @@ export function useSceneGestures(options: SceneGestureOptions): SceneGestures {
    * gestures measuring from two origins is a state worth being unable to reach.
    */
   const startTurn = useCallback((): void => {
-    if (turnRef.current !== null || grabRef.current !== null || pressed.current) return
-    if (placementRef.current.stamping) return
+    if (turnRef.current !== null || grabRef.current !== null || scaleRef.current !== null) return
+    if (pressed.current || placementRef.current.stamping) return
 
     const entities = selectedEntitiesRef.current
     if (entities.length === 0) return
@@ -498,6 +600,75 @@ export function useSceneGestures(options: SceneGestureOptions): SceneGestures {
     setTurning({ entities, pivot, at: from, from, degrees: 0 })
   }, [])
 
+  const endScale = useCallback((how: 'drop' | 'cancel'): void => {
+    if (scaleRef.current === null) return
+    scaleRef.current = null
+    setScaling(null)
+    placementRef.current.endScale(how)
+  }, [])
+
+  /**
+   * `S`: start scaling everything selected about its mean pivot.
+   *
+   * `startTurn` with a different verb, refusals and all — one modal gesture at a
+   * time, because two of them measuring from two origins is a state worth being
+   * unable to reach.
+   */
+  const startScale = useCallback((): void => {
+    if (scaleRef.current !== null || turnRef.current !== null || grabRef.current !== null) return
+    if (pressed.current || placementRef.current.stamping) return
+
+    const entities = selectedEntitiesRef.current
+    if (entities.length === 0) return
+
+    const pivot = placementRef.current.beginScale(entities)
+    if (pivot === null) return
+
+    // The reach is null until the pointer is next seen, so `S` works with the
+    // hand anywhere — including outside the panel, and including sitting on the
+    // pivot, where there is no distance to measure a ratio against.
+    const at = pointerInHost.current
+    const origin = at === null || tooNear(pivot, at) ? null : reachFrom(pivot, at)
+    const started: Scale = {
+      entities,
+      pivot,
+      at: at ?? pivot,
+      from: origin ?? 0,
+      factor: { x: 1, y: 1 },
+      axis: null,
+    }
+
+    scaleRef.current = { ...started, origin }
+    setScaling(started)
+  }, [])
+
+  /**
+   * `X` or `Y` while a scale is running: hold it to that axis, and put the
+   * entities down again on the spot.
+   *
+   * The grab's lock exactly — including that pressing the axis it is already
+   * held to lets it go again — and for the same reason it applies immediately:
+   * the human pressed `X` because they want the vertical stretch gone *now*.
+   *
+   * The one difference is that letting an axis go has to put the *other* one
+   * back: while locked to X the entities were left at their original height, and
+   * a free scale means both axes carry the factor. Re-applying does that,
+   * because everything is measured from the remembered start rather than from
+   * where the group has got to.
+   */
+  const lockScale = useCallback(
+    (axis: 'x' | 'y', invert: boolean): void => {
+      const scale = scaleRef.current
+      if (scale === null) return
+
+      const held = scale.axis === axis ? null : axis
+      scaleRef.current = { ...scale, axis: held }
+      setScaling({ ...scale, axis: held })
+      applyScale(invert)
+    },
+    [applyScale],
+  )
+
   const endGrab = useCallback((how: 'drop' | 'cancel'): void => {
     if (grabRef.current === null) return
     grabRef.current = null
@@ -508,7 +679,8 @@ export function useSceneGestures(options: SceneGestureOptions): SceneGestures {
   }, [])
 
   const startGrab = useCallback((): void => {
-    if (grabRef.current !== null || turnRef.current !== null || pressed.current) return
+    if (grabRef.current !== null || turnRef.current !== null || scaleRef.current !== null) return
+    if (pressed.current) return
     // One mode at a time: while every press is placing a copy, a grab's own
     // press-to-finish would be two meanings for one button (`placing.tsx`).
     if (placementRef.current.stamping) return
@@ -587,6 +759,11 @@ export function useSceneGestures(options: SceneGestureOptions): SceneGestures {
 
       if (turnRef.current !== null) {
         if (left) endTurn('drop')
+        return
+      }
+
+      if (scaleRef.current !== null) {
+        if (left) endScale('drop')
         return
       }
 
@@ -685,6 +862,23 @@ export function useSceneGestures(options: SceneGestureOptions): SceneGestures {
         return
       }
 
+      const scale = scaleRef.current
+      if (scale !== null) {
+        // The first sighting since `S` is the reach to measure from rather than
+        // a movement, exactly as a turn's first sighting is its bearing.
+        if (scale.origin === null) {
+          if (!tooNear(scale.pivot, pointerInHost.current)) {
+            const at = pointerInHost.current
+            const from = reachFrom(scale.pivot, at)
+            scaleRef.current = { ...scale, origin: from, at, from }
+            setScaling({ ...scale, at, from })
+          }
+        } else {
+          applyScale(event.ctrlKey || event.metaKey)
+        }
+        return
+      }
+
       const grab = grabRef.current
       if (grab !== null) {
         // The first sighting of the pointer since `G` is the origin rather than
@@ -757,7 +951,7 @@ export function useSceneGestures(options: SceneGestureOptions): SceneGestures {
       // hand is somewhere else does not measure from a point it left ten minutes
       // ago. One already running keeps the origin it has — it measures from
       // where it started, and the pointer is free to leave and come back.
-      if (grabRef.current === null && turnRef.current === null) {
+      if (grabRef.current === null && turnRef.current === null && scaleRef.current === null) {
         pointerAt.current = null
         pointerInHost.current = null
       }
@@ -787,8 +981,10 @@ export function useSceneGestures(options: SceneGestureOptions): SceneGestures {
       // the pointer's travel into level units, so zooming mid-grab would move
       // the entity without the pointer having moved at all. A turn is worse —
       // zooming moves the pivot on screen, so the bearing it was measured from
-      // stops meaning anything and the group jumps.
-      if (grabRef.current !== null || turnRef.current !== null) return
+      // stops meaning anything and the group jumps. A scale is worst of the
+      // three: its whole number is a ratio of two on-screen distances, and the
+      // wheel changes the second one without the hand moving.
+      if (grabRef.current !== null || turnRef.current !== null || scaleRef.current !== null) return
 
       zoom(pointIn(event), event.deltaY < 0 ? 1 : -1)
     }
@@ -815,7 +1011,7 @@ export function useSceneGestures(options: SceneGestureOptions): SceneGestures {
       element.removeEventListener('contextmenu', onContextMenu)
       element.removeEventListener('wheel', onWheel)
     }
-  }, [host, pan, zoom, applyGrab, endGrab, applyTurn, endTurn])
+  }, [host, pan, zoom, applyGrab, endGrab, applyTurn, endTurn, applyScale, endScale])
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
@@ -848,7 +1044,14 @@ export function useSceneGestures(options: SceneGestureOptions): SceneGestures {
        * reversing into it is the kind of half-taken-back move this hook is
        * careful about everywhere else. `Esc` is still the way to call it off.
        */
-      if ((event.ctrlKey || event.metaKey) && grabRef.current === null && turnRef.current === null) return
+      if (
+        (event.ctrlKey || event.metaKey) &&
+        grabRef.current === null &&
+        turnRef.current === null &&
+        scaleRef.current === null
+      ) {
+        return
+      }
 
       const key = event.key.toLowerCase()
 
@@ -864,6 +1067,27 @@ export function useSceneGestures(options: SceneGestureOptions): SceneGestures {
         } else if (event.key === 'Enter') {
           event.preventDefault()
           endTurn('drop')
+        }
+        return
+      }
+
+      /*
+       * A scale owns the keyboard exactly as a grab does, and offers the same
+       * two axis keys — for a different reason. A grab's lock is about *where*
+       * the entity may travel; a scale's is about which way the sprite stretches,
+       * along its own axes rather than the level's (`./scale.ts`). One key, one
+       * hand position, two meanings decided by which gesture is running.
+       */
+      if (scaleRef.current !== null) {
+        if (event.key === 'Escape') {
+          event.preventDefault()
+          endScale('cancel')
+        } else if (event.key === 'Enter') {
+          event.preventDefault()
+          endScale('drop')
+        } else if (key === 'x' || key === 'y') {
+          event.preventDefault()
+          lockScale(key, event.ctrlKey || event.metaKey)
         }
         return
       }
@@ -948,6 +1172,15 @@ export function useSceneGestures(options: SceneGestureOptions): SceneGestures {
         return
       }
 
+      // Nothing selected means nothing to scale. The whole selection again, as
+      // one rigid group about the mean of their positions — a turn with a
+      // different verb, which is what made it worth having (`./scale.ts`).
+      if (key === 's') {
+        event.preventDefault()
+        startScale()
+        return
+      }
+
       // Removes everything selected rather than the one entity `F` would frame
       // — the whole selection is what the human built, and it is one press of
       // Ctrl-Z to get it back (`editor/shell/useDeleteEntities.ts`).
@@ -998,6 +1231,7 @@ export function useSceneGestures(options: SceneGestureOptions): SceneGestures {
       setReady(false)
       endGrab('cancel')
       endTurn('cancel')
+      endScale('cancel')
     }
 
     window.addEventListener('keydown', onKeyDown)
@@ -1009,7 +1243,19 @@ export function useSceneGestures(options: SceneGestureOptions): SceneGestures {
       window.removeEventListener('keyup', onKeyUp)
       window.removeEventListener('blur', onBlur)
     }
-  }, [frameAll, frameEntity, startGrab, startTurn, endGrab, endTurn, lockGrab, reapply])
+  }, [
+    frameAll,
+    frameEntity,
+    startGrab,
+    startTurn,
+    startScale,
+    endGrab,
+    endTurn,
+    endScale,
+    lockGrab,
+    lockScale,
+    reapply,
+  ])
 
   /*
    * The two ways a modal gesture can be ended by something other than the human.
@@ -1029,8 +1275,9 @@ export function useSceneGestures(options: SceneGestureOptions): SceneGestures {
     if (!enabled) {
       endGrab('cancel')
       endTurn('cancel')
+      endScale('cancel')
     }
-  }, [enabled, endGrab, endTurn])
+  }, [enabled, endGrab, endTurn, endScale])
 
   useEffect(() => {
     if (grabRef.current !== null && grabRef.current.entity !== selected) endGrab('cancel')
@@ -1041,7 +1288,10 @@ export function useSceneGestures(options: SceneGestureOptions): SceneGestures {
     if (turnRef.current !== null && turnRef.current.entities.join(' ') !== selectionKey) {
       endTurn('cancel')
     }
-  }, [selectionKey, endTurn])
+    if (scaleRef.current !== null && scaleRef.current.entities.join(' ') !== selectionKey) {
+      endScale('cancel')
+    }
+  }, [selectionKey, endTurn, endScale])
 
   return {
     panning,
@@ -1050,6 +1300,7 @@ export function useSceneGestures(options: SceneGestureOptions): SceneGestures {
     dragging,
     grabbing,
     turning,
+    scaling,
   }
 }
 

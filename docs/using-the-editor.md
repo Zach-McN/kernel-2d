@@ -8,7 +8,7 @@ It is kept current by the definition of done in `CLAUDE.md`: a session that
 changes what you can do, or how you do it, changes this page in the same commit.
 If this page and the editor disagree, the editor is right and the page is a bug.
 
-Last true as of: **`Backspace` deletes as well as `Delete`** (2026-08-15).
+Last true as of: **`S` resizes what is selected, the way `R` turns it** (2026-08-15).
 
 ---
 
@@ -319,8 +319,8 @@ last row is drawn in front.
   `Ctrl-Z` takes either kind of reorder back in one press. Right-click a row for
   the same small window a right-click on the sprite opens.
 - **Viewport** → click to select, drag to move, `G` to move without holding
-  anything, `Shift-D` for a copy, right-click for a small window with the
-  entity's position.
+  anything, `R` to turn, `S` to resize, `Shift-D` for a copy, right-click for a
+  small window with the entity's position.
 - **Inspector** → name, position, rotation, scale, spin, and which texture it draws.
 
 #### Selecting more than one
@@ -541,8 +541,10 @@ time, space-drag still pans, and the wheel still zooms.
 | `G` | Grab the selected entity — it moves with the pointer, nothing held |
 | `X` / `Y` while grabbing | Hold it to that axis, from where it started |
 | `R` | Turn what is selected — it follows the pointer, nothing held |
-| Click, or `Enter` | Put down whatever you are moving or turning |
-| `Esc` while grabbing or turning | Put it back exactly where it was |
+| `S` | Resize what is selected — out from the middle is bigger, in is smaller |
+| `X` / `Y` while resizing | Stretch one side only, along the sprite's own axis |
+| Click, or `Enter` | Put down whatever you are moving, turning or resizing |
+| `Esc` while grabbing, turning or resizing | Put it back exactly as it was |
 | `Shift-D` | A copy of the selected entity, in the same place, selected |
 | Right-click a sprite | A small window next to it with its position, ready to type into |
 | Right-click empty space | Close that window |
@@ -642,6 +644,36 @@ it runs, and anything that takes the level away puts everything back.
 - Very close to the middle the pointer stops steering, because an angle measured
   from a point you are sitting on is meaningless and would spin wildly. Move
   further out and it picks up again.
+
+#### Sizing things with `S`
+
+**Press `S` and what you have selected grows and shrinks with the pointer.** Take
+the mouse away from the middle to make it bigger and back in to make it smaller —
+twice as far out is twice the size, however far out you started. The same ring
+follows the cursor, with a line back to the middle and a small mark on that line
+showing where you began, so which side of it you are on is bigger or smaller. The
+bar says the factor. **Click or press `Enter` to keep it; `Esc` puts it back
+exactly the size it was.**
+
+It is `R` with a different number, and everything you know about `R` applies.
+
+- **`X` or `Y` stretches one side only** — and it is the sprite's *own* side, so
+  a tile turned on its side stretches along its own length rather than along the
+  screen. Press the same key again to go back to both. It takes effect the moment
+  you press it, without waiting for you to move the mouse.
+- **With several selected they scale as one piece**: each one grows *and* moves
+  away from the midpoint between them, so the group keeps its shape and spreads
+  out rather than overlapping.
+- **The Snap switch governs the size too**, in steps of 0.1. Hold `Ctrl` to size
+  smoothly, or — with snapping off — to land on tenths after all.
+- **However much you resize, it is one press of `Ctrl-Z`**, and so is resizing
+  six things at once.
+- It will not scale anything down to nothing, and it never flips a sprite
+  inside out however far in you take the pointer.
+
+Only one of `G`, `R` and `S` runs at a time: while one is going the other two do
+nothing, so nothing can be moved and turned and resized by three gestures at
+once.
 
 **`Shift-D` copies the selected entity** onto exactly the same spot and selects the
 copy, which is the same thing the Outliner's *Duplicate* button does. `Shift-D`
@@ -939,8 +971,10 @@ the editor takes the change.
   in the picture, where there is no order to take a range along.
 - **Drag a box around several entities in the picture.** Selecting several means
   clicking them one at a time with Shift held.
-- **Rotate or scale handles in the viewport.** Position is the one thing the
-  picture can change; everything else is typed in the Inspector.
+- **Handles you can drag in the viewport** — corner boxes for size, a ring for
+  angle. Position, angle and size can all be changed in the picture, but only
+  with `G`, `R` and `S`; there is nothing on screen to grab hold of, and there is
+  no way to scale one entity about a corner rather than about its middle.
 - **A grid or rulers you can see.** The snap is a switch and two numbers in the bar and
   nothing is drawn for it, so a board lines up without ever showing you the
   lines it lined up to.

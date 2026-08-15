@@ -1,7 +1,7 @@
 import type { ReactElement } from 'react'
 
 import type { DrawnEntity, ShownScene } from '../../runtime'
-import type { Turn } from '../shell/useSceneGestures'
+import type { Scale, Turn } from '../shell/useSceneGestures'
 import { describeZoom } from '../shell/zoom'
 
 /**
@@ -30,6 +30,8 @@ interface SceneOverlayProps {
   axis: 'x' | 'y' | null
   /** The turn in progress, or null. Everything it needs is already in pixels. */
   turning: Turn | null
+  /** The scale in progress, or null. Same again, one gesture over. */
+  scaling: Scale | null
 }
 
 /**
@@ -44,7 +46,13 @@ interface SceneOverlayProps {
  * The list is walked rather than the scene, so an id that has gone — deleted
  * between the report and this render — simply draws nothing.
  */
-export function SceneOverlay({ shown, selected, axis, turning }: SceneOverlayProps): ReactElement {
+export function SceneOverlay({
+  shown,
+  selected,
+  axis,
+  turning,
+  scaling,
+}: SceneOverlayProps): ReactElement {
   const drawn = selected
     .map((id) => shown.entities.find((one) => one.id === id) ?? null)
     .filter((one): one is DrawnEntity => one !== null)
@@ -58,7 +66,73 @@ export function SceneOverlay({ shown, selected, axis, turning }: SceneOverlayPro
         <Selected key={entity.id} entity={entity} primary={entity === primary} />
       ))}
       {turning !== null && <Turning turn={turning} />}
+      {scaling !== null && <Scaling scale={scaling} />}
     </svg>
+  )
+}
+
+/**
+ * The scale gizmo: the same ring, line and pivot the turn draws, with the arc
+ * replaced by a **second mark on the line** showing the reach the gesture
+ * started from.
+ *
+ * That mark is the arc's job done for a different number. A line that simply
+ * follows the cursor says nothing about *how much bigger* — there is no wedge to
+ * fill, because the pointer never sweeps anywhere — so the one thing on screen
+ * that makes the factor legible is being able to see the distance now against
+ * the distance then. It is also what makes a snapped scale read as steps rather
+ * than as a laggy mouse, which is the argument the arc makes one gesture over.
+ *
+ * Drawn from the numbers the gesture used and never a second derivation of them,
+ * the standing rule of this file.
+ */
+function Scaling({ scale }: { scale: Scale }): ReactElement {
+  const reach = Math.hypot(scale.at.x - scale.pivot.x, scale.at.y - scale.pivot.y)
+  // Where the pointer started, put back on the line the pointer is on now — so
+  // the two marks are comparable along one direction rather than being a pair of
+  // points somewhere. At zero reach there is no direction to place it along, and
+  // the mark sits on the pivot, which is exactly where it belongs.
+  const along = reach === 0 ? 0 : scale.from / reach
+  const started = {
+    x: scale.pivot.x + (scale.at.x - scale.pivot.x) * along,
+    y: scale.pivot.y + (scale.at.y - scale.pivot.y) * along,
+  }
+
+  return (
+    <g
+      className="scene__turn scene__scale"
+      data-testid="scene-scaling"
+      data-scale-x={scale.factor.x}
+      data-scale-y={scale.factor.y}
+    >
+      <line
+        className="scene__turn-line"
+        x1={scale.pivot.x}
+        y1={scale.pivot.y}
+        x2={scale.at.x}
+        y2={scale.at.y}
+      />
+      {/* The reach it started at: a tick across the line, so growing and
+          shrinking are told apart by which side of it the cursor is on. */}
+      <circle
+        className="scene__scale-from"
+        data-testid="scene-scaling-from"
+        cx={started.x}
+        cy={started.y}
+        r={3}
+      />
+      <circle
+        className="scene__turn-pivot"
+        data-testid="scene-scaling-pivot"
+        cx={scale.pivot.x}
+        cy={scale.pivot.y}
+        r={3.5}
+      />
+      <g className="scene__turn-gizmo" data-testid="scene-scaling-gizmo">
+        <circle cx={scale.at.x} cy={scale.at.y} r={9} />
+        <circle cx={scale.at.x} cy={scale.at.y} r={2} />
+      </g>
+    </g>
   )
 }
 

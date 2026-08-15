@@ -173,3 +173,36 @@ export function turnOn(degrees: number, snap: Snap, invert: boolean): number {
   if (snap.on === invert) return freely(degrees)
   return freely(Math.round(degrees / ANGLE_STEP) * ANGLE_STEP)
 }
+
+/**
+ * How far apart the sizes a scale can land on are.
+ *
+ * A third fixed number rather than `snap.step`, for the reason `ANGLE_STEP` is
+ * one: the step is **pixels**, and a 16-pixel grid says nothing about a
+ * multiplier. Three gestures, one switch, three intervals — the switch says
+ * *whether* to land on something, and each gesture knows what its own something
+ * is.
+ *
+ * A tenth because it reaches the sizes anybody asks for by name — a half, three
+ * quarters, one and a half, double — and because a finer step stops being a
+ * snap.
+ */
+export const SCALE_STEP = 0.1
+
+/**
+ * Where a scale lands: the same switch and the same modifier again.
+ *
+ * **The number that snaps is the factor, not the size ended up at**, which is
+ * `turnOn`'s argument exactly: a group starts at several different sizes, so
+ * rounding each *result* to a tenth would multiply one member by 1.5 and
+ * another by 1.43 — which is not a rigid scale, which is the whole of what the
+ * gesture is. Rounding the factor grows every member by the same proportion.
+ *
+ * Floored at one step rather than allowed to round to zero: a factor of 0 is an
+ * entity with no size, and it is the one snapped value that is never what the
+ * hand meant.
+ */
+export function scaleOn(factor: number, snap: Snap, invert: boolean): number {
+  if (snap.on === invert) return freely(factor)
+  return freely(Math.max(SCALE_STEP, Math.round(factor / SCALE_STEP) * SCALE_STEP))
+}

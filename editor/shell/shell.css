@@ -1623,6 +1623,23 @@ body {
   stroke-width: 1.5;
 }
 
+/*
+ * The scale gizmo wears the rotate gizmo's clothes, because it is the same
+ * gesture with a different number — one ring on the cursor, one dashed line
+ * back to the pivot, one solid pivot mark. The single addition is the reach the
+ * scale started from, marked on that line.
+ *
+ * Hollow, so it is read as a *place on the line* rather than as a second pivot,
+ * which is solid. Everything the human needs is then in one direction: pivot,
+ * where the pointer began, where it is now — and which side of the middle mark
+ * the cursor is on is the whole of "bigger or smaller".
+ */
+.scene__scale-from {
+  fill: var(--shell-surface);
+  stroke: var(--shell-accent);
+  stroke-width: 1.5;
+}
+
 /* --- the outliner ------------------------------------------------------- */
 
 /*

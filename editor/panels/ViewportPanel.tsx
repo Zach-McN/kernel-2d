@@ -22,9 +22,10 @@ import { describeProblem, problemsIn, useSceneAssets } from '../shell/scene-asse
 import { describePrefabProblem, prefabProblemsIn, useResolvedScene } from '../shell/scene-prefabs'
 import { useDrawScene, useSceneView, type SceneViewState } from '../shell/scene-view-context'
 import { pivotOf, shortestTurn, turnAbout, type Moved, type Turned } from '../shell/rotate'
-import { ANGLE_STEP, SNAP_INTERVALS, freely, placeOn, turnOn } from '../shell/snap'
+import { scaleAbout, writeFactor, type Scaled } from '../shell/scale'
+import { ANGLE_STEP, SCALE_STEP, SNAP_INTERVALS, freely, placeOn, scaleOn, turnOn } from '../shell/snap'
 import { useSceneDropTarget, type SceneDropTarget } from '../shell/useSceneDropTarget'
-import { useSceneGestures, type Grab, type ScenePlacement, type Turn } from '../shell/useSceneGestures'
+import { useSceneGestures, type Grab, type Scale, type ScenePlacement, type Turn } from '../shell/useSceneGestures'
 import { useEntityPopover, popoverSpot } from '../shell/entity-popover'
 import { useSelection } from '../shell/selection'
 import { useDeleteEntities } from '../shell/useDeleteEntities'
@@ -248,7 +249,8 @@ export function ViewportPanel(): ReactElement {
       selected !== popover.entity ||
       gestures.dragging !== null ||
       gestures.grabbing !== null ||
-      gestures.turning !== null
+      gestures.turning !== null ||
+      gestures.scaling !== null
     ) {
       popovers.close()
     }
@@ -262,6 +264,7 @@ export function ViewportPanel(): ReactElement {
     gestures.dragging,
     gestures.grabbing,
     gestures.turning,
+    gestures.scaling,
   ])
 
   const popoverEntity =
@@ -322,6 +325,15 @@ export function ViewportPanel(): ReactElement {
       data-scene-turn-degrees={
         gestures.turning === null ? '' : String(shortestTurn(gestures.turning.degrees))
       }
+      // And the scale, read the same way. Two numbers rather than one, because
+      // an axis-locked scale is exactly the case where a single figure would
+      // agree with a broken implementation — `×1.5` says nothing about which
+      // side grew. `data-scene-scale` is next door and is the *camera's*: these
+      // are deliberately named for the gesture, not for the word.
+      data-scene-scaling={gestures.scaling?.entities.join(' ') ?? ''}
+      data-scene-scale-x={gestures.scaling === null ? '' : String(gestures.scaling.factor.x)}
+      data-scene-scale-y={gestures.scaling === null ? '' : String(gestures.scaling.factor.y)}
+      data-scene-scale-axis={gestures.scaling?.axis ?? ''}
       data-play-state={mode.play.state}
       data-play-scene={mode.play.state === 'stopped' ? '' : mode.play.path}
       data-play-match={comparison?.kind ?? ''}
@@ -357,6 +369,7 @@ export function ViewportPanel(): ReactElement {
             selected={removal.entities}
             axis={gestures.grabbing?.axis ?? null}
             turning={gestures.turning}
+            scaling={gestures.scaling}
           />
         )}
         {current !== null && !mode.active && popover !== null && popoverEntity !== null && open.state === 'open' && (
@@ -387,6 +400,7 @@ export function ViewportPanel(): ReactElement {
           // moves. So this needs no second copy of that rule to count from.
           movingCount={removal.entities.length}
           turning={gestures.turning}
+          scaling={gestures.scaling}
           placing={placing}
           stampingName={
             placing.stamping === null ? null : (stamp.prefabName ?? basename(placing.stamping))
@@ -417,7 +431,8 @@ export function ViewportPanel(): ReactElement {
             !resolved.loading &&
             gestures.dragging === null &&
             gestures.grabbing === null &&
-            gestures.turning === null
+            gestures.turning === null &&
+            gestures.scaling === null
           }
         />
       )}
@@ -468,6 +483,11 @@ function labelForMove(count: number): string {
   return count === 1 ? 'Move entity' : `Move ${count} entities`
 }
 
+/** And for a scale. */
+function labelForScale(count: number): string {
+  return count === 1 ? 'Scale entity' : `Scale ${count} entities`
+}
+
 const noop = (): void => {}
 const noPan = (_dx: number, _dy: number): void => {}
 const noZoom = (_at: { x: number; y: number }, _direction: 1 | -1): void => {}
@@ -484,6 +504,7 @@ function grabOf(gestures: ReturnType<typeof useSceneGestures>, stamping: boolean
   // other gesture can happen, so no other cursor can be honest.
   if (gestures.grabbing !== null) return 'moving'
   if (gestures.turning !== null) return 'turning'
+  if (gestures.scaling !== null) return 'turning'
   if (gestures.panning) return 'holding'
   if (gestures.ready) return 'ready'
   if (stamping) return 'placing'
@@ -547,6 +568,10 @@ function usePlacement(
    */
   const turn = useRef<{ started: Turned[]; pivot: Point; key: string } | null>(null)
   const turns = useRef(0)
+
+  /** The same again for a scale, which is a turn with a different number. */
+  const sizing = useRef<{ started: Scaled[]; pivot: Point; key: string } | null>(null)
+  const sizings = useRef(0)
 
   const entities = open.state === 'open' ? open.scene.entities : null
 
@@ -838,6 +863,108 @@ function usePlacement(
         if (how === 'cancel') abandonEdits(run.key)
         else sealEdits()
       },
+
+      /**
+       * A scale is about to start: remember every entity's position *and* size,
+       * and say what they scale away from.
+       *
+       * `beginTurn` with one more field remembered and the same two-sources
+       * pivot — the document's positions for the arithmetic, the renderer's
+       * reported origins for the line. Written out rather than shared with the
+       * turn, because the one thing they do not share is what a `started` entry
+       * holds, and a single function taking "which fields to remember" would be
+       * an abstraction over the only line worth reading.
+       */
+      beginScale: (entityIds) => {
+        sizing.current = null
+        if (scenePath === null || current === null) return null
+
+        const started: Scaled[] = []
+        for (const id of entityIds) {
+          const entity = entities?.find((one) => one.id === id)
+          if (entity !== undefined) {
+            started.push({
+              id,
+              x: entity.transform.x,
+              y: entity.transform.y,
+              scaleX: entity.transform.scaleX,
+              scaleY: entity.transform.scaleY,
+            })
+          }
+        }
+
+        const centre = pivotOf(started.map((one) => ({ ...one, rotation: 0 })))
+        if (centre === null) return null
+
+        // Only entities the renderer actually reported, for the reason a turn
+        // gives: one whose sprite has not arrived has no drawn origin, and
+        // averaging a missing one in as zero puts the gizmo in the corner.
+        const drawn = started
+          .map((one) => current.entities.find((shownOne) => shownOne.id === one.id)?.origin ?? null)
+          .filter((one): one is Point => one !== null)
+        if (drawn.length === 0) return null
+
+        sizings.current += 1
+        sizing.current = {
+          started,
+          pivot: centre,
+          key: `${scenePath}#scale${sizings.current}`,
+        }
+
+        return {
+          x: drawn.reduce((total, one) => total + one.x, 0) / drawn.length,
+          y: drawn.reduce((total, one) => total + one.y, 0) / drawn.length,
+        }
+      },
+
+      /**
+       * The group, scaled rigidly — every entity in one transaction, so however
+       * many are selected the whole gesture is one press of Ctrl-Z.
+       *
+       * The factor that lands is returned rather than assumed, the same
+       * arrangement `turnBy` has with its angle: the snap is on this side of the
+       * call, so the caption and the gizmo read the answer rather than the
+       * request. Both axes are snapped, and the locked one snaps to 1 exactly —
+       * `scaleOn` rounds a 1 to a 1, so the lock survives the grid untouched.
+       */
+      scaleBy: (factor, invert) => {
+        const run = sizing.current
+        if (run === null || scenePath === null) return { x: 1, y: 1 }
+
+        const applied = {
+          x: scaleOn(factor.x, placing.snap, invert),
+          y: scaleOn(factor.y, placing.snap, invert),
+        }
+        // Positions are placed freely rather than on the grid, exactly as a
+        // turn's are: a rigid scale that lands each member on the pixel grid is
+        // not a rigid scale, and the switch governs the *factor* here.
+        const sized = scaleAbout(run.started, run.pivot, applied)
+
+        editDocument(scenePath, { label: labelForScale(sized.length), merge: run.key }, (document) => {
+          if (document.format !== SCENE_FORMAT) return
+          for (const one of sized) {
+            // Re-found by id inside the transaction, never closed over as an
+            // index (`editor-ui` U23).
+            const target = document.entities.find((entity) => entity.id === one.id)
+            if (target === undefined) continue
+            target.transform.x = one.x
+            target.transform.y = one.y
+            target.transform.scaleX = one.scaleX
+            target.transform.scaleY = one.scaleY
+          }
+        })
+
+        return applied
+      },
+
+      /** The scale is over. A cancel hands the run back, as a turn's does. */
+      endScale: (how) => {
+        const run = sizing.current
+        sizing.current = null
+        if (run === null) return
+        if (how === 'cancel') abandonEdits(run.key)
+        else sealEdits()
+      },
     }
   }, [current, scenePath, scale, entities, selection, placing, stamp, onContext, deleteSelected])
 }
@@ -953,6 +1080,8 @@ interface CaptionProps {
   movingCount: number
   /** The turn in progress, or null. Its own sentence: it says an angle, not a position. */
   turning: Turn | null
+  /** The scale in progress, or null. Its own sentence again: it says a factor. */
+  scaling: Scale | null
   /** What a press lands on, and whether a press is placing at all. */
   placing: Placing
   /** What is being repeat-placed, in words, or null when nothing is. */
@@ -984,6 +1113,7 @@ function Caption({
   grab,
   movingCount,
   turning,
+  scaling,
   placing,
   stampingName,
   dropping,
@@ -1120,6 +1250,16 @@ function Caption({
           <strong>{shortestTurn(turning.degrees)}°</strong> — {turnSubject(turning)}.{' '}
           {turnAdvice(placing.snap.on, false)}
         </Note>
+      ) : scaling !== null ? (
+        // The factor leads, for the reason the angle does: this bar clips, and
+        // the number is what the hand is being steered by.
+        <Note
+          testId="viewport-scaling"
+          title={`${scaleFactor(scaling)} — ${scaleSubject(scaling)}. ${scaleAdvice(scaling, placing.snap.on, true)}`}
+        >
+          <strong>{scaleFactor(scaling)}</strong> — {scaleSubject(scaling)}.{' '}
+          {scaleAdvice(scaling, placing.snap.on, false)}
+        </Note>
       ) : stampingName !== null ? (
         <Note testId="viewport-stamping" title={`Every click in the level places another ${stampingName}. Esc stops it.`}>
           Placing <strong>{stampingName}</strong> — Esc to stop.
@@ -1255,6 +1395,44 @@ function turnAdvice(snapping: boolean, whole: boolean): string {
   return whole
     ? `${modifier} A click puts it down, Esc puts it back where it was.`
     : `${modifier} Click to place, Esc puts it back.`
+}
+
+/**
+ * How big it has got, in words.
+ *
+ * **One number while both axes carry the same factor, two while they do not.**
+ * A locked scale that reported a single `×1.5` would be a caption agreeing with
+ * an implementation that stretched the wrong side — and the case the human most
+ * needs told apart is exactly the one where the two differ.
+ */
+function scaleFactor(scale: Scale): string {
+  if (scale.axis === null) return `×${writeFactor(scale.factor.x)}`
+  return `×${writeFactor(scale.factor.x)}, ${writeFactor(scale.factor.y)}`
+}
+
+/** What is being scaled, named — the turn's rule about counts rather than lists. */
+function scaleSubject(scale: Scale): string {
+  return scale.entities.length === 1 ? 'scaling' : `scaling ${scale.entities.length} entities`
+}
+
+/**
+ * What to say to somebody in the middle of a scale.
+ *
+ * The turn's advice with the axis keys added back, because a scale has them and
+ * a turn does not — and it says *its own side*, not X or Y, because that is what
+ * the lock means here: the sprite's own axis, whatever it is turned to.
+ */
+function scaleAdvice(scale: Scale, snapping: boolean, whole: boolean): string {
+  const modifier = snapping
+    ? `Hold Ctrl to scale freely${whole ? ` rather than in steps of ${SCALE_STEP}` : ''}.`
+    : `Hold Ctrl for steps of ${SCALE_STEP}.`
+  const axis =
+    scale.axis === null
+      ? 'X or Y stretches one side only'
+      : `Held to its own ${scale.axis.toUpperCase()} — press ${scale.axis.toUpperCase()} again for both`
+  return whole
+    ? `${axis}. ${modifier} A click puts it down, Esc puts it back the size it was.`
+    : `${axis}. ${modifier} Click to place, Esc puts it back.`
 }
 
 /** The same advice for a panel with room for it, which is the tooltip's. */
