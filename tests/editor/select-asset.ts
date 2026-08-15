@@ -16,6 +16,7 @@ export function assetRow(page: Page, assetPath: string): Locator {
 }
 
 export async function selectAsset(page: Page, assetPath: string): Promise<void> {
+  await showTree(page)
   const segments = assetPath.split('/')
   for (let depth = 1; depth < segments.length; depth += 1) {
     await openFolder(page, segments.slice(0, depth).join('/'))
@@ -25,8 +26,24 @@ export async function selectAsset(page: Page, assetPath: string): Promise<void> 
 }
 
 export async function openFolder(page: Page, folderPath: string): Promise<void> {
+  await showTree(page)
   const item = page.locator(`li.asset-row:has(> button[data-asset-path="${folderPath}"])`)
   if ((await item.getAttribute('aria-expanded')) === 'true') return
   await assetRow(page, folderPath).click()
   await expect(item).toHaveAttribute('aria-expanded', 'true')
+}
+
+/**
+ * The panel opens on the icon view, and these helpers drive the tree — so the
+ * first one to run in a test switches the view, exactly as a hand would through
+ * the cog. Only the icon view needs switching away from: the split view has the
+ * tree on screen too. Exported for the specs that address tree rows directly
+ * rather than through `selectAsset`.
+ */
+export async function showTree(page: Page): Promise<void> {
+  const panel = page.getByTestId('assets-panel')
+  if ((await panel.getAttribute('data-view')) !== 'icons') return
+  await page.getByTestId('assets-settings').click()
+  await page.getByTestId('assets-view-list').click()
+  await expect(panel).toHaveAttribute('data-view', 'list')
 }

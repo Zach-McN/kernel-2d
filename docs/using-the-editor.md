@@ -171,6 +171,12 @@ its tabs sit on top of it the way a browser's tabs sit on a browser window — t
 open one is joined to the panel below it, so you can always see which tab belongs
 to which panel. The Viewport's canvas sits in a darker well inside its window.
 
+**The *Windows* button in the top bar lists every panel the editor has**, with a
+tick beside the ones on screen. Closing a panel by the ✕ on its tab is no longer
+a dead end: pick it from *Windows* and it comes back, as a tab in the panel you
+are working in, ready to drag wherever you want it. Picking one that is already
+open brings its tab to the front instead.
+
 Dark, with one orange. **Orange always means "this is the one you are working on"**
 — the tab you are in, the row you have selected, the field you are typing in,
 and the zoom button when the view is exactly fitting. Nothing else is orange, so
@@ -201,13 +207,12 @@ each of which you asked for by name.
 The cog at the top right of the Assets panel offers three, and you can change
 your mind at any time:
 
-- **Folder view** — the whole project as a tree, with folders that open and shut.
-  This is how the panel opens.
 - **Icon view** — one folder at a time, as tiles, the way Explorer shows medium
-  icons. **Click a tile to select it, double-click a folder to go into it.** The
-  line above the tiles is the trail back out: it reads
+  icons. This is how the panel opens. **Click a tile to select it, double-click a
+  folder to go into it.** The line above the tiles is the trail back out: it reads
   `my-game › assets › textures`, and every step in it is a button that takes you
   there.
+- **Folder view** — the whole project as a tree, with folders that open and shut.
 - **Split view** — the tree on the left, the tiles on the right. Click a folder in
   the tree and the tiles jump straight into it; walk into a folder on the right and
   the tree opens the way down to it. This is the one to use when you know roughly

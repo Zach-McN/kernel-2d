@@ -112,6 +112,67 @@ test.describe('the editor shell', () => {
   })
 })
 
+/**
+ * The way back for a closed panel. Every tab has a close button and the layout
+ * is not saved, so before this menu existed a closed panel was gone until the
+ * page was reloaded — a dead end with nothing on screen explaining it.
+ */
+test.describe('the Windows menu', () => {
+  test('lists every panel and marks the ones already open', async ({ page }, testInfo) => {
+    await page.getByTestId('windows-menu-button').click()
+
+    const menu = page.getByTestId('windows-menu')
+    await expect(menu).toBeVisible()
+    for (const title of PANEL_TITLES) {
+      await expect(menu.getByText(title, { exact: true })).toBeVisible()
+    }
+    // Nothing has been closed, so every mark says open.
+    await expect(menu.locator('[data-panel-open="true"]')).toHaveCount(PANEL_TITLES.length)
+
+    await page.screenshot({ path: testInfo.outputPath('windows-menu.png') })
+  })
+
+  test('brings a closed panel back', async ({ page }) => {
+    await expect(page.getByTestId('outliner-panel')).toBeVisible()
+    await page
+      .getByRole('tab', { name: 'Outliner', exact: true })
+      .locator('.dv-default-tab-action')
+      .click()
+    await expect(page.getByTestId('outliner-panel')).toBeHidden()
+
+    await page.getByTestId('windows-menu-button').click()
+    await expect(page.getByTestId('windows-open-outliner')).toHaveAttribute('data-panel-open', 'false')
+    await page.getByTestId('windows-open-outliner').click()
+
+    await expect(page.getByTestId('windows-menu')).toBeHidden()
+    await expect(page.getByTestId('outliner-panel')).toBeVisible()
+  })
+
+  test('picking an open panel brings its tab forward rather than making a second one', async ({ page }) => {
+    // The Texture tab shares the Viewport's group and starts behind it.
+    await expect(page.getByTestId('viewport-panel')).toBeVisible()
+
+    await page.getByTestId('windows-menu-button').click()
+    await page.getByTestId('windows-open-texture').click()
+
+    await expect(page.getByTestId('texture-panel')).toBeVisible()
+    await expect(page.getByRole('tab', { name: 'Texture', exact: true })).toHaveCount(1)
+  })
+
+  test('the menu closes on Escape and on a press elsewhere', async ({ page }) => {
+    await page.getByTestId('windows-menu-button').click()
+    await expect(page.getByTestId('windows-menu')).toBeVisible()
+
+    await page.keyboard.press('Escape')
+    await expect(page.getByTestId('windows-menu')).toBeHidden()
+
+    await page.getByTestId('windows-menu-button').click()
+    await expect(page.getByTestId('windows-menu')).toBeVisible()
+    await page.getByTestId('status-strip').click({ position: { x: 4, y: 4 } })
+    await expect(page.getByTestId('windows-menu')).toBeHidden()
+  })
+})
+
 async function boxOf(locator: Locator): Promise<{ x: number; y: number; width: number; height: number }> {
   const box = await locator.boundingBox()
   if (box === null) throw new Error('Expected the element to be on screen and measurable.')

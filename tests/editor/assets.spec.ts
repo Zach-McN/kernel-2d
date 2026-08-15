@@ -3,6 +3,7 @@ import path from 'node:path'
 
 import { expect, test, type Page } from '@playwright/test'
 
+import { showTree } from './select-asset.js'
 import { editorTestProjectPath } from './test-project.js'
 
 /**
@@ -10,11 +11,16 @@ import { editorTestProjectPath } from './test-project.js'
  * Files are written straight onto disk mid-test, because "I save a PNG and it
  * appears" is the behaviour, and anything that stubs the filesystem stops
  * testing it.
+ *
+ * This suite is about the *tree*, and the panel now opens on the icon view —
+ * so every test starts by switching, the way a hand would. The icon view has
+ * its own suite (`asset-views.spec.ts`).
  */
 
 test.beforeEach(async ({ page }) => {
   await page.goto('/')
   await expect(page.getByTestId('assets-panel')).toBeVisible()
+  await showTree(page)
 })
 
 test.describe('the Assets panel', () => {

@@ -4,7 +4,7 @@ import path from 'node:path'
 import { expect, test, type Page } from '@playwright/test'
 
 import { restoreProjectAfterEach } from './restore-project.js'
-import { selectAsset } from './select-asset.js'
+import { selectAsset, showTree } from './select-asset.js'
 import { editorTestProjectPath } from './test-project.js'
 
 /**
@@ -44,8 +44,14 @@ async function nameIt(page: Page, name: string): Promise<void> {
   await field.fill(name)
 }
 
-/** Selects the `scenes` folder, so that is where a new level would go. */
+/**
+ * Selects the `scenes` folder in the tree, so that is where a new level would
+ * go. The tree rather than the default icon view, because these tests then
+ * look for the new file's row without walking into the folder — in the grid it
+ * would be behind a double-click.
+ */
 async function inScenesFolder(page: Page): Promise<void> {
+  await showTree(page)
   await page.locator('[data-asset-path="scenes"]').click()
   await expect(page.getByTestId('new-document')).toBeVisible()
 }

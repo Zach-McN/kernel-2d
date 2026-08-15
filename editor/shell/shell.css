@@ -60,6 +60,7 @@
    * headings, badges, the labels on controls. It is the reference UI's own
    * split, and it earns its place by making chrome unmistakably chrome.
    */
+  --shell-sans: 'Segoe UI', system-ui, -apple-system, sans-serif;
   --shell-mono: 'Cascadia Mono', Consolas, ui-monospace, monospace;
   --shell-radius: 6px;
   --shell-radius-sm: 4px;
@@ -75,7 +76,7 @@ body,
 body {
   background: var(--shell-background);
   color: var(--shell-text);
-  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  font-family: var(--shell-sans);
   font-size: 13px;
   overflow: hidden;
 }
@@ -161,6 +162,92 @@ body {
   text-overflow: ellipsis;
   direction: rtl; /* keeps the tail of a long path visible, which is the useful end */
   text-align: left;
+}
+
+/*
+ * The Windows menu: the way back for a closed panel, so it lives on the one
+ * bar that cannot itself be closed. Same anatomy as the Assets panel's cog
+ * menu — a relatively positioned box, a toggle, and an absolute dropdown.
+ */
+.status-strip__windows {
+  position: relative;
+  flex: none;
+  align-self: center;
+}
+
+.windows__button {
+  padding: 3px 8px;
+  border: 0;
+  border-radius: var(--shell-radius-sm);
+  background: none;
+  color: var(--shell-text-dim);
+  font: inherit;
+  cursor: default;
+}
+
+.windows__button:hover,
+.windows__button[aria-expanded='true'] {
+  background: var(--shell-raised);
+  color: var(--shell-text);
+}
+
+.windows__menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  /* Anchored on its right edge: the button sits at the end of a path whose
+     length varies by project, so a left-anchored menu could hang past the
+     window's right edge exactly when the path is long. */
+  right: 0;
+  z-index: 5;
+  min-width: 260px;
+  padding: 4px;
+  border: 1px solid var(--shell-line);
+  border-radius: var(--shell-radius);
+  background: var(--shell-surface);
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.5);
+  font-family: var(--shell-sans);
+}
+
+.windows__item {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  width: 100%;
+  padding: 5px 6px;
+  border: 0;
+  border-radius: var(--shell-radius-sm);
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: default;
+}
+
+.windows__item:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.windows__tick {
+  flex: none;
+  width: 12px;
+  color: var(--shell-accent);
+  line-height: 17px;
+}
+
+.windows__words {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.windows__label {
+  line-height: 17px;
+}
+
+.windows__blurb {
+  color: var(--shell-text-dim);
+  font-size: 11px;
+  line-height: 15px;
 }
 
 .status-strip__connection {

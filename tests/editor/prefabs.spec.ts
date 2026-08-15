@@ -4,7 +4,7 @@ import path from 'node:path'
 import { expect, test, type Locator, type Page } from '@playwright/test'
 
 import { restoreProjectAfterEach } from './restore-project.js'
-import { selectAsset } from './select-asset.js'
+import { selectAsset, showTree } from './select-asset.js'
 import { editorTestProjectPath } from './test-project.js'
 
 /**
@@ -173,6 +173,10 @@ test('one press of Ctrl-Z takes the prefab change back, everywhere at once', asy
 // --- acceptance: making one and placing it ----------------------------------
 
 test('a new prefab is made where the preview said, and opens ready to fill in', async ({ page }) => {
+  // The tree, because the test then looks for the new file's row without
+  // walking into the folder — in the default icon view it would be behind a
+  // double-click.
+  await showTree(page)
   await page.locator('[data-asset-path="prefabs"]').click()
   const field = page.getByTestId('new-document-name')
   await field.click()
@@ -193,6 +197,7 @@ test('a new prefab is made where the preview said, and opens ready to fill in', 
 test('a name that is taken is refused, and the prefab that is there is left alone', async ({ page }) => {
   const before = fingerprint(SLIME_PREFAB)
 
+  await showTree(page)
   await page.locator('[data-asset-path="prefabs"]').click()
   const field = page.getByTestId('new-document-name')
   await field.click()

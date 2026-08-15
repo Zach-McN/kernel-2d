@@ -103,6 +103,7 @@ async function openLevel(page: Page, projectPath: string): Promise<void> {
  * had left open (`editor-verification` W6).
  */
 async function select(page: Page, assetPath: string): Promise<void> {
+  await showTree(page)
   const segments = assetPath.split('/')
   for (let depth = 1; depth < segments.length; depth += 1) {
     const folder = segments.slice(0, depth).join('/')
@@ -112,6 +113,18 @@ async function select(page: Page, assetPath: string): Promise<void> {
     await page.waitForTimeout(120)
   }
   await page.locator(`[data-asset-path="${assetPath}"]`).click()
+}
+
+/**
+ * The panel opens on the icon view and `select` walks the tree, so the first
+ * walk switches the view through the cog, exactly as a hand would.
+ */
+async function showTree(page: Page): Promise<void> {
+  const panel = page.locator('[data-testid="assets-panel"]')
+  if ((await panel.getAttribute('data-view')) !== 'icons') return
+  await page.locator('[data-testid="assets-settings"]').click()
+  await page.locator('[data-testid="assets-view-list"]').click()
+  await page.waitForTimeout(120)
 }
 
 /** Long enough for a scene to load, a camera to frame it, and a canvas to draw. */

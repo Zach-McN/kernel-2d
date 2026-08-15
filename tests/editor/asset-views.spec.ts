@@ -26,11 +26,11 @@ test.beforeEach(async ({ page }) => {
 })
 
 test.describe('the Assets panel views', () => {
-  test('opens on the tree, with no breadcrumb, because a tree is not in one folder', async ({ page }) => {
-    await expect(page.getByTestId('assets-panel')).toHaveAttribute('data-view', 'list')
-    await expect(page.getByTestId('assets-list')).toBeVisible()
-    await expect(page.getByTestId('assets-icons')).toBeHidden()
-    await expect(page.getByTestId('assets-breadcrumb')).toBeHidden()
+  test('opens on the icon view, with the breadcrumb at the top of the project', async ({ page }) => {
+    await expect(page.getByTestId('assets-panel')).toHaveAttribute('data-view', 'icons')
+    await expect(page.getByTestId('assets-icons')).toBeVisible()
+    await expect(page.getByTestId('assets-list')).toBeHidden()
+    await expect(page.getByTestId('assets-breadcrumb')).toBeVisible()
   })
 
   test('the cog offers the three views and marks the one you are in', async ({ page }) => {
@@ -41,8 +41,8 @@ test.describe('the Assets panel views', () => {
     await expect(menu).toContainText('Icon view')
     await expect(menu).toContainText('Folder view')
     await expect(menu).toContainText('Split view')
-    await expect(page.getByTestId('assets-view-list')).toHaveAttribute('aria-checked', 'true')
-    await expect(page.getByTestId('assets-view-icons')).toHaveAttribute('aria-checked', 'false')
+    await expect(page.getByTestId('assets-view-icons')).toHaveAttribute('aria-checked', 'true')
+    await expect(page.getByTestId('assets-view-list')).toHaveAttribute('aria-checked', 'false')
   })
 
   test('the cog menu closes on Escape without changing anything', async ({ page }) => {
@@ -52,7 +52,7 @@ test.describe('the Assets panel views', () => {
     await page.keyboard.press('Escape')
 
     await expect(page.getByTestId('assets-settings-menu')).toBeHidden()
-    await expect(page.getByTestId('assets-panel')).toHaveAttribute('data-view', 'list')
+    await expect(page.getByTestId('assets-panel')).toHaveAttribute('data-view', 'icons')
   })
 
   test('the icon view replaces the tree with tiles of the top of the project', async ({ page }) => {

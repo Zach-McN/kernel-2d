@@ -64,10 +64,20 @@ export function AssetsPanel(): ReactElement {
   const browsing = useAssetBrowsing()
   const dragProps = useAssetDrag()
   const body = useRef<HTMLDivElement>(null)
+  // The same element again, as state: the browsing area does not exist until
+  // the folder has been read, and the side-button guard has to notice the
+  // moment it appears — a ref read once in an effect would arm against null
+  // and guard nothing (see the note in `useFolderHistoryButtons`). The ref
+  // stays for the split handle, which only ever reads it mid-drag.
+  const [browseSurface, setBrowseSurface] = useState<HTMLDivElement | null>(null)
+  const adoptBody = (element: HTMLDivElement | null): void => {
+    body.current = element
+    setBrowseSurface(element)
+  }
 
   // The mouse's side buttons, over the browsing area only. Off in the tree-only
   // view, where there is no folder to be inside of.
-  useFolderHistoryButtons({ surface: body, enabled: showsGrid(browsing.view) })
+  useFolderHistoryButtons({ surface: browseSurface, enabled: showsGrid(browsing.view) })
 
   const reveal = (path: string): void => {
     browsing.revealParents(path)
@@ -98,7 +108,7 @@ export function AssetsPanel(): ReactElement {
 
       <AssetBar projectName={tree.projectName} />
 
-      <div className="assets__body" ref={body}>
+      <div className="assets__body" ref={adoptBody}>
         {showsTree(browsing.view) && (
           <div
             className="assets__pane assets__pane--tree"

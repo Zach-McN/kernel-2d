@@ -80,6 +80,22 @@ export const PANELS = {
   assets: ASSETS,
 } as const
 
+export type PanelId = keyof typeof PANELS
+
+/**
+ * Reopen a panel the window has lost — the Windows menu's half of UG4.
+ *
+ * The panel lands as a tab in the active group rather than at its original
+ * spot: the spot may have been closed along with it, and a tab the human can
+ * drag anywhere beats a guess about where it used to be. Lives here rather
+ * than in the menu because this file is where panels are added, full stop
+ * (`editor-ui` U1) — the menu asks, it does not know how.
+ */
+export function spawnPanel(api: DockviewApi, id: PanelId): void {
+  const panel = PANELS[id]
+  api.addPanel({ id: panel.id, component: panel.id, title: panel.title })
+}
+
 export const PANEL_COMPONENTS: Record<string, FunctionComponent<IDockviewPanelProps>> = Object.fromEntries(
   Object.values(PANELS).map((panel) => {
     const body = panel.render ?? ((): ReactElement => <PanelPlaceholder panel={panel} />)

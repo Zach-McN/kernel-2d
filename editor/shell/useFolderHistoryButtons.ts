@@ -1,4 +1,4 @@
-import { useEffect, type RefObject } from 'react'
+import { useEffect } from 'react'
 
 import { useAssetBrowsing } from './asset-browsing'
 
@@ -30,20 +30,29 @@ import { useAssetBrowsing } from './asset-browsing'
  * Attached by hand rather than through React's props for the same reason
  * `useSceneGestures` is (`editor-ui` UG6): what matters here is the cancelling,
  * and cancelling wants a real listener on a real element.
+ *
+ * **The surface arrives as an element held in state, never as a ref.** The
+ * panel shows a loading sentence before the browsing area exists, so an effect
+ * that read `ref.current` on its first run would attach to null and silently
+ * guard nothing — and because any later change to the view or the trail re-runs
+ * the effect and heals it, the gap only shows on a press before anything else
+ * has been touched. That was a real blank-editor bug: the guard everyone had
+ * tested was armed *by the tests' own setup*, and the first press of a session
+ * navigated the page (UG14's exact symptom, arriving through a different hole).
  */
 export function useFolderHistoryButtons({
   surface,
   enabled,
 }: {
-  /** The browsing area. Presses anywhere else are none of this hook's business. */
-  surface: RefObject<HTMLElement | null>
+  /** The browsing area, or null while it is not on screen yet. */
+  surface: HTMLElement | null
   /** False in the tree-only view, where there is no folder to be inside of. */
   enabled: boolean
 }): void {
   const { goBack, goForward } = useAssetBrowsing()
 
   useEffect(() => {
-    const element = surface.current
+    const element = surface
     if (element === null) return
 
     /** Back is 3 and forward is 4, counting from the left button as 0. */

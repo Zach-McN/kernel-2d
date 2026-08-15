@@ -10,8 +10,8 @@ import { movedPath } from './references'
  * **None of it is in the document.** It sits beside selection, the camera and
  * the placing settings (`editor-ui` U8, U19, U31): held for the life of the
  * window, never serialized, never in a transaction, invisible to Ctrl-Z. A
- * reload puts it back to the tree with everything shut, which is exactly how the
- * panel behaved before any of this existed.
+ * reload puts it back to the icon view, at the top of the project, with the
+ * tree shut.
  *
  * **Above the docking layout rather than inside the panel**, for the reason
  * every other piece of window state is (`editor-ui` U9): dockview unmounts a
@@ -105,7 +105,9 @@ interface Trail {
 }
 
 export function AssetBrowsingProvider({ children }: { children: ReactNode }): ReactElement {
-  const [view, setView] = useState<AssetView>('list')
+  // Icons rather than the tree: the tiles are the view a human parses fastest,
+  // and the tree is one cog press away for whoever wants the whole shape.
+  const [view, setView] = useState<AssetView>('icons')
   const [trail, setTrail] = useState<Trail>({ folders: [''], at: 0 })
   const [splitFraction, setSplit] = useState(SPLIT_DEFAULT)
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set())
