@@ -243,9 +243,18 @@ function patrolSource(generatedAt: string): string {
  * carries components it has never heard of, so a game can keep data of its own in
  * a level and read it here. Nothing was added to the kernel to make this work.
  *
+ * **And it makes a noise when it starts again**, which is the other half of the
+ * demonstration: a game asks to be heard by describing notes
+ * (\`playSound\`), and the thing that runs it — the editor's Play button, or an
+ * exported page — synthesizes them. No audio file is involved, and this file
+ * has never heard of an audio context.
+ *
  * generatedBy: ${GENERATED_BY} (${generatedAt})
  */
-import type { Entity, System } from 'kernel-2d/runtime'
+import { playSound, type Entity, type SoundCue, type System } from 'kernel-2d/runtime'
+
+/** A short chirp: up an octave, fading as it goes. */
+const CHIRP: SoundCue = [{ from: 440, to: 880, seconds: 0.35, wave: 'square', volume: 0.08 }]
 
 export const patrolSystem: System = {
   id: 'patrol',
@@ -259,7 +268,10 @@ export const patrolSystem: System = {
       if (walk === null) continue
 
       entity.transform.x += walk.unitsPerSecond * dtSeconds
-      if (entity.transform.x > walk.toX) entity.transform.x = walk.fromX
+      if (entity.transform.x > walk.toX) {
+        entity.transform.x = walk.fromX
+        playSound(entities, CHIRP)
+      }
     }
   },
 }

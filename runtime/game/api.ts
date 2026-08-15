@@ -51,3 +51,12 @@ export { CAMERA_ENTITY_ID, aimCamera, cameraIn } from './camera.js'
 export { DOOR_ENTITY_ID, doorIn, openDoor } from './door.js'
 
 export { STORY_ENTITY_ID, factOf, factsIn, learn, sceneIn, storyEntity } from './story.js'
+
+export {
+  SOUND_ENTITY_ID,
+  playSound,
+  soundIn,
+  type SoundCue,
+  type SoundNote,
+  type SoundWave,
+} from './sound.js'

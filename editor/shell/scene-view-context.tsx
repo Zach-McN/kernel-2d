@@ -26,6 +26,8 @@ import {
   type SceneView,
   type ShownScene,
   type Size,
+  type SoundCue,
+  type SoundState,
 } from '../../runtime'
 import { fitStep, stepDown, stepUp } from './zoom'
 
@@ -129,6 +131,10 @@ export type SceneViewState =
       stopMusic: () => void
       /** What the sound is actually doing, read back off it (`phaser4-runtime` P4). */
       musicState: () => MusicState
+      /** One of the game's synthesized sound cues, played now (`runtime/game/sound.ts`). */
+      playCue: (cue: SoundCue) => void
+      /** What the effects are doing, read back off the audio clock (P4 again). */
+      soundState: () => SoundState
     }
 
 /**
@@ -419,6 +425,8 @@ export function SceneViewProvider({ children }: { children: ReactNode }): ReactE
       playMusic: view.playMusic,
       stopMusic: view.stopMusic,
       musicState: view.musicState,
+      playCue: view.playCue,
+      soundState: view.soundState,
     }
   }, [bootProblem, view, shown, shownFor, problem, measure, pan, zoom, frameAll, frameEntity])
 

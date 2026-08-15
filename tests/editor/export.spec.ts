@@ -132,6 +132,41 @@ test('the exported folder runs the project’s own code, not just the engine’s
   expect(moved).toHaveLength(2)
 })
 
+test('the exported folder makes the game’s own noises, on the player’s first press', async ({ page }) => {
+  /*
+   * The other host of the sound seam (`editor-kernel` D33). The same patrol
+   * that chirps behind the editor's Play button chirps here, through the same
+   * `playCue` — and `data-game-sound` is read back off the audio context's own
+   * clock, so reaching `playing` means Chromium really scheduled the notes.
+   *
+   * The click first is the browser's autoplay policy, which an exported page
+   * meets and the editor never does: behind Play, the click that started the
+   * run was already the gesture. A cue asked for before it is dropped rather
+   * than parked, so the assertion is about a chirp *after* the press.
+   */
+  await openExportedGame(page)
+  const host = gameHost(page)
+
+  await page.locator('canvas').click()
+
+  // Watched frame by frame rather than polled: a chirp sounds for about a third
+  // of a second every four, and a backing-off poll walks over it (W25).
+  await page.waitForFunction(
+    () => {
+      const scope = globalThis as unknown as {
+        document: { querySelector: (selector: string) => { getAttribute: (name: string) => string | null } | null }
+      }
+      return scope.document.querySelector('#game')?.getAttribute('data-game-sound') === 'playing'
+    },
+    undefined,
+    { timeout: 12_000, polling: 'raf' },
+  )
+
+  // And the music attribute is untouched by any of it: a silent level with a
+  // noisy game is an ordinary state, not a contradiction.
+  await expect(host).toHaveAttribute('data-game-music', 'silent')
+})
+
 test('the exported game draws the level exactly as play mode draws it', async ({ page }) => {
   /*
    * The precondition, made explicit rather than assumed: both sides have to be pictures

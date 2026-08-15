@@ -133,7 +133,10 @@ export {
   type SceneView,
   type SceneViewOptions,
   type ShownScene,
+  type SoundState,
 } from './scene/scene-view'
+
+export { SILENCE, TAIL_SECONDS, scheduleCue } from './scene/synth'
 
 export {
   createTextureView,
@@ -176,5 +179,16 @@ export { collectKeys, type KeyCollector } from './web/keyboard'
 export { DOOR_ENTITY_ID, doorIn, openDoor, takeDoor } from './game/door'
 
 export { STORY_ENTITY_ID, factOf, factsIn, learn, sceneIn, storyEntity } from './game/story'
+
+export {
+  MAX_STANDING_CUES,
+  SOUND_ENTITY_ID,
+  playSound,
+  soundIn,
+  takeSound,
+  type SoundCue,
+  type SoundNote,
+  type SoundWave,
+} from './game/sound'
 
 export { storyStore, type StoryStore } from './web/story-store'

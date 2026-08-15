@@ -3,6 +3,7 @@ import { CAMERA_ENTITY_ID, cameraIn } from './camera.js'
 import { DOOR_ENTITY_ID, takeDoor } from './door.js'
 import { NOTHING, inputEntity, writeInput, type InputSample, type ScenePoint } from './input.js'
 import { createLoop, type LoopOptions } from './loop.js'
+import { SOUND_ENTITY_ID, takeSound, type SoundCue } from './sound.js'
 import { factsIn, storyEntity } from './story.js'
 import { stepSystems, type System } from './system.js'
 
@@ -96,6 +97,15 @@ export interface RunLevelOptions {
    * level for a test to read.
    */
   camera?: (focus: ScenePoint) => void
+  /**
+   * Handed every sound the game asked for this frame (`sound.ts`), oldest
+   * first, after the picture — a noise is not worth a frame of drawing delay,
+   * and synthesizing one takes the host into an audio context that has nothing
+   * to do with the renderer. Absent means asks go nowhere: the cues stand in
+   * the level for a test to read, which is how a game's own suite asserts what
+   * a rule sounds like with no speaker anywhere near it.
+   */
+  sound?: (cues: readonly SoundCue[]) => void
   /**
    * What the game remembers between runs, and which scene this is (`story.ts`).
    * When present, the runner injects the story carrier with `recall`'s facts,
@@ -217,8 +227,20 @@ export function runLevel(options: RunLevelOptions): RunningLevel {
     }
 
     const hidden = (one: Entity): boolean =>
-      one === carrier || one === memory || one.id === DOOR_ENTITY_ID || one.id === CAMERA_ENTITY_ID
+      one === carrier ||
+      one === memory ||
+      one.id === DOOR_ENTITY_ID ||
+      one.id === CAMERA_ENTITY_ID ||
+      one.id === SOUND_ENTITY_ID
     options.draw(entities.some(hidden) ? entities.filter((one) => !hidden(one)) : entities)
+
+    // Whatever the game asked to be heard this frame, emptied and handed over
+    // after the draw: the picture is the thing with a deadline, and a cue
+    // taken here is a cue that cannot be played twice.
+    if (options.sound !== undefined) {
+      const cues = takeSound(entities)
+      if (cues.length > 0) options.sound(cues)
+    }
 
     // A door the game opened this frame, told to the host after the picture —
     // the host will stop this run, and a half-drawn last frame helps nobody.

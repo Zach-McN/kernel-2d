@@ -414,9 +414,25 @@ Sounds are files in your folder like everything else: drop an MP3 into
 goes missing, the level runs silent and the bar under the picture says which
 file, by name. An export refuses to build a folder whose music file is gone.
 
-What this deliberately is not yet: sound *effects*. A game's own code cannot
-trigger a sound when something happens — that arrives when a real game needs
-it, the way the keyboard and the doors did.
+### Sound effects
+
+**A game's own code can make a noise when something happens** — a jump, a coin, a
+stomp — and it does so without any audio file at all. The game describes the
+sound as notes (a pitch sliding from one to another, for so many seconds, at a
+volume) and the browser plays it. Nothing is loaded, nothing is cached, and
+nothing about it appears in your project folder: there is no effect to choose in
+the Inspector because there is no file to choose.
+
+You will hear it behind **Play** and in an exported folder, identically. The
+sample project demonstrates it: press Play on level one and the slime chirps
+each time it starts its walk again.
+
+Whether a game can be muted is the game's own business rather than the editor's.
+The platformer mutes with **M**, because its own code says so.
+
+The same first-press rule applies as for music: an effect asked for before the
+player has touched anything is skipped rather than played late — a sound is a
+moment, and a moment played a second afterwards is worse than one missed.
 
 ### Prefabs
 
@@ -600,8 +616,8 @@ file of the project: nothing in the project folder changes, exporting the game
 does not carry your progress with it, and clearing the browser's site data for
 the editor's address forgets everything.
 
-**There is still no collision and no sound.** Each arrives when a game needs
-it, exactly as the keyboard and the pointer did.
+**There is still no collision.** It arrives when a game needs it, exactly as the
+keyboard, the pointer and the sounds did.
 
 ### Which level the game starts on
 
@@ -727,7 +743,10 @@ the editor takes the change.
   means typing it into the level file, or a tool built for it later.
 - **Collision, gravity or physics.** Two sprites in the same place are two
   sprites in the same place.
-- **Sound.** The sample has audio files in it and nothing plays them.
+- **Choose or preview a sound effect.** A level's *music* is a file you pick in
+  the Inspector; an effect is notes the game's own code describes, so there is
+  nothing to pick and no way to hear one without pressing Play. Clicking an audio
+  file in the Assets panel still does not play it.
 - **Choose which levels go in an export.** There is one starting level and the
   export takes what it reaches. Nothing yet gets you from one level to another, so
   there is nothing else for an export to include.

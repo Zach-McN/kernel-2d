@@ -169,8 +169,10 @@ export async function startGame(host: HTMLElement, systems: readonly System[]): 
   // back off the sound system itself (P4). Refreshed with every report a
   // running level already makes, so `locked` turning into `playing` on the
   // player's first press is visible without anything polling.
-  const announceMusic = (): void => {
+  const announceAudio = (): void => {
     host.setAttribute('data-game-music', view.musicState())
+    // And the game's own effects, off the audio clock (`runtime/scene/synth.ts`).
+    host.setAttribute('data-game-sound', view.soundState())
   }
 
   const draw = async (request: SceneRequest): Promise<void> => {
@@ -289,7 +291,7 @@ export async function startGame(host: HTMLElement, systems: readonly System[]): 
     // on that press, and `data-game-music` says `locked` until it lands.
     if (request.music !== undefined) view.playMusic(request.music)
     else view.stopMusic()
-    announceMusic()
+    announceAudio()
 
     // The game's camera ask (`runtime/game/camera.ts`), applied in the same
     // draw as the frame that asked. The scale is the fit this page framed; the
@@ -321,10 +323,18 @@ export async function startGame(host: HTMLElement, systems: readonly System[]): 
         const redrawn = aimed === null ? view.redraw(moved) : view.redraw(moved, aimed)
         if (redrawn !== null) shown = redrawn
       },
+      // Every noise the game made this frame (`runtime/game/sound.ts`),
+      // synthesized on the same manager the music plays through. Here a cue
+      // really can arrive before the player has touched anything — an
+      // autoplaying level with a sound in its first second — and the renderer
+      // drops that one rather than playing it late.
+      sound: (cues) => {
+        for (const cue of cues) view.playCue(cue)
+      },
       watch: (state) => {
         steps = state.steps
         report('drawn', sceneNow)
-        announceMusic()
+        announceAudio()
       },
     })
   }

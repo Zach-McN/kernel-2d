@@ -1,10 +1,12 @@
 import * as Phaser from 'phaser'
 
+import type { SoundCue } from '../game/sound'
 import { spriteOf, type Entity } from '../formats/scene-schema'
 import { forgetOldestBeyond, loadImage, setCanvasStyleSize } from '../textures/image-cache'
 import { applyImportSettings } from '../textures/import-settings'
 import { createEntityLayer, type DrawnEntity, type EntityLayer, type ResolvedSprite } from './entity-layer'
 import type { SceneMusic, SceneRequest, SceneTexture } from './scene-request'
+import { scheduleCue } from './synth'
 import {
   DEFAULT_CAMERA,
   snapCamera,
@@ -171,12 +173,35 @@ export interface SceneView {
    * player's first press; the music starts itself the moment that arrives.
    */
   musicState: () => MusicState
+  /**
+   * Plays one of the game's sound cues (`runtime/game/sound.ts`), now —
+   * synthesized on the same sound manager the music uses, with no file, no
+   * loader and nothing cached. A cue that arrives while the browser is still
+   * holding audio shut is dropped rather than parked: an effect is a moment in
+   * a game, and a moment played late is worse than a moment missed. Music
+   * parks, because a loop has no moment.
+   */
+  playCue: (cue: SoundCue) => void
+  /**
+   * What the effects are doing, read back off the audio context's own clock
+   * (P4) — `playing` while a scheduled note is still sounding, and `silent`
+   * again once the context has passed the last one. Never an echo of what was
+   * asked, which is what lets a browser test assert that a sound happened
+   * without hearing it.
+   */
+  soundState: () => SoundState
   /** Draws nothing at all. */
   clear: () => void
   destroy: () => void
 }
 
 export type MusicState = 'silent' | 'loading' | 'locked' | 'playing' | 'failed'
+
+/**
+ * What the game's effects are doing. No `loading`, unlike music: a cue is
+ * arithmetic, so there is nothing between being asked for and sounding.
+ */
+export type SoundState = 'silent' | 'locked' | 'playing' | 'failed'
 
 /** How many decoded images to keep, so flicking between two scenes is free. */
 const IMAGE_CACHE_LIMIT = 32
@@ -412,6 +437,50 @@ export async function createSceneView(options: SceneViewOptions): Promise<SceneV
       })
   }
 
+  // --- the game's sound effects ---------------------------------------------
+
+  /**
+   * The context time the last scheduled note finishes, and whether the sound
+   * manager has ever refused a cue. Both are the *minimum* a state can be
+   * built on: everything else `soundState` reports is asked of the manager and
+   * of the audio clock at the moment of asking.
+   */
+  let cueEndsAt = 0
+  let cueAsked = false
+  let cueRefused = false
+
+  const playCue = (cue: SoundCue): void => {
+    cueAsked = true
+    const manager = game.sound
+    // Same guard as the music's, for the same reason: only the Web Audio
+    // manager has a context to schedule on. There is no honest fallback —
+    // synthesis is the whole feature — so the refusal is said in the state.
+    if (!(manager instanceof Phaser.Sound.WebAudioSoundManager)) {
+      cueRefused = true
+      return
+    }
+    cueRefused = false
+
+    // Held shut by the autoplay policy, or suspended because the game lost
+    // focus. Scheduling now would appoint notes on a clock that is not
+    // running, and they would all arrive at once when it resumed.
+    const context = manager.context
+    if (manager.locked || context.state !== 'running') return
+
+    const ends = scheduleCue(context, manager.destination, cue, context.currentTime)
+    if (ends > cueEndsAt) cueEndsAt = ends
+  }
+
+  const soundState = (): SoundState => {
+    // Nothing has asked for a sound, so nothing can be wrong with one — a game
+    // that has not jumped yet is silent rather than broken.
+    if (!cueAsked) return 'silent'
+    const manager = game.sound
+    if (cueRefused || !(manager instanceof Phaser.Sound.WebAudioSoundManager)) return 'failed'
+    if (manager.locked || manager.context.state !== 'running') return 'locked'
+    return manager.context.currentTime < cueEndsAt ? 'playing' : 'silent'
+  }
+
   return {
     canvas,
 
@@ -502,6 +571,9 @@ export async function createSceneView(options: SceneViewOptions): Promise<SceneV
     playMusic,
     stopMusic,
     musicState: () => musicState,
+
+    playCue,
+    soundState,
 
     clear: () => {
       sequence += 1

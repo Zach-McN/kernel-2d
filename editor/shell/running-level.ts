@@ -102,6 +102,7 @@ export function useRunningLevel(
   const onFrame = view.state === 'ready' ? view.onFrame : null
   const playMusic = view.state === 'ready' ? view.playMusic : null
   const stopMusic = view.state === 'ready' ? view.stopMusic : null
+  const playCue = view.state === 'ready' ? view.playCue : null
 
   const [picture, setPicture] = useState<RunningPicture | null>(null)
 
@@ -198,6 +199,14 @@ export function useRunningLevel(
       draw: (moved) => {
         latest = aimed === null ? redraw(moved) : redraw(moved, aimed)
       },
+      // Every noise the game made this frame, synthesized on the renderer's
+      // own sound manager (`runtime/game/sound.ts`). The click that started
+      // the run is the browser's gesture, so nothing here is ever locked;
+      // the exported page is where that case earns its keep.
+      sound: (cues) => {
+        if (playCue === null) return
+        for (const cue of cues) playCue(cue)
+      },
       watch: (state) => {
         setPicture({
           steps: state.steps,
@@ -220,7 +229,7 @@ export function useRunningLevel(
       }
       setPicture(null)
     }
-  }, [entities, ready, redraw, restage, onFrame, host, playMusic, stopMusic])
+  }, [entities, ready, redraw, restage, onFrame, host, playMusic, stopMusic, playCue])
 
   return picture
 }

@@ -299,6 +299,9 @@ export function ViewportPanel(): ReactElement {
       // publishes; empty whenever nothing runs, which is also how "editing is
       // silent" is read from the outside.
       data-play-music={running === null || view.state !== 'ready' ? '' : view.musicState()}
+      // And what the game's own effects are doing, read back off the audio
+      // clock the same way — `playing` while a cue is still sounding.
+      data-play-sound={running === null || view.state !== 'ready' ? '' : view.soundState()}
     >
       <Stage
         host={host}
