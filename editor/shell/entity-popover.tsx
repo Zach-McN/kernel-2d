@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useMemo, useState, type ReactElement, type ReactNode } from 'react'
 
 import type { Point } from '../../runtime'
-import { spotIn, type Room } from './floating'
+import { spotIn, type Room, type Spot } from './floating'
 
 /**
  * The right-click window: which entity it is about, and which panel it is
@@ -42,8 +42,8 @@ export interface EntityPopoverAnchor {
   /** The scene the entity is in, so a window cannot outlive the level it is about. */
   scene: string
   entity: string
-  /** Where it sits, in the owning panel's own pixels — already clamped by it. */
-  at: Point
+  /** Where it sits in the owning panel, as the CSS that pins it there. */
+  at: Spot
 }
 
 export interface EntityPopovers {
@@ -80,7 +80,7 @@ export function useEntityPopover(): EntityPopovers {
  * Wider than the window itself by the margin it is kept from the edge, and one
  * number for both panels: the window is the same size in either.
  */
-export const POPOVER_ROOM: Room = { width: 240, height: 104 }
+export const POPOVER_ROOM: Room = { width: 234, height: 135 }
 
 /**
  * Where the window sits for a click at `at`, in the panel's own pixels.
@@ -90,6 +90,6 @@ export const POPOVER_ROOM: Room = { width: 240, height: 104 }
  * opened it — the clamp itself is `./floating.ts`, which the Assets panel's
  * menu uses too.
  */
-export function popoverSpot(panel: DOMRect | undefined, at: Point): Point {
+export function popoverSpot(panel: DOMRect | undefined, at: Point): Spot {
   return spotIn(panel, at, POPOVER_ROOM)
 }

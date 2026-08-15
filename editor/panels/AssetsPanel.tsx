@@ -1,12 +1,11 @@
 import { useRef, useState, type MouseEvent, type ReactElement } from 'react'
 
-import type { Point } from '../../runtime'
 import { formatBytes } from '../../sidecar/bytes'
 import type { ProjectTree } from '../../sidecar/tree-schema'
 import { showsGrid, showsTree, useAssetBrowsing } from '../shell/asset-browsing'
 import { basename, findNode, folderPathsIn, parentOf } from '../shell/asset-kinds'
 import { assetRowsFor, type AssetRow } from '../shell/asset-rows'
-import { spotIn } from '../shell/floating'
+import { spotIn, type Spot } from '../shell/floating'
 import { useProject } from '../shell/project-context'
 import { pointsAt } from '../shell/references'
 import { useSelection } from '../shell/selection'
@@ -242,7 +241,7 @@ export function AssetsPanel(): ReactElement {
           className="assets__menu assets__menu--new assets__menu--at"
           role="menu"
           data-testid="assets-new-menu"
-          style={{ left: newDocument.at.x, top: newDocument.at.y }}
+          style={newDocument.at}
           ref={dismissBrowserMenu.box}
           onKeyDown={dismissBrowserMenu.onKeyDown}
         >
@@ -283,7 +282,7 @@ export function AssetsPanel(): ReactElement {
  * the cog's does — and the browser's is placed where the press landed. Two cases
  * rather than an optional point, so neither door can be read as the other.
  */
-type NewDocumentAnchor = { from: 'bar' } | { from: 'browser'; at: Point }
+type NewDocumentAnchor = { from: 'bar' } | { from: 'browser'; at: Spot }
 
 // --- making a level --------------------------------------------------------
 

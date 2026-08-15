@@ -1331,11 +1331,41 @@ body {
 
 .entity-popover__label {
   flex: none;
+  /* The two labels are different lengths and the fields beside them have to
+     start in the same place, or the little window reads as two loose rows
+     rather than as a form. */
+  width: 52px;
   color: var(--shell-text-dim);
   font-family: var(--shell-mono);
   font-size: 11px;
   letter-spacing: 0.06em;
   text-transform: uppercase;
+}
+
+.entity-popover__text {
+  flex: 1;
+  min-width: 0;
+}
+
+/*
+ * Frame, Duplicate, Delete — the three verbs, on one row across the foot of the
+ * window, sharing its width equally.
+ *
+ * Separated by a line rather than by a gap: everything above it changes a field
+ * on this entity, and everything on it *happens* when pressed. That is a
+ * difference worth drawing, and a row of buttons directly under a row of inputs
+ * with nothing between them reads as a fourth field.
+ */
+.entity-popover__actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 4px;
+  padding: 6px 6px 2px;
+  border-top: 1px solid var(--shell-line);
+}
+
+.entity-popover__actions .control--action {
+  flex: 1;
 }
 
 /*

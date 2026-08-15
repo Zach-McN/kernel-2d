@@ -3,6 +3,7 @@ import path from 'node:path'
 
 import { expect, test, type Page } from '@playwright/test'
 
+import { gapFrom } from './floating.js'
 import { restoreProjectAfterEach } from './restore-project.js'
 import { openNewDocument, showTree } from './select-asset.js'
 import { editorTestProjectPath } from './test-project.js'
@@ -81,11 +82,10 @@ test('right-clicking the empty part of the browser opens the same menu, where th
   await expect(menu).toBeVisible()
   await expect(page.getByTestId('new-document-name')).toBeFocused()
 
-  // Next to the press rather than somewhere fixed.
-  const box = await menu.boundingBox()
-  expect(box).not.toBeNull()
-  expect(Math.abs((box?.x ?? 0) - spot.x)).toBeLessThan(80)
-  expect(Math.abs((box?.y ?? 0) - spot.y)).toBeLessThan(80)
+  // Next to the press rather than somewhere fixed — measured to the nearest
+  // edge, because near the bottom of the panel the menu opens *above* the press
+  // rather than sliding up the panel (`./floating.ts`).
+  expect(await gapFrom(menu, spot)).toBeLessThan(40)
 })
 
 test('right-clicking a file opens nothing — that press is not this menu', async ({ page }) => {

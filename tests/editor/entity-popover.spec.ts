@@ -1,5 +1,6 @@
 import { expect, test, type Locator, type Page } from '@playwright/test'
 
+import { gapFrom } from './floating.js'
 import { restoreProjectAfterEach } from './restore-project.js'
 import { selectAsset } from './select-asset.js'
 
@@ -37,12 +38,11 @@ test('right-clicking an entity opens the window on it, selected', async ({ page 
   await expect(popover).toContainText('Knight')
   await expect(page.getByTestId('inspector-name')).toHaveText('Knight')
 
-  // Next to the click rather than somewhere fixed: the window's box starts
-  // near the spot that was pressed.
-  const box = await popover.boundingBox()
-  expect(box).not.toBeNull()
-  expect(Math.abs((box?.x ?? 0) - spot.x)).toBeLessThan(80)
-  expect(Math.abs((box?.y ?? 0) - spot.y)).toBeLessThan(80)
+  // Next to the click rather than somewhere fixed. Measured as "how far is the
+  // press from the window", not "how far is the press from its top-left corner"
+  // — near an edge the window flips to the other side of the press, which is
+  // adjacent and would read as 130 pixels away to a corner-based assertion.
+  expect(await gapFrom(popover, spot)).toBeLessThan(40)
 })
 
 test('the window edits the position, and the Inspector agrees', async ({ page }) => {
@@ -157,6 +157,104 @@ test('leaves a picture of the window over the picture', async ({ page }, testInf
   await page.mouse.click(spot.x, spot.y, { button: 'right' })
   await expect(page.getByTestId('entity-popover')).toBeVisible()
   await page.getByTestId('viewport-panel').screenshot({ path: testInfo.outputPath('entity-popover.png') })
+})
+
+// --- the four verbs --------------------------------------------------------
+
+test('renaming in it renames everywhere, and one rename is one press of Ctrl-Z', async ({ page }) => {
+  const spot = await entitySpot(page, 'Knight')
+  await page.mouse.click(spot.x, spot.y, { button: 'right' })
+
+  await page.getByTestId('popover-name-control').fill('Paladin')
+
+  // The Inspector, the Outliner's row and the window's own title all follow.
+  await expect(page.getByTestId('inspector-name')).toHaveText('Paladin')
+  await expect(row(page, 'Paladin')).toBeVisible()
+  await expect(page.getByTestId('entity-popover')).toContainText('Paladin')
+
+  await page.keyboard.press('ControlOrMeta+z')
+  await expect(page.getByTestId('inspector-name')).toHaveText('Knight')
+})
+
+test('Frame puts the camera on it', async ({ page }) => {
+  const spot = await entitySpot(page, 'Knight')
+  await page.mouse.click(spot.x, spot.y, { button: 'right' })
+  const before = await page.getByTestId('viewport-panel').getAttribute('data-scene-focus-x')
+
+  await page.getByTestId('popover-frame').click()
+
+  await expect
+    .poll(() => page.getByTestId('viewport-panel').getAttribute('data-scene-focus-x'))
+    .not.toBe(before)
+})
+
+/**
+ * Framing moves the camera, and the window is anchored to a spot on the screen
+ * — so over the picture it closes itself, which is the ways-out rule it has
+ * always had rather than anything this button does.
+ */
+test('Frame closes the window it was pressed in, because the picture moved', async ({ page }) => {
+  const spot = await entitySpot(page, 'Knight')
+  await page.mouse.click(spot.x, spot.y, { button: 'right' })
+
+  await page.getByTestId('popover-frame').click()
+
+  await expect(page.getByTestId('entity-popover')).toBeHidden()
+})
+
+test('Duplicate makes the same copy Shift-D does, and moves on to it', async ({ page }) => {
+  const spot = await entitySpot(page, 'Knight')
+  await page.mouse.click(spot.x, spot.y, { button: 'right' })
+  const before = await rows(page).count()
+
+  await page.getByTestId('popover-duplicate').click()
+
+  await expect(rows(page)).toHaveCount(before + 1)
+  // The copy is what is selected now, so the window has moved off its entity
+  // and put itself away.
+  await expect(page.getByTestId('entity-popover')).toBeHidden()
+  await expect(page.getByTestId('inspector-name')).toHaveText('Knight 2')
+
+  await page.keyboard.press('ControlOrMeta+z')
+  await expect(rows(page)).toHaveCount(before)
+})
+
+test('Delete removes that one entity and Ctrl-Z brings it back', async ({ page }) => {
+  const spot = await entitySpot(page, 'Knight')
+  await page.mouse.click(spot.x, spot.y, { button: 'right' })
+  const before = await rows(page).count()
+
+  await page.getByTestId('popover-delete').click()
+
+  await expect(rows(page)).toHaveCount(before - 1)
+  await expect(exactRow(page, 'Knight')).toHaveCount(0)
+  await expect(page.getByTestId('entity-popover')).toBeHidden()
+
+  await page.keyboard.press('ControlOrMeta+z')
+  await expect(exactRow(page, 'Knight')).toHaveCount(1)
+})
+
+/**
+ * Delete acts on the selection, and opening the window is what makes the
+ * selection this one entity — so a window opened on a sprite that was *not* in a
+ * multi-selection must not take the rest of that selection with it. This is the
+ * assertion standing between the button and somebody losing five entities.
+ */
+test('Delete takes only the entity the window is about', async ({ page }) => {
+  await selectAsset(page, LEVEL_ONE)
+  await expect(viewport(page)).toHaveAttribute('data-scene-showing', LEVEL_ONE)
+  await settled(page)
+
+  await row(page, 'Knight').click()
+  await row(page, 'Slime').click({ modifiers: ['Shift'] })
+  await expect(viewport(page)).toHaveAttribute('data-scene-selected-count', '2')
+  const before = await rows(page).count()
+
+  await row(page, 'Knight').click({ button: 'right' })
+  await page.getByTestId('popover-delete').click()
+
+  await expect(rows(page)).toHaveCount(before - 1)
+  await expect(row(page, 'Slime')).toBeVisible()
 })
 
 // --- the Outliner's door ---------------------------------------------------
@@ -278,8 +376,22 @@ async function openLevel(page: Page): Promise<void> {
   await settled(page)
 }
 
+const rows = (page: Page): Locator =>
+  page.getByTestId('outliner-panel').locator('[data-entity-id]')
+
 const row = (page: Page, name: string): Locator =>
-  page.getByTestId('outliner-panel').locator('[data-entity-id]').filter({ hasText: name }).first()
+  rows(page).filter({ hasText: name }).first()
+
+/**
+ * The row of the entity called *exactly* this.
+ *
+ * `row` matches on substring and takes the first, which is right for reaching a
+ * row and wrong for counting them: the sample level holds both `Knight` and
+ * `Knight running`, so "the Knight row is gone" is a question only an exact
+ * match can answer.
+ */
+const exactRow = (page: Page, name: string): Locator =>
+  rows(page).filter({ has: page.locator('.entity-row__name', { hasText: new RegExp(`^${name}$`) }) })
 
 /** The camera, once it has stopped moving — opening a scene frames it a beat later. */
 async function settled(page: Page): Promise<void> {

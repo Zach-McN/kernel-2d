@@ -8,7 +8,7 @@ It is kept current by the definition of done in `CLAUDE.md`: a session that
 changes what you can do, or how you do it, changes this page in the same commit.
 If this page and the editor disagree, the editor is right and the page is a bug.
 
-Last true as of: **`S` resizes what is selected, the way `R` turns it** (2026-08-15).
+Last true as of: **the right-click window renames, frames, duplicates and deletes** (2026-08-15).
 
 ---
 
@@ -317,7 +317,8 @@ last row is drawn in front.
 - **Outliner** → add, duplicate, delete, and reorder — with the `↑` `↓` buttons,
   or by dragging a row to where it should sit. A line shows where it will land;
   `Ctrl-Z` takes either kind of reorder back in one press. Right-click a row for
-  the same small window a right-click on the sprite opens.
+  the same small window a right-click on the sprite opens — rename, position,
+  Frame, Duplicate, Delete.
 - **Viewport** → click to select, drag to move, `G` to move without holding
   anything, `R` to turn, `S` to resize, `Shift-D` for a copy, right-click for a
   small window with the entity's position.
@@ -546,26 +547,40 @@ time, space-drag still pans, and the wheel still zooms.
 | Click, or `Enter` | Put down whatever you are moving, turning or resizing |
 | `Esc` while grabbing, turning or resizing | Put it back exactly as it was |
 | `Shift-D` | A copy of the selected entity, in the same place, selected |
-| Right-click a sprite | A small window next to it with its position, ready to type into |
+| Right-click a sprite | A small window next to it: name, position, Frame, Duplicate, Delete |
 | Right-click empty space | Close that window |
 | `Esc`, or right-click | Stop placing by clicking |
 
 #### The right-click window
 
-**Right-click an entity and a small window opens next to it** holding the
-entity's position, with the cursor already in the X field. It is the same
-position the Inspector shows — type in either and the other follows, and one
-edit is one press of `Ctrl-Z`. `Esc` closes it, and so does clicking anywhere
-else, panning, zooming, or right-clicking empty space. More of the entity's
-settings will appear in this window later.
+**Right-click an entity and a small window opens next to it** holding its name,
+its position, and three buttons — with the cursor already in the X field. It
+opens below what you pressed, or above it when there is not room below.
+
+- **Name and position are the same fields the Inspector has.** Type in either
+  and the other follows; one edit is one press of `Ctrl-Z`.
+- **Frame** puts the camera on the entity, the same as pressing `F`.
+- **Duplicate** makes the copy `Shift-D` makes — on top of this one, just in
+  front of it — and moves on to the copy.
+- **Delete** removes this one entity, and `Ctrl-Z` brings it back. It only ever
+  takes the entity the window is about, even if others were selected before you
+  right-clicked.
+
+The window puts itself away after Duplicate and Delete, because in both cases it
+is no longer about what you are now looking at. **Frame closes it in the picture
+but not in the list** — over the picture it is pinned to a spot on screen, and
+moving the camera takes that spot away.
+
+`Esc` closes it, and so does clicking anywhere else, panning, zooming, or
+right-clicking empty space.
 
 **It opens from the Outliner too.** Right-click an entity's row in the list and
 the same window appears next to the row, about the same entity, with the same
-field in it — the right button means one thing in both places. Only ever one
-window is open: opening it from the list closes it over the picture, and the
-other way round. In the list it closes on `Esc`, on selecting another row, or on
-scrolling the list, and closing it hands the keys back to the row so you can
-carry on with the keyboard.
+fields and the same three buttons — the right button means one thing in both
+places. Only ever one window is open: opening it from the list closes it over
+the picture, and the other way round. In the list it closes on `Esc`, on
+selecting another row, or on scrolling the list, and closing it hands the keys
+back to the row so you can carry on with the keyboard.
 
 The browser's own right-click menu never opens over the picture or over a row —
 the right button belongs to the editor there, and to your game while one is

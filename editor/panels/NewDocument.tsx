@@ -146,7 +146,7 @@ export function NewDocument({
  * Measured from what it holds — a field, a row of two buttons, and a line of
  * path — with the margin from the edge already in it (`../shell/floating.ts`).
  */
-export const NEW_DOCUMENT_ROOM: Room = { width: 248, height: 132 }
+export const NEW_DOCUMENT_ROOM: Room = { width: 258, height: 103 }
 
 /** A file name without its `.json`, for naming what goes inside it. */
 function withoutJsonExtension(file: string): string {
