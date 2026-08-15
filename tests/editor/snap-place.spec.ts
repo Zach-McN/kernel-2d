@@ -349,6 +349,64 @@ test('the snap is not saved into the level, and a reload puts it back', async ({
   await expect(page.getByTestId('scene-snap')).toHaveAttribute('data-snap-offset', '0')
 })
 
+// --- acceptance: the grid you can see ---------------------------------------
+
+/**
+ * The grid is drawn from the renderer's own report, so there is no line to count
+ * from out here — what it *is* is published as numbers on the mark itself. That
+ * is the whole of what these read.
+ */
+const grid = (page: Page): Locator => page.getByTestId('scene-grid')
+
+test('the grid is drawn while snapping is on, and goes when the switch goes off', async ({ page }) => {
+  await openScene(page)
+  await setSnap(page, 16, 0)
+
+  await setSnapping(page, true)
+  await expect(grid(page)).toHaveAttribute('data-grid-step', '16')
+
+  await setSnapping(page, false)
+  await expect(grid(page)).toHaveCount(0)
+})
+
+test('the cells are the interval, so the grid changes size with the number typed', async ({ page }) => {
+  await openScene(page)
+  await setSnapping(page, true)
+  const scale = await cameraScale(page)
+
+  await setSnap(page, 16, 0)
+  expect(Number(await grid(page).getAttribute('data-grid-cell'))).toBeCloseTo(16 * scale, 3)
+
+  await setSnap(page, 32, 0)
+  expect(Number(await grid(page).getAttribute('data-grid-cell'))).toBeCloseTo(32 * scale, 3)
+})
+
+/**
+ * A grid finer than the eye can separate is not a grid, it is a grey wash over
+ * the level — so nothing is drawn, and the way back is the same control that got
+ * there. Worth an acceptance because "I turned snapping on and saw nothing" is
+ * otherwise indistinguishable from the feature being broken.
+ */
+test('a grid too fine to see is not drawn, and a wider interval brings it back', async ({ page }) => {
+  await openScene(page)
+  await setSnapping(page, true)
+
+  await setSnap(page, 0.001, 0)
+  await expect(grid(page)).toHaveCount(0)
+
+  await setSnap(page, 128, 0)
+  await expect(grid(page)).toHaveAttribute('data-grid-step', '128')
+})
+
+test('leaves a picture of the level on its grid', async ({ page }, testInfo) => {
+  await openScene(page)
+  await setSnapping(page, true)
+  await setSnap(page, 16, 8)
+  await expect(grid(page)).toBeVisible()
+
+  await page.getByTestId('viewport-stage').screenshot({ path: testInfo.outputPath('scene-grid.png') })
+})
+
 // --- acceptance: placing by clicking ----------------------------------------
 
 test('with it on, every click in the level puts another one down', async ({ page }) => {

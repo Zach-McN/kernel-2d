@@ -1405,23 +1405,33 @@ body {
 }
 
 /*
- * Frame, Duplicate, Delete — the three verbs, on one row across the foot of the
- * window, sharing its width equally.
+ * What happens when pressed: Snap to grid across the top, then Frame, Duplicate
+ * and Delete sharing one row across the foot of the window.
  *
- * Separated by a line rather than by a gap: everything above it changes a field
- * on this entity, and everything on it *happens* when pressed. That is a
- * difference worth drawing, and a row of buttons directly under a row of inputs
- * with nothing between them reads as a fourth field.
+ * Separated from the fields by a line rather than by a gap: everything above it
+ * changes a field on this entity, and everything below it *happens* when
+ * pressed. That is a difference worth drawing, and a row of buttons directly
+ * under a row of inputs with nothing between them reads as a fourth field.
+ *
+ * Snap to grid gets a row to itself because its label is three words and the
+ * window is 216 pixels wide — a fourth button on the verbs' row would squeeze
+ * all four into initials. It sits nearest the position it changes, which is also
+ * the order a hand works in: read the numbers, then tidy them.
  */
 .entity-popover__actions {
-  display: flex;
+  display: grid;
   gap: 6px;
   margin-top: 4px;
   padding: 6px 6px 2px;
   border-top: 1px solid var(--shell-line);
 }
 
-.entity-popover__actions .control--action {
+.entity-popover__verbs {
+  display: flex;
+  gap: 6px;
+}
+
+.entity-popover__verbs .control--action {
   flex: 1;
 }
 
@@ -1618,6 +1628,21 @@ body {
   width: 100%;
   height: 100%;
   pointer-events: none;
+}
+
+/*
+ * The grid a placement lands on, drawn only while snapping is on.
+ *
+ * Fainter than the origin's own lines, which are 0.25: this covers the whole
+ * picture rather than marking one corner of it, so anything more assertive
+ * competes with the art it is there to help line up. It has to survive being
+ * drawn over a dark backdrop and under a level, which is the range this number
+ * was picked by eye against.
+ */
+.scene__grid path {
+  fill: none;
+  stroke: rgba(230, 232, 236, 0.13);
+  stroke-width: 1;
 }
 
 /* Where the scene's own 0,0 is. y counts upward from this corner. */

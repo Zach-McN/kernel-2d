@@ -8,7 +8,8 @@ It is kept current by the definition of done in `CLAUDE.md`: a session that
 changes what you can do, or how you do it, changes this page in the same commit.
 If this page and the editor disagree, the editor is right and the page is a bug.
 
-Last true as of: **right-clicking a file renames, moves or deletes it** (2026-08-15).
+Last true as of: **the grid is drawn while snapping is on, and an entity can be
+put on it from its right-click window** (2026-08-15).
 
 ---
 
@@ -323,7 +324,7 @@ last row is drawn in front.
   or by dragging a row to where it should sit. A line shows where it will land;
   `Ctrl-Z` takes either kind of reorder back in one press. Right-click a row for
   the same small window a right-click on the sprite opens — rename, position,
-  Frame, Duplicate, Delete.
+  Snap to grid, Frame, Duplicate, Delete.
 - **Viewport** → click to select, drag to move, `G` to move without holding
   anything, `R` to turn, `S` to resize, `Shift-D` for a copy, right-click for a
   small window with the entity's position.
@@ -552,18 +553,23 @@ time, space-drag still pans, and the wheel still zooms.
 | Click, or `Enter` | Put down whatever you are moving, turning or resizing |
 | `Esc` while grabbing, turning or resizing | Put it back exactly as it was |
 | `Shift-D` | A copy of the selected entity, in the same place, selected |
-| Right-click a sprite | A small window next to it: name, position, Frame, Duplicate, Delete |
+| Right-click a sprite | A small window next to it: name, position, Snap to grid, Frame, Duplicate, Delete |
 | Right-click empty space | Close that window |
 | `Esc`, or right-click | Stop placing by clicking |
 
 #### The right-click window
 
 **Right-click an entity and a small window opens next to it** holding its name,
-its position, and three buttons — with the cursor already in the X field. It
-opens below what you pressed, or above it when there is not room below.
+its position, and four buttons — with the cursor already in the X field. It opens
+below what you pressed, or above it when there is not room below.
 
 - **Name and position are the same fields the Inspector has.** Type in either
   and the other follows; one edit is one press of `Ctrl-Z`.
+- **Snap to grid** moves this one entity onto the nearest position the grid can
+  reach — the interval and offset in the bar under the picture, offset included.
+  It works whether or not the Snap switch is on; with it off, the grid it moves
+  to is not drawn. It is greyed out when the entity is already on the grid, and
+  hovering it says which grid that is. `Ctrl-Z` puts the entity back.
 - **Frame** puts the camera on the entity, the same as pressing `F`.
 - **Duplicate** makes the copy `Shift-D` makes — on top of this one, just in
   front of it — and moves on to the copy.
@@ -581,7 +587,7 @@ right-clicking empty space.
 
 **It opens from the Outliner too.** Right-click an entity's row in the list and
 the same window appears next to the row, about the same entity, with the same
-fields and the same three buttons — the right button means one thing in both
+fields and the same four buttons — the right button means one thing in both
 places. Only ever one window is open: opening it from the list closes it over
 the picture, and the other way round. In the list it closes on `Esc`, on
 selecting another row, or on scrolling the list, and closing it hands the keys
@@ -712,6 +718,18 @@ a **from** — decide where a drag or a click is allowed to put something.
 
 - **Snap** turns the grid on and off. It lights up when it is on, and it starts
   on. With it off, things land wherever you put them.
+
+**The grid is drawn over the level while the switch is on**, in the interval and
+offset you set, and disappears the moment you switch it off. It is deliberately
+faint — it is there to line things up against, not to be looked at.
+
+**A grid whose squares would be less than about six pixels across is not drawn
+at all**, because at that size it is a grey wash over your art rather than
+something you can line up to. That is why the editor's own starting grid — `1
+from 0` — shows nothing until you zoom well in: at `1×` its squares are single
+pixels. Either zoom in, or set the interval to the size you are actually laying
+out, and it appears. Nothing about where things land changes; only whether the
+lines are worth drawing.
 - **The interval** is how far apart those positions are, in level units. Click the
   box for the usual sizes — 1, 2, 4, 8, 16, 32, 64, 128 — or type any number over
   it if your level wants something else, like `24`.
@@ -995,9 +1013,9 @@ the editor takes the change.
   angle. Position, angle and size can all be changed in the picture, but only
   with `G`, `R` and `S`; there is nothing on screen to grab hold of, and there is
   no way to scale one entity about a corner rather than about its middle.
-- **A grid or rulers you can see.** The snap is a switch and two numbers in the bar and
-  nothing is drawn for it, so a board lines up without ever showing you the
-  lines it lined up to.
+- **Rulers, or a grid while snapping is off.** The grid appears with the Snap
+  switch and goes with it, so laying a level out by eye means laying it out with
+  nothing drawn. There are no rulers down the edges of the picture at all.
 - **Two levels open at once.**
 - **Saved panel layouts.** Drag the panels wherever you like; the arrangement
   resets when the page reloads. Which of the three Assets views you chose, the

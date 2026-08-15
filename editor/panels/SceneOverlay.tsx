@@ -1,6 +1,7 @@
-import type { ReactElement } from 'react'
+import { useId, type ReactElement } from 'react'
 
 import type { DrawnEntity, ShownScene } from '../../runtime'
+import type { DrawnGrid } from '../shell/grid'
 import type { Scale, Turn } from '../shell/useSceneGestures'
 import { describeZoom } from '../shell/zoom'
 
@@ -20,6 +21,12 @@ import { describeZoom } from '../shell/zoom'
 
 interface SceneOverlayProps {
   shown: ShownScene
+  /**
+   * The grid to draw under everything, or null when there is none to draw —
+   * which is snapping being off, or its cells being too small to read
+   * (`../shell/grid.ts`).
+   */
+  grid: DrawnGrid | null
   /**
    * Every selected entity, in the order they were selected — so the last one is
    * the primary one, the one `F` frames and `G` grabs. Empty when the selection
@@ -48,6 +55,7 @@ interface SceneOverlayProps {
  */
 export function SceneOverlay({
   shown,
+  grid,
   selected,
   axis,
   turning,
@@ -60,6 +68,9 @@ export function SceneOverlay({
 
   return (
     <svg className="scene__overlay" data-testid="scene-overlay" aria-hidden="true">
+      {/* First, so everything else in the level and every mark about it is on
+          top of the floor rather than behind it. */}
+      {grid !== null && <Grid grid={grid} />}
       <Origin at={shown.sceneOrigin} />
       {primary !== null && axis !== null && <Axis at={primary.origin} axis={axis} />}
       {drawn.map((entity) => (
@@ -68,6 +79,58 @@ export function SceneOverlay({
       {turning !== null && <Turning turn={turning} />}
       {scaling !== null && <Scaling scale={scaling} />}
     </svg>
+  )
+}
+
+/**
+ * The grid the snap lands things on, drawn.
+ *
+ * **One tile repeated, rather than a line per cell.** A tiled pattern is a
+ * single element whichever way the camera moves, where a panel-wide grid of
+ * six-pixel cells is several hundred `<line>`s that React would rebuild on every
+ * frame of a pan — the kind of jank that makes a viewport feel like a web page.
+ * The cost of the choice is that the lines cannot be counted from the outside,
+ * so what the grid *is* is published as numbers on the group instead.
+ *
+ * The tile's own lines are drawn a half-pixel inside it rather than on its edge.
+ * A pattern clips its contents to the tile, so a stroke centred on the boundary
+ * would lose half its width and come out fainter than the same line drawn
+ * anywhere else — the sort of difference that reads as the grid fading at
+ * certain zooms.
+ *
+ * The pattern's id is per-instance rather than a constant. Two viewports are not
+ * something the layout offers today, and an id collision between them would not
+ * fail loudly: the second overlay would quietly paint the first one's spacing.
+ */
+function Grid({ grid }: { grid: DrawnGrid }): ReactElement {
+  // Sanitized, because a React id is decorated with characters that a URL
+  // reference inside `fill` cannot carry.
+  const pattern = `scene-grid-${useId().replaceAll(/[^\w-]/g, '')}`
+
+  return (
+    <g
+      className="scene__grid"
+      data-testid="scene-grid"
+      // What is being drawn, in both units: the level's, which is the number in
+      // the interval field, and the screen's, which is what decides whether it
+      // is drawn at all.
+      data-grid-step={grid.step}
+      data-grid-cell={grid.cell}
+    >
+      <defs>
+        <pattern
+          id={pattern}
+          patternUnits="userSpaceOnUse"
+          x={grid.from.x}
+          y={grid.from.y}
+          width={grid.cell}
+          height={grid.cell}
+        >
+          <path d={`M 0.5 0 V ${grid.cell} M 0 0.5 H ${grid.cell}`} />
+        </pattern>
+      </defs>
+      <rect width="100%" height="100%" fill={`url(#${pattern})`} />
+    </g>
   )
 }
 

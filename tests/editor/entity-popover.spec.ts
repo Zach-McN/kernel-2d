@@ -257,6 +257,69 @@ test('Delete takes only the entity the window is about', async ({ page }) => {
   await expect(row(page, 'Slime')).toBeVisible()
 })
 
+// --- snapping this one onto the grid ---------------------------------------
+
+/**
+ * The grid in the viewport bar, which is the grid this button uses — one
+ * interval for the whole window, whichever door the button was reached through.
+ */
+async function setGrid(page: Page, step: number, offset: number): Promise<void> {
+  await page.getByTestId('scene-snap-step').fill(String(step))
+  await page.getByTestId('scene-snap-offset').fill(String(offset))
+  await expect(page.getByTestId('scene-snap')).toHaveAttribute('data-snap-step', String(step))
+  await expect(page.getByTestId('scene-snap')).toHaveAttribute('data-snap-offset', String(offset))
+}
+
+test('Snap to grid puts it on the nearest grid position, and Ctrl-Z puts it back', async ({ page }) => {
+  const spot = await entitySpot(page, 'Knight')
+  await setGrid(page, 16, 8)
+  await page.mouse.click(spot.x, spot.y, { button: 'right' })
+  const before = await page.getByTestId('entity-x-control').inputValue()
+
+  await page.getByTestId('popover-snap').click()
+
+  // The offset grid, not a grid through the origin: 16 from 8 reaches 8, 24, 40.
+  const after = {
+    x: Number(await page.getByTestId('entity-x-control').inputValue()),
+    y: Number(await page.getByTestId('entity-y-control').inputValue()),
+  }
+  expect((after.x - 8) % 16).toBe(0)
+  expect((after.y - 8) % 16).toBe(0)
+  expect(String(after.x)).not.toBe(before)
+  // The window is still open on it, showing the numbers it just changed.
+  await expect(page.getByTestId('entity-popover')).toBeVisible()
+  await expect(page.getByTestId('popover-x-control')).toHaveValue(String(after.x))
+
+  await page.keyboard.press('ControlOrMeta+z')
+  await expect(page.getByTestId('entity-x-control')).toHaveValue(before)
+})
+
+/**
+ * An entity that is already there is told so rather than being moved nowhere:
+ * an edit that changes no number would still be a press of Ctrl-Z to walk back
+ * past.
+ */
+test('it says so instead when the entity is already on the grid', async ({ page }) => {
+  const spot = await entitySpot(page, 'Knight')
+  await setGrid(page, 16, 8)
+  await page.mouse.click(spot.x, spot.y, { button: 'right' })
+  await page.getByTestId('popover-snap').click()
+
+  await expect(page.getByTestId('popover-snap')).toBeDisabled()
+  await expect(page.getByTestId('popover-snap')).toHaveAttribute('title', /Already on the grid/)
+})
+
+test('the list’s door snaps to the same grid', async ({ page }) => {
+  await openLevel(page)
+  await setGrid(page, 16, 8)
+
+  await row(page, 'Knight').click({ button: 'right' })
+  await inOutliner(page).getByTestId('popover-snap').click()
+
+  const x = Number(await page.getByTestId('entity-x-control').inputValue())
+  expect((x - 8) % 16).toBe(0)
+})
+
 // --- the Outliner's door ---------------------------------------------------
 
 test('right-clicking a row opens the same window, on that entity', async ({ page }) => {

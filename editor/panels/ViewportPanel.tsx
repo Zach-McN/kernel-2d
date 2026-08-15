@@ -18,6 +18,7 @@ import { comparePictures, describeComparison, type PlayComparison } from '../she
 import { usePlayMode, type PlayState } from '../shell/play-mode'
 import { useProject } from '../shell/project-context'
 import { useRunningLevel, type RunSeams } from '../shell/running-level'
+import { gridOnScreen } from '../shell/grid'
 import { describeProblem, problemsIn, useSceneAssets } from '../shell/scene-assets'
 import { describePrefabProblem, prefabProblemsIn, useResolvedScene } from '../shell/scene-prefabs'
 import { useDrawScene, useSceneView, type SceneViewState } from '../shell/scene-view-context'
@@ -222,6 +223,12 @@ export function ViewportPanel(): ReactElement {
   const camera = current?.camera ?? null
   const visible = current === null ? null : onScreen(current)
 
+  // The floor, from the renderer's own report of where the scene's origin
+  // landed and how close the camera is — never a second reading of either, or
+  // the lines would drift off the positions they claim to mark
+  // (`editor/shell/grid.ts`).
+  const grid = current === null ? null : gridOnScreen(current.sceneOrigin, current.camera.scale, placing.snap)
+
   /*
    * Everything that takes the popover's situation away closes it: the entity
    * going, the selection moving elsewhere, the camera moving (the window is
@@ -366,6 +373,7 @@ export function ViewportPanel(): ReactElement {
         {current !== null && !mode.active && (
           <SceneOverlay
             shown={current}
+            grid={grid}
             selected={removal.entities}
             axis={gestures.grabbing?.axis ?? null}
             turning={gestures.turning}
@@ -1602,8 +1610,8 @@ function SnapControls({ placing }: { placing: Placing }): ReactElement {
         aria-pressed={snap.on}
         title={
           snap.on
-            ? 'Positions land on the grid. Hold Ctrl while moving to place anywhere. Click to turn snapping off.'
-            : 'Positions land anywhere. Hold Ctrl while moving to land on the grid. Click to turn snapping on.'
+            ? 'Positions land on the grid, and the grid is drawn over the level whenever its cells are far enough apart to see. Hold Ctrl while moving to place anywhere. Click to turn snapping off.'
+            : 'Positions land anywhere, and no grid is drawn. Hold Ctrl while moving to land on the grid. Click to turn snapping on.'
         }
         onClick={() => setSnap({ ...snap, on: !snap.on })}
       >

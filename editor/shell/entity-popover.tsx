@@ -80,7 +80,7 @@ export function useEntityPopover(): EntityPopovers {
  * Wider than the window itself by the margin it is kept from the edge, and one
  * number for both panels: the window is the same size in either.
  */
-export const POPOVER_ROOM: Room = { width: 234, height: 135 }
+export const POPOVER_ROOM: Room = { width: 234, height: 163 }
 
 /**
  * Where the window sits for a click at `at`, in the panel's own pixels.
