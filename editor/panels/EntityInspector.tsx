@@ -336,6 +336,18 @@ export function EntityInspector({
             </p>
           )}
           {own !== null && <Field label="Reference" value={own.texture.id} testId="entity-texture-id" />}
+          {/*
+            Said rather than offered. Nothing in this editor writes an opacity
+            yet — the platformer's fading particles are spawned while a level
+            runs and never authored — but a level that carries one would
+            otherwise be drawn faintly with no panel in the editor admitting
+            why, which is the trap the "other components" note exists to avoid.
+            The day a designer wants to fade something by hand, this line
+            becomes a field.
+          */}
+          {own?.opacity !== undefined && (
+            <Field label="Opacity" value={String(own.opacity)} testId="entity-opacity" />
+          )}
           <Note>
             Where this sprite sits is decided by the pivot in the texture&apos;s own import settings, not
             here.
@@ -378,7 +390,14 @@ function setTexture(scenePath: string, entityId: string, reference: AssetRef | n
     if (target === undefined) return
 
     if (reference === null) delete target.components['sprite']
-    else target.components['sprite'] = { texture: reference }
+    else {
+      // Spread rather than replaced: the component may carry an opacity, or a
+      // key this editor has never heard of, and picking a texture is not a
+      // reason to lose either (text-formats T9's rule, one level in).
+      const standing = target.components['sprite']
+      const kept = typeof standing === 'object' && standing !== null ? standing : {}
+      target.components['sprite'] = { ...kept, texture: reference }
+    }
   })
 }
 

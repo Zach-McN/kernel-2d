@@ -96,6 +96,32 @@ export interface Transform {
 /** Draws a texture. */
 export interface SpriteComponent {
   texture: AssetRef
+  /**
+   * How solidly to draw it: 1 is the picture as it is, 0 is invisible, and
+   * **absent is 1** — which is why it is optional rather than defaulted at
+   * parse time. Every level written before this field existed goes on meaning
+   * exactly what it meant, and nothing is added to a file that never asked
+   * for it.
+   *
+   * **The one appearance property an entity could not carry**, and it is a
+   * field rather than a seam because of what it is not: the canvas size, the
+   * zoom and the clamp are the host's (`runtime/game/camera.ts`), so an entity
+   * cannot know them — but *how faintly to draw me* is the entity's own
+   * business, in the same family as which texture it wears and how big its
+   * transform makes it. The test that decides those cases (`editor-kernel`
+   * D32) asks whether a system could compute the answer from the entity list
+   * alone; here it can, and this is simply where it writes it down.
+   *
+   * Demanded by the platformer's particles, which fade over the last part of
+   * their life — a *changing* faintness, which is what the scenery's baked-in
+   * fade (`games/platformer-2d`, game-content T3) could not have been.
+   *
+   * Out of range is clamped where it is applied rather than refused here: a
+   * `2` or a `-1` is a typo, and losing the sprite entirely — which is what a
+   * failed component parse means — is a far worse answer to a typo than
+   * drawing it solid.
+   */
+  opacity?: number | undefined
 }
 
 /**
@@ -226,6 +252,11 @@ export const TransformSchema: z.ZodType<Transform> = z.looseObject({
 
 export const SpriteComponentSchema: z.ZodType<SpriteComponent> = z.looseObject({
   texture: AssetRefSchema,
+  // Finite, and nothing more: the range is the renderer's to clamp (see the
+  // field's own note), but a `NaN` alpha is a sprite that vanishes with
+  // nothing on screen saying which field did it — the same reason the spin
+  // rate is finite.
+  opacity: z.number().finite().optional(),
 })
 
 export const PrefabComponentSchema: z.ZodType<PrefabComponent> = z.looseObject({

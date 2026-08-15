@@ -203,6 +203,41 @@ describe('a scene rejects what it should', () => {
     ).toThrow()
   })
 
+  it('keeps an opacity through a round trip, and lets a level not mention one', () => {
+    const faint = {
+      ...knight,
+      components: { sprite: { ...(knight.components['sprite'] as object), opacity: 0.25 } },
+    }
+    const parsed = SceneSchema.parse(JSON.parse(serializeScene({ ...scene, entities: [faint, heart] })))
+    expect(spriteOf(parsed.entities[0] as Entity)?.opacity).toBe(0.25)
+    // The heart never said anything about being faint, and still does not: the
+    // field is optional rather than defaulted, so a level written before it
+    // existed is byte-for-byte the level it was.
+    expect(spriteOf(parsed.entities[1] as Entity)?.opacity).toBeUndefined()
+    expect(JSON.stringify(parsed.entities[1])).not.toContain('opacity')
+  })
+
+  it.each([Infinity, -Infinity, NaN])('refuses an opacity of %p', (value) => {
+    // A range check is deliberately *not* here — 2 and −1 are clamped by the
+    // renderer, because losing a whole sprite is a bad answer to a typo. NaN is
+    // different: it makes the sprite vanish with nothing naming the field.
+    expect(() =>
+      SceneSchema.parse({
+        ...scene,
+        entities: [{ ...knight, components: { sprite: { texture: { id: 'a1', path: 'a.png' }, opacity: value } } }],
+      }),
+    ).toThrow()
+  })
+
+  it('takes an opacity outside the range, and leaves the clamping to the renderer', () => {
+    expect(() =>
+      SceneSchema.parse({
+        ...scene,
+        entities: [{ ...knight, components: { sprite: { texture: { id: 'a1', path: 'a.png' }, opacity: 2 } } }],
+      }),
+    ).not.toThrow()
+  })
+
   it('refuses a turn rate that is not a number, because a system would run it sixty times a second', () => {
     expect(() =>
       SceneSchema.parse({ ...scene, entities: [{ ...heart, components: { spin: { degreesPerSecond: '90' } } }] }),

@@ -1,7 +1,7 @@
 import * as Phaser from 'phaser'
 
 import type { Pivot } from '../formats/meta-schema'
-import { screenOf, type Entity } from '../formats/scene-schema'
+import { screenOf, spriteOf, type Entity } from '../formats/scene-schema'
 import { toPinnedScreenPoint, toScreenPoint, toScreenRadians, type Camera, type Size } from './coordinates'
 
 /**
@@ -57,6 +57,15 @@ export interface DrawnEntity {
    * and framing that chased it would never settle.
    */
   pinned?: true
+  /**
+   * How solidly it was drawn, **read back off the drawn object** rather than
+   * echoed from the component (phaser4-runtime P4) — and present only when it
+   * is not fully solid, so the ordinary entity's report is exactly what it was
+   * before this existed. A faded sprite is otherwise invisible to every
+   * instrument the editor has: it lands in the same place and covers the same
+   * rectangle.
+   */
+  opacity?: number
 }
 
 export interface EntityLayer {
@@ -76,6 +85,16 @@ export interface EntityLayer {
   ) => DrawnEntity[]
   /** Removes everything. Used when no scene is open. */
   clear: () => void
+}
+
+/**
+ * How solidly to draw this entity: its sprite's `opacity`, clamped to what an
+ * alpha can be, and 1 for an entity that never mentioned it.
+ */
+function opacityOf(entity: Entity): number {
+  const wanted = spriteOf(entity)?.opacity
+  if (wanted === undefined) return 1
+  return Math.min(1, Math.max(0, wanted))
 }
 
 export function createEntityLayer(scene: Phaser.Scene): EntityLayer {
@@ -146,6 +165,12 @@ export function createEntityLayer(scene: Phaser.Scene): EntityLayer {
             entity.transform.scaleY * camera.scale * pixelRatio,
           )
           .setDepth(index)
+          // Clamped here rather than refused by the schema: an opacity outside
+          // 0..1 is a typo, and a failed component parse would take the whole
+          // sprite away, which is a much worse answer to a typo than drawing
+          // it solid. Always set, so an entity that stops being faint goes
+          // back to solid rather than keeping the alpha it had last frame.
+          .setAlpha(opacityOf(entity))
 
         // Read back off the object rather than recomputed from the transform,
         // so the rectangle handed out is the one the renderer is actually
@@ -163,6 +188,7 @@ export function createEntityLayer(scene: Phaser.Scene): EntityLayer {
             height: bounds.height / pixelRatio,
           },
           ...(pin === null ? {} : { pinned: true as const }),
+          ...(image.alpha === 1 ? {} : { opacity: image.alpha }),
         }
       })
     },

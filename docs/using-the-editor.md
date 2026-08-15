@@ -414,6 +414,21 @@ Sounds are files in your folder like everything else: drop an MP3 into
 goes missing, the level runs silent and the bar under the picture says which
 file, by name. An export refuses to build a folder whose music file is gone.
 
+### Drawing something faintly
+
+A sprite can be drawn see-through. It is a number between 0 and 1 written into the
+level — 1 is the picture as it is, 0 is invisible — and a sprite that says nothing
+about it is solid, as everything always was.
+
+**There is no control for it yet, on purpose.** Nothing you would author needs one so
+far; it exists because a game's own code fades things while a level runs, which is how
+the platformer's sparks and dust die away. If you open a level that has one, the
+Inspector's Sprite section says so, so a see-through sprite is never a mystery. Say the
+word and it becomes a field you can drag.
+
+A number outside 0 to 1 is treated as the nearest one it can be, rather than losing
+the picture: a stray digit should not make a sprite disappear.
+
 ### Sound effects
 
 **A game's own code can make a noise when something happens** — a jump, a coin, a

@@ -41,6 +41,13 @@ export interface DrawnInScene {
    * missing texture, or an entity with no sprite at all.
    */
   bounds: Rect | null
+  /**
+   * How solidly it was drawn, when that is not fully — carried straight
+   * through from the renderer's own read-back, because it is the one thing
+   * about a sprite that no rectangle can show. Absent means solid, so a level
+   * with nothing faded in it projects exactly as it did before.
+   */
+  opacity?: number
 }
 
 /** In list order, which is draw order. */
@@ -54,6 +61,7 @@ export function inSceneUnits(shown: ShownScene): DrawnInScene[] {
       y: position.y,
       bounds:
         entity.bounds === null ? null : toSceneRect(entity.bounds, shown.drawnWith, shown.canvasSize),
+      ...(entity.opacity === undefined ? {} : { opacity: entity.opacity }),
     }
   })
 }
