@@ -22,9 +22,11 @@
 
 export {
   copyEntity,
+  screenOf,
   type AssetRef,
   type ComponentHolder,
   type Entity,
+  type ScreenComponent,
   type Transform,
 } from '../formats/scene-schema.js'
 

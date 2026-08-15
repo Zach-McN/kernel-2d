@@ -137,6 +137,33 @@ export interface SpinComponent {
   degreesPerSecond: number
 }
 
+/**
+ * Pins this entity to the screen rather than to the world.
+ *
+ * `anchor` is a point on the canvas as fractions of its size — `(0, 0)` the
+ * bottom-left corner, `(1, 1)` the top-right, `(0.5, 0.5)` the middle — y-up
+ * like every other coordinate in a scene. The entity's transform then means
+ * *offset from that point*, in scene units at the camera's current scale, so
+ * a coin counter eight units in from the top-right corner is `anchor: {1, 1}`
+ * standing at `(-8, -8)`, and it stays there however the camera moves and
+ * whatever size the window is. Rotation and scale mean what they always mean.
+ *
+ * **The first component that is about the screen rather than the world**,
+ * demanded by the platformer's coin counter, banner and controls hint — three
+ * nouns its spec names as living on the screen and alive during play, which
+ * no camera-following entity can be. It is a kernel component rather than a
+ * game convention because a system cannot fake it: the canvas size, the scale
+ * and the clamp are all the host's (`runtime/game/camera.ts`), so "top-right
+ * of the window" has no scene-unit answer game code could compute.
+ *
+ * Fractions rather than named corners: a designer still thinks in corners
+ * (the Inspector offers them), and a fraction expresses "a third of the way
+ * across" the day something wants it, with no enum to outgrow.
+ */
+export interface ScreenComponent {
+  anchor: { x: number; y: number }
+}
+
 export interface Entity {
   /** Unique within the scene; generated once and never changed. */
   id: string
@@ -229,10 +256,18 @@ export const SpinComponentSchema: z.ZodType<SpinComponent> = z.looseObject({
  * buys validation and an inspector for it; not registering one costs nothing
  * but those.
  */
+export const ScreenComponentSchema: z.ZodType<ScreenComponent> = z.looseObject({
+  anchor: z.looseObject({
+    x: z.number().finite(),
+    y: z.number().finite(),
+  }),
+})
+
 export const COMPONENT_SCHEMAS = {
   sprite: SpriteComponentSchema,
   prefab: PrefabComponentSchema,
   spin: SpinComponentSchema,
+  screen: ScreenComponentSchema,
 } as const
 
 export type KnownComponentType = keyof typeof COMPONENT_SCHEMAS
@@ -375,6 +410,11 @@ export function spriteOf(holder: ComponentHolder): SpriteComponent | null {
  */
 export function spinOf(holder: ComponentHolder): SpinComponent | null {
   return componentOf(holder, 'spin')
+}
+
+/** Where on the screen this entity is pinned, or null if it stands in the world. */
+export function screenOf(holder: ComponentHolder): ScreenComponent | null {
+  return componentOf(holder, 'screen')
 }
 
 /** Which prefab this entity is an instance of, or null if it is not one. */

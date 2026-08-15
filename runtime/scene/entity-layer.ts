@@ -1,8 +1,8 @@
 import * as Phaser from 'phaser'
 
 import type { Pivot } from '../formats/meta-schema'
-import type { Entity } from '../formats/scene-schema'
-import { toScreenPoint, toScreenRadians, type Camera, type Size } from './coordinates'
+import { screenOf, type Entity } from '../formats/scene-schema'
+import { toPinnedScreenPoint, toScreenPoint, toScreenRadians, type Camera, type Size } from './coordinates'
 
 /**
  * The entity layer: a set of drawn objects kept in step with a list of
@@ -49,6 +49,14 @@ export interface DrawnEntity {
   origin: { x: number; y: number }
   /** The rectangle it covers, or null when it draws nothing at all. */
   bounds: { x: number; y: number; width: number; height: number } | null
+  /**
+   * Set when the entity is pinned to the screen (`screen` component) rather
+   * than standing in the world. Reported so that anything measuring *the
+   * level* — the extent that framing and an exported page's fit read — can
+   * leave it out: a counter in the corner is not part of how wide a level is,
+   * and framing that chased it would never settle.
+   */
+  pinned?: true
 }
 
 export interface EntityLayer {
@@ -95,7 +103,13 @@ export function createEntityLayer(scene: Phaser.Scene): EntityLayer {
         // the art just as crisp and would make the distance between two
         // entities depend on the zoom, which is a worse trade than it sounds
         // (see `snapCamera`).
-        const position = toScreenPoint(entity.transform, camera, canvas)
+        // A pinned entity is placed against the canvas and ignores where the
+        // camera is looking; everything else is placed through the camera.
+        const pin = screenOf(entity)
+        const position =
+          pin === null
+            ? toScreenPoint(entity.transform, camera, canvas)
+            : toPinnedScreenPoint(entity.transform, pin.anchor, camera, canvas)
         const sprite = resolve(entity)
 
         if (sprite === null) {
@@ -107,7 +121,7 @@ export function createEntityLayer(scene: Phaser.Scene): EntityLayer {
             existing.destroy()
             drawn.delete(entity.id)
           }
-          return { id: entity.id, origin: position, bounds: null }
+          return { id: entity.id, origin: position, bounds: null, ...(pin === null ? {} : { pinned: true }) }
         }
 
         let image = drawn.get(entity.id)
@@ -148,6 +162,7 @@ export function createEntityLayer(scene: Phaser.Scene): EntityLayer {
             width: bounds.width / pixelRatio,
             height: bounds.height / pixelRatio,
           },
+          ...(pin === null ? {} : { pinned: true as const }),
         }
       })
     },

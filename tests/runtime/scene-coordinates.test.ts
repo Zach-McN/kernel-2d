@@ -4,6 +4,8 @@ import {
   DEFAULT_CAMERA,
   clampFocus,
   framing,
+  toPinnedOffset,
+  toPinnedScreenPoint,
   isOnScreen,
   panBy,
   snapCamera,
@@ -315,5 +317,30 @@ describe('clamping a game-asked focus to what there is to see', () => {
 
   it('clamps nothing when there is no content to hold to', () => {
     expect(clampFocus({ x: -500, y: 9000 }, null, canvas, 1)).toEqual({ x: -500, y: 9000 })
+  })
+})
+
+describe('pinning to the screen', () => {
+  const canvas: Size = { width: 400, height: 300 }
+  const zoomed: Camera = { scale: 2, focus: { x: 9999, y: -9999 } }
+
+  it('places the top-right anchor at the top-right pixel, whatever the camera looks at', () => {
+    expect(toPinnedScreenPoint({ x: 0, y: 0 }, { x: 1, y: 1 }, zoomed, canvas)).toEqual({ x: 400, y: 0 })
+    expect(toPinnedScreenPoint({ x: 0, y: 0 }, { x: 0, y: 0 }, zoomed, canvas)).toEqual({ x: 0, y: 300 })
+    expect(toPinnedScreenPoint({ x: 0, y: 0 }, { x: 0.5, y: 0.5 }, zoomed, canvas)).toEqual({ x: 200, y: 150 })
+  })
+
+  it('measures the offset in scene units at the camera scale, y up', () => {
+    // Eight units in and eight down from the top-right corner, at 2x: sixteen pixels each.
+    expect(toPinnedScreenPoint({ x: -8, y: -8 }, { x: 1, y: 1 }, zoomed, canvas)).toEqual({ x: 384, y: 16 })
+  })
+
+  it('round-trips through its inverse', () => {
+    const offset = { x: -13.5, y: 7 }
+    const anchor = { x: 1, y: 0.5 }
+    const there = toPinnedScreenPoint(offset, anchor, zoomed, canvas)
+    const back = toPinnedOffset(there, anchor, zoomed, canvas)
+    expect(back.x).toBeCloseTo(offset.x, 10)
+    expect(back.y).toBeCloseTo(offset.y, 10)
   })
 })

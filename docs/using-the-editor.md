@@ -366,6 +366,30 @@ update loop had something driving it before there was a game to drive it. Now th
 there is, Spin and its field go together — nothing depends on them any more, which
 is exactly the state that makes removing them safe. Do not build a level around it.
 
+### Pinned to the screen
+
+The Inspector has a **Pinned to** picker: choose a corner or edge of the screen
+(or the centre) and the entity stays there wherever the camera looks — a coin
+counter in the top-right, a message in the middle. Choosing **Not pinned** puts
+it back in the world. Nine places are offered; the platformer's coin counter and
+its controls hint are the first two things pinned this way.
+
+Three things to know:
+
+- **Pinning does not move it.** The moment you pick a corner, the entity stays
+  exactly where it appears; its Position now reads as the distance from that
+  corner, in the same units as everything else, and it drags and types like any
+  other entity. Ctrl-Z unpins it like any other edit.
+- **It grows with the zoom, like the level.** A pinned picture is the same size
+  as the same picture would be in the world beside it, so a 16-pixel counter is
+  16 level-pixels wide at every zoom rather than 16 screen-pixels.
+- **Frame everything ignores it.** `Home` frames the level, not the corner the
+  counter sits in — otherwise the level would never fit.
+
+Prefabs can be pinned too, and a placement inherits the pin unless it picks its
+own. Anything a game's own code adds while a level runs (the counter's digits,
+a banner) can be pinned the same way, and behaves the same in an exported folder.
+
 ### Music
 
 **A level can play a sound while it runs.** Click the level's file in the Assets

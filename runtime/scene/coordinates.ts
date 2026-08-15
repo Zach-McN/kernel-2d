@@ -80,6 +80,34 @@ export function toScreenPoint(scenePoint: Point, camera: Camera, canvas: Size): 
   }
 }
 
+/**
+ * Where a screen-pinned entity lands on the canvas: an anchor given as
+ * fractions of the canvas (y-up, so `(1, 1)` is the top-right corner), plus an
+ * offset in scene units at the camera's scale. The camera's *focus* plays no
+ * part — that is the whole of what "pinned to the screen" means — but its
+ * scale does, so a pinned picture is exactly as big as the same picture in the
+ * world beside it, and grows with the zoom like everything else.
+ */
+export function toPinnedScreenPoint(
+  offset: Point,
+  anchor: Point,
+  camera: Camera,
+  canvas: Size,
+): Point {
+  return {
+    x: anchor.x * canvas.width + offset.x * camera.scale,
+    y: (1 - anchor.y) * canvas.height - offset.y * camera.scale,
+  }
+}
+
+/** The inverse of `toPinnedScreenPoint`, for a pointer landing on a pinned entity. */
+export function toPinnedOffset(screenPoint: Point, anchor: Point, camera: Camera, canvas: Size): Point {
+  return {
+    x: (screenPoint.x - anchor.x * canvas.width) / camera.scale,
+    y: ((1 - anchor.y) * canvas.height - screenPoint.y) / camera.scale,
+  }
+}
+
 /** The inverse. Its existence is what makes the flip testable as a round trip. */
 export function toScenePoint(screenPoint: Point, camera: Camera, canvas: Size): Point {
   return {

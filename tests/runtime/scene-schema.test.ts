@@ -10,6 +10,7 @@ import {
   defaultScene,
   defaultTransform,
   isKnownComponentType,
+  screenOf,
   serializeScene,
   spinOf,
   spriteOf,
@@ -74,6 +75,13 @@ describe('a scene survives a round trip', () => {
     ['one an AI produced', generated],
     ['an entity with no components at all', { ...scene, entities: [defaultEntity('abc123', 'Empty')] }],
     ['an entity that turns while the level runs', { ...scene, entities: [heart] }],
+    [
+      'an entity pinned to the screen',
+      {
+        ...scene,
+        entities: [{ ...defaultEntity('abc123', 'Counter'), components: { screen: { anchor: { x: 1, y: 1 } } } }],
+      },
+    ],
     [
       'a level with music',
       { ...scene, music: { id: 'theme00deadbeef0', path: 'assets/audio/music/theme.mp3' } },
@@ -233,6 +241,18 @@ describe('reading a component', () => {
   it('hands back a turn rate, and null for an entity that does not turn', () => {
     expect(spinOf(heart)?.degreesPerSecond).toBe(90)
     expect(spinOf(knight)).toBeNull()
+  })
+
+  it('hands back where an entity is pinned, and null for one standing in the world', () => {
+    const counter = { ...defaultEntity('abc123', 'Counter'), components: { screen: { anchor: { x: 1, y: 1 } } } }
+    expect(screenOf(counter)?.anchor).toEqual({ x: 1, y: 1 })
+    expect(screenOf(knight)).toBeNull()
+    expect(isKnownComponentType('screen')).toBe(true)
+  })
+
+  it('treats a mangled pin as absent rather than throwing', () => {
+    const mangled = { ...defaultEntity('abc123', 'Counter'), components: { screen: { anchor: 'top-right' } } }
+    expect(screenOf(mangled)).toBeNull()
   })
 })
 

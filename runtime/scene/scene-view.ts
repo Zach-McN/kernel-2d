@@ -529,6 +529,9 @@ function extentOf(entities: readonly DrawnEntity[], camera: Camera, canvas: Size
   let extent: Rect | null = null
 
   for (const entity of entities) {
+    // A screen-pinned entity is not part of how big the level is: framing
+    // that included the corner counter would chase the window's own edge.
+    if (entity.pinned === true) continue
     const screen = entity.bounds ?? { x: entity.origin.x, y: entity.origin.y, width: 0, height: 0 }
     const rect = toSceneRect(screen, camera, canvas)
     extent = extent === null ? rect : union(extent, rect)

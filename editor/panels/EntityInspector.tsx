@@ -3,16 +3,20 @@ import type { ReactElement } from 'react'
 import {
   SCENE_FORMAT,
   prefabRefOf,
+  screenOf,
   spinOf,
   spriteOf,
   unknownComponentTypesOf,
   type AssetRef,
   type Entity,
   type Scene,
+  type ScreenComponent,
   type SpriteComponent,
 } from '../../runtime/formats/scene-schema'
+import { toPinnedOffset, toScenePoint } from '../../runtime/scene/coordinates'
 import type { ProjectTree } from '../../sidecar/tree-schema'
 import { basename } from '../shell/asset-kinds'
+import { useSceneView } from '../shell/scene-view-context'
 import { describeProblem, type SceneAssets } from '../shell/scene-assets'
 import { describePrefabProblem, instancesOf, useResolvedScene, type PrefabProblem } from '../shell/scene-prefabs'
 import { useSelection } from '../shell/selection'
@@ -35,6 +39,52 @@ import { TexturePicker } from './TexturePicker'
  * into one entity's X and then another's is two steps rather than one — the
  * same rule as two files, one level down.
  */
+
+/**
+ * The corners a designer picks from. The format stores fractions (a third of
+ * the way across is expressible); the picker names the nine places anyone
+ * actually asks for. A fraction that is none of these reads as its nearest
+ * corner in the picker and is left exactly as it is in the file.
+ */
+const ANCHORS = {
+  none: null,
+  'top-left': { x: 0, y: 1 },
+  top: { x: 0.5, y: 1 },
+  'top-right': { x: 1, y: 1 },
+  left: { x: 0, y: 0.5 },
+  centre: { x: 0.5, y: 0.5 },
+  right: { x: 1, y: 0.5 },
+  'bottom-left': { x: 0, y: 0 },
+  bottom: { x: 0.5, y: 0 },
+  'bottom-right': { x: 1, y: 0 },
+} as const
+
+type AnchorName = keyof typeof ANCHORS
+
+const ANCHOR_LABELS: Record<AnchorName, string> = {
+  none: 'Not pinned — stands in the world',
+  'top-left': 'Top-left corner',
+  top: 'Top edge, centred',
+  'top-right': 'Top-right corner',
+  left: 'Left edge, centred',
+  centre: 'Centre of the screen',
+  right: 'Right edge, centred',
+  'bottom-left': 'Bottom-left corner',
+  bottom: 'Bottom edge, centred',
+  'bottom-right': 'Bottom-right corner',
+}
+
+function anchorNameOf(anchor: ScreenComponent['anchor'] | null): AnchorName {
+  if (anchor === null) return 'none'
+  const column = anchor.x < 0.25 ? 0 : anchor.x > 0.75 ? 2 : 1
+  const row = anchor.y < 0.25 ? 0 : anchor.y > 0.75 ? 2 : 1
+  const names: AnchorName[][] = [
+    ['bottom-left', 'bottom', 'bottom-right'],
+    ['left', 'centre', 'right'],
+    ['top-left', 'top', 'top-right'],
+  ]
+  return names[row]?.[column] ?? 'centre'
+}
 
 interface EntityInspectorProps {
   scenePath: string
@@ -62,6 +112,7 @@ export function EntityInspector({
   prefabProblem,
 }: EntityInspectorProps): ReactElement {
   const resolvedScene = useResolvedScene()
+  const view = useSceneView()
 
   const change = (field: string, label: string, recipe: (entity: Entity) => void): void => {
     editDocument(scenePath, { label, merge: `${scenePath}#${entity.id}#${field}` }, (document) => {
@@ -87,6 +138,10 @@ export function EntityInspector({
   // carries rather than about a number typing into it would silently override.
   const spin = spinOf(entity)
   const inheritedSpin = spin === null ? spinOf(resolved) : null
+
+  // Where it is pinned, own or inherited, the same way.
+  const pin = screenOf(entity)
+  const inheritedPin = pin === null ? screenOf(resolved) : null
 
   return (
     <>
@@ -212,6 +267,58 @@ export function EntityInspector({
         <Note>
           Nothing turns while you are editing. Press Play to see it, and Stop to put it back where the file
           has it.
+        </Note>
+      </Section>
+
+      <Section title="Pinned to">
+        <Row label="Screen">
+          <select
+            className="control control--choice"
+            data-testid="entity-screen-control"
+            title="Pin this entity to a spot on the screen instead of a place in the world"
+            value={anchorNameOf(pin?.anchor ?? null)}
+            onChange={(event) => {
+              const anchor = ANCHORS[event.target.value as AnchorName] ?? null
+              // Where the entity is on screen right now, from the renderer's own
+              // report — so pinning keeps it exactly where it appears, and the
+              // position field starts saying the same place in the new terms
+              // rather than the sprite leaping to a corner-relative spot.
+              const shown = view.state === 'ready' ? view.shown : null
+              const there = shown?.entities.find((one) => one.id === entity.id)?.origin ?? null
+              change('screen', 'Pin to screen', (target) => {
+                // "Not pinned" is the absence of the component, not a component
+                // saying so — a level stays a description of what is in it.
+                if (anchor === null) delete target.components['screen']
+                else target.components['screen'] = { anchor: { ...anchor } }
+
+                if (there === null || shown === null) return
+                const kept =
+                  anchor === null
+                    ? toScenePoint(there, shown.drawnWith, shown.canvasSize)
+                    : toPinnedOffset(there, anchor, shown.drawnWith, shown.canvasSize)
+                target.transform.x = kept.x
+                target.transform.y = kept.y
+              })
+            }}
+          >
+            {(Object.keys(ANCHORS) as AnchorName[]).map((name) => (
+              <option key={name} value={name}>
+                {ANCHOR_LABELS[name]}
+              </option>
+            ))}
+          </select>
+        </Row>
+
+        {inheritedPin !== null && (
+          <Note data-testid="entity-screen-inherited">
+            This one is pinned to the {ANCHOR_LABELS[anchorNameOf(inheritedPin.anchor)].toLowerCase()} because its
+            prefab says so. Choosing here gives this placement its own pin.
+          </Note>
+        )}
+
+        <Note>
+          A pinned entity stays at its corner of the screen wherever the camera looks; its position is then
+          measured from that corner, in the same units, so it drags and types like anything else.
         </Note>
       </Section>
 
