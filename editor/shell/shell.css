@@ -1455,6 +1455,16 @@ body {
 }
 
 /*
+ * Turning. `crosshair` rather than a rotate cursor because browsers have no
+ * rotate cursor worth the name — and because the gizmo already follows the hand
+ * and says what is happening, so what the pointer needs is to be small and
+ * precise rather than to repeat it.
+ */
+.scene .viewport__stage[data-grab='turning'] {
+  cursor: crosshair;
+}
+
+/*
  * Every press puts another copy down. `copy` rather than `crosshair` because
  * that is what it is doing, and because the cursor is the only thing that
  * follows the hand — the caption saying so is at the bottom of the panel, which
@@ -1526,6 +1536,44 @@ body {
 .scene__handle circle {
   fill: none;
   stroke: var(--shell-good);
+  stroke-width: 1.5;
+}
+
+/* --- the rotate gizmo ----------------------------------------------------
+
+   In the accent, unlike the selection outline's green, and that is the colour
+   doing its one job: this is what is happening *now* (see the note where
+   `--shell-accent` is defined). The outline says which entities are selected and
+   stays green underneath while they turn, so the two never say the same thing in
+   the same colour. */
+
+/* The line from the pivot to the cursor. Dashed, like the axis guide, because it
+   is a measuring line across the picture rather than a thing in the level. */
+.scene__turn-line {
+  stroke: var(--shell-accent);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+}
+
+/* The angle swept so far. Barely there — it is a wedge covering the level, and
+   its job is to be readable at a glance without hiding what is underneath it. */
+.scene__turn-sweep {
+  fill: var(--shell-accent);
+  fill-opacity: 0.16;
+  stroke: var(--shell-accent-line);
+  stroke-width: 1;
+}
+
+/* Solid, so the point the group turns about is never mistaken for a selected
+   entity's hollow crosshair. */
+.scene__turn-pivot {
+  fill: var(--shell-accent);
+  stroke: none;
+}
+
+.scene__turn-gizmo circle {
+  fill: none;
+  stroke: var(--shell-accent);
   stroke-width: 1.5;
 }
 

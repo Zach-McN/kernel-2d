@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  ANGLE_STEP,
   SNAP_INTERVALS,
   WHOLE_UNITS,
   freePoint,
@@ -8,6 +9,7 @@ import {
   placeOn,
   snapPoint,
   snapTo,
+  turnOn,
   type Snap,
 } from '../../editor/shell/snap'
 
@@ -135,6 +137,59 @@ describe('the toggle, and Ctrl inverting it', () => {
    */
   it('snaps by arithmetic alone, whatever the switch says', () => {
     expect(snapTo(9.4, { ...TILES, on: false })).toBe(8)
+  })
+})
+
+/**
+ * The angle snap, which is the same switch and the same modifier as the grid —
+ * and, deliberately, not the same number.
+ */
+describe('the angle a turn lands on', () => {
+  const TILES_ON: Snap = { on: true, step: 16, offset: 8 }
+
+  it('lands on a multiple of the step with snapping on', () => {
+    expect(turnOn(37, TILES_ON, false)).toBe(30)
+    expect(turnOn(38, TILES_ON, false)).toBe(45)
+    expect(turnOn(-37, TILES_ON, false)).toBe(-30)
+  })
+
+  it('turns freely with snapping on and Ctrl held', () => {
+    expect(turnOn(37.4, TILES_ON, true)).toBe(37.4)
+  })
+
+  it('turns freely with snapping off and nothing held', () => {
+    expect(turnOn(37.4, { ...TILES_ON, on: false }, false)).toBe(37.4)
+  })
+
+  /** The half that catches an inversion written backwards, as with `placeOn`. */
+  it('lands on a multiple with snapping off and Ctrl held', () => {
+    expect(turnOn(37, { ...TILES_ON, on: false }, true)).toBe(30)
+  })
+
+  /**
+   * The interval is pixels; the angle step is degrees. Reading `snap.step` here
+   * would make one control secretly mean two things — a 16-pixel grid says
+   * nothing whatever about how far round something should turn.
+   */
+  it('ignores the grid interval entirely', () => {
+    expect(ANGLE_STEP).toBe(15)
+    expect(turnOn(37, { on: true, step: 16, offset: 0 }, false)).toBe(30)
+    expect(turnOn(37, { on: true, step: 3, offset: 0 }, false)).toBe(30)
+    expect(turnOn(37, { on: true, step: 128, offset: 0 }, false)).toBe(30)
+  })
+
+  /**
+   * **The amount turned is what snaps, not the angle ended up at**, and that is
+   * forced by the group case rather than chosen: entities in one selection start
+   * at different rotations, so rounding each *result* to a multiple of 15 would
+   * turn one member by 15° and another by 4°, which is not a rigid rotation.
+   * This function only ever sees the delta, which is how that is guaranteed
+   * rather than remembered.
+   */
+  it('is given the amount turned, so every member of a group turns equally', () => {
+    const applied = turnOn(37, TILES_ON, false)
+    const started = [0, 4, 91]
+    expect(started.map((was) => was + applied)).toEqual([30, 34, 121])
   })
 })
 

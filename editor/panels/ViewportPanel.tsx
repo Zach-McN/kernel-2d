@@ -21,9 +21,10 @@ import { useRunningLevel, type RunSeams } from '../shell/running-level'
 import { describeProblem, problemsIn, useSceneAssets } from '../shell/scene-assets'
 import { describePrefabProblem, prefabProblemsIn, useResolvedScene } from '../shell/scene-prefabs'
 import { useDrawScene, useSceneView, type SceneViewState } from '../shell/scene-view-context'
-import { SNAP_INTERVALS, placeOn } from '../shell/snap'
+import { pivotOf, shortestTurn, turnAbout, type Turned } from '../shell/rotate'
+import { ANGLE_STEP, SNAP_INTERVALS, placeOn, turnOn } from '../shell/snap'
 import { useSceneDropTarget, type SceneDropTarget } from '../shell/useSceneDropTarget'
-import { useSceneGestures, type Grab, type ScenePlacement } from '../shell/useSceneGestures'
+import { useSceneGestures, type Grab, type ScenePlacement, type Turn } from '../shell/useSceneGestures'
 import { useSelection } from '../shell/selection'
 import { useDeleteEntities } from '../shell/useDeleteEntities'
 import { useDuplicateEntity } from '../shell/useDuplicateEntity'
@@ -200,6 +201,7 @@ export function ViewportPanel(): ReactElement {
     frameAll: ready?.frameAll ?? noop,
     frameEntity: ready?.frameEntity ?? noop,
     selected,
+    selectedEntities: removal.entities,
     duplicate: copy.duplicate,
     placement,
   })
@@ -233,11 +235,12 @@ export function ViewportPanel(): ReactElement {
       mode.active ||
       selected !== popover.entity ||
       gestures.dragging !== null ||
-      gestures.grabbing !== null
+      gestures.grabbing !== null ||
+      gestures.turning !== null
     ) {
       setPopover(null)
     }
-  }, [popover, open, current, mode.active, selected, gestures.dragging, gestures.grabbing])
+  }, [popover, open, current, mode.active, selected, gestures.dragging, gestures.grabbing, gestures.turning])
 
   const popoverEntity =
     popover === null || open.state !== 'open'
@@ -291,6 +294,12 @@ export function ViewportPanel(): ReactElement {
       data-scene-dragging={gestures.dragging ?? ''}
       data-scene-grabbing={gestures.grabbing?.entity ?? ''}
       data-scene-grab-axis={gestures.grabbing?.axis ?? ''}
+      // The turn, as the outside reads it: which entities, and how far round.
+      // Empty whenever nothing is turning, which is how "R did nothing" is read.
+      data-scene-turning={gestures.turning?.entities.join(' ') ?? ''}
+      data-scene-turn-degrees={
+        gestures.turning === null ? '' : String(shortestTurn(gestures.turning.degrees))
+      }
       data-play-state={mode.play.state}
       data-play-scene={mode.play.state === 'stopped' ? '' : mode.play.path}
       data-play-match={comparison?.kind ?? ''}
@@ -325,6 +334,7 @@ export function ViewportPanel(): ReactElement {
             shown={current}
             selected={removal.entities}
             axis={gestures.grabbing?.axis ?? null}
+            turning={gestures.turning}
           />
         )}
         {current !== null && !mode.active && popover !== null && popoverEntity !== null && open.state === 'open' && (
@@ -349,6 +359,7 @@ export function ViewportPanel(): ReactElement {
           offScreen={offScreenIn(open, current, selected)}
           moving={beingMoved}
           grab={gestures.grabbing}
+          turning={gestures.turning}
           placing={placing}
           stampingName={
             placing.stamping === null ? null : (stamp.prefabName ?? basename(placing.stamping))
@@ -378,7 +389,8 @@ export function ViewportPanel(): ReactElement {
             !assets.loading &&
             !resolved.loading &&
             gestures.dragging === null &&
-            gestures.grabbing === null
+            gestures.grabbing === null &&
+            gestures.turning === null
           }
         />
       )}
@@ -413,6 +425,17 @@ function usePlayComparison(
   }, [running, playing, entities])
 }
 
+/**
+ * What the undo history calls a turn.
+ *
+ * The count is in it for the same reason the delete's is: the history is read by
+ * somebody deciding whether to press Ctrl-Z again, and "Rotate entity" against a
+ * step that turned six of them is the one wrong answer available.
+ */
+function labelForTurn(count: number): string {
+  return count === 1 ? 'Rotate entity' : `Rotate ${count} entities`
+}
+
 const noop = (): void => {}
 const noPan = (_dx: number, _dy: number): void => {}
 const noZoom = (_at: { x: number; y: number }, _direction: 1 | -1): void => {}
@@ -438,6 +461,7 @@ function grabOf(gestures: ReturnType<typeof useSceneGestures>, stamping: boolean
   // A grab is first because it is first everywhere: while one is running no
   // other gesture can happen, so no other cursor can be honest.
   if (gestures.grabbing !== null) return 'moving'
+  if (gestures.turning !== null) return 'turning'
   if (gestures.panning) return 'holding'
   if (gestures.ready) return 'ready'
   if (stamping) return 'placing'
@@ -484,6 +508,17 @@ function usePlacement(
    */
   const from = useRef<{ entity: string; x: number; y: number; key: string } | null>(null)
   const moves = useRef(0)
+
+  /**
+   * What the entities looked like when a turn began, and the undo run it is.
+   *
+   * The same shape as a move's `from` and for the same two reasons: every angle
+   * is applied to the *remembered* transforms rather than to wherever the group
+   * has got to, so a long turn cannot deform it; and the key is minted per
+   * gesture so `Esc` takes back this turn and not the one before it.
+   */
+  const turn = useRef<{ started: Turned[]; pivot: Point; key: string } | null>(null)
+  const turns = useRef(0)
 
   const entities = open.state === 'open' ? open.scene.entities : null
 
@@ -605,6 +640,115 @@ function usePlacement(
       stopStamping: placing.stopStamping,
 
       context: onContext,
+
+      /**
+       * A turn is about to start: remember every entity, and say where they
+       * turn around — in the host's pixels, which is what the gizmo is drawn in.
+       *
+       * The pivot is worked out **twice, from two sources, on purpose**, and the
+       * two are not interchangeable. The arithmetic uses the mean of the
+       * *document's* positions, because that is what the entities are actually
+       * rotated about and inverting a screen point back through the camera would
+       * put rounding into every position it writes. The line uses the mean of
+       * the *renderer's reported origins*, because the overlay's standing rule is
+       * that every number in it came from what was really drawn. They describe
+       * one point: the camera is affine, so the mean of the drawn origins is
+       * where the mean of the positions was drawn.
+       */
+      beginTurn: (entityIds) => {
+        turn.current = null
+        if (scenePath === null || current === null) return null
+
+        const started: Turned[] = []
+        for (const id of entityIds) {
+          const entity = entities?.find((one) => one.id === id)
+          if (entity !== undefined) {
+            started.push({
+              id,
+              x: entity.transform.x,
+              y: entity.transform.y,
+              rotation: entity.transform.rotation,
+            })
+          }
+        }
+
+        const centre = pivotOf(started)
+        if (centre === null) return null
+
+        // Only entities the renderer actually reported: one whose sprite has
+        // not arrived has no drawn origin, and averaging a missing one in as
+        // zero would put the gizmo's line in the corner of the level.
+        const drawn = started
+          .map((one) => current.entities.find((shownOne) => shownOne.id === one.id)?.origin ?? null)
+          .filter((one): one is Point => one !== null)
+        if (drawn.length === 0) return null
+
+        turns.current += 1
+        turn.current = {
+          started,
+          pivot: centre,
+          key: `${scenePath}#turn${turns.current}`,
+        }
+
+        return {
+          x: drawn.reduce((total, one) => total + one.x, 0) / drawn.length,
+          y: drawn.reduce((total, one) => total + one.y, 0) / drawn.length,
+        }
+      },
+
+      /**
+       * The group, turned rigidly — every entity in one transaction, so however
+       * many are selected the whole gesture is one press of Ctrl-Z.
+       *
+       * The angle that lands is returned rather than assumed by the caller: with
+       * the grid on, a pointer at 37° turns the group by 30°, and the caption
+       * and the gizmo's arc have to say what happened rather than what was asked
+       * for.
+       */
+      turnBy: (degrees, invert) => {
+        const run = turn.current
+        if (run === null || scenePath === null) return 0
+
+        const applied = turnOn(degrees, placing.snap, invert)
+        // Positions are placed freely rather than on the grid. Rounding each one
+        // to the pixel grid mid-rotation would shear the group out of shape —
+        // a rigid rotation that lands on a grid is not a rigid rotation, and the
+        // switch governs the *angle* for this gesture.
+        const turned = turnAbout(run.started, run.pivot, applied)
+
+        editDocument(scenePath, { label: labelForTurn(turned.length), merge: run.key }, (document) => {
+          if (document.format !== SCENE_FORMAT) return
+          for (const one of turned) {
+            // Re-found by id inside the transaction rather than closed over as
+            // an index: between the keypress and here, a text editor may have
+            // changed the file.
+            const target = document.entities.find((entity) => entity.id === one.id)
+            if (target === undefined) continue
+            target.transform.x = one.x
+            target.transform.y = one.y
+            target.transform.rotation = one.rotation
+          }
+        })
+
+        return applied
+      },
+
+      /**
+       * The turn is over.
+       *
+       * Cancelling hands the whole run back to the transaction API, which
+       * reverses it with the patches it already recorded — the same argument as
+       * a cancelled move (`editor-kernel` D7): writing the remembered transforms
+       * back would be an inverse of our own, and would leave a step on the stack
+       * that reverses nothing.
+       */
+      endTurn: (how) => {
+        const run = turn.current
+        turn.current = null
+        if (run === null) return
+        if (how === 'cancel') abandonEdits(run.key)
+        else sealEdits()
+      },
     }
   }, [current, scenePath, scale, entities, selection, placing, stamp, onContext, deleteSelected])
 }
@@ -716,6 +860,8 @@ interface CaptionProps {
   moving: Entity | null
   /** The keyboard grab in progress, which is the half of `moving` with keys. */
   grab: Grab | null
+  /** The turn in progress, or null. Its own sentence: it says an angle, not a position. */
+  turning: Turn | null
   /** What a press lands on, and whether a press is placing at all. */
   placing: Placing
   /** What is being repeat-placed, in words, or null when nothing is. */
@@ -745,6 +891,7 @@ function Caption({
   offScreen,
   moving,
   grab,
+  turning,
   placing,
   stampingName,
   dropping,
@@ -856,9 +1003,30 @@ function Caption({
        * finds out the drop will land *here* rather than wherever the level's
        * origin happens to be.
        */}
+      {/*
+       * A turn gets a sentence of its own rather than borrowing the move's,
+       * because the useful number is different: a move says where the thing has
+       * got to, and a turn says how far round it has come. Reporting a position
+       * mid-rotation would be true and useless — and with several selected there
+       * is no single position to report anyway.
+       */}
       {dropping !== null ? (
         <Note testId="viewport-dropping" title={`Let go to put ${dropping} in the level here`}>
           Drop <strong>{dropping}</strong> here.
+        </Note>
+      ) : turning !== null ? (
+        // The angle leads, unlike every other caption here, and it is the one
+        // place that ordering is worth breaking for: this bar is narrow enough
+        // to clip mid-sentence, and the angle is the number the hand is being
+        // steered by. Put the subject first and a narrow panel shows "Turning 2
+        // e…" — a caption that has said nothing at all. Found by looking at the
+        // screenshot rather than by anything failing (`editor-verification` V31).
+        <Note
+          testId="viewport-turning"
+          title={`${shortestTurn(turning.degrees)}° — ${turnSubject(turning)}. ${turnAdvice(placing.snap.on, true)}`}
+        >
+          <strong>{shortestTurn(turning.degrees)}°</strong> — {turnSubject(turning)}.{' '}
+          {turnAdvice(placing.snap.on, false)}
         </Note>
       ) : stampingName !== null ? (
         <Note testId="viewport-stamping" title={`Every click in the level places another ${stampingName}. Esc stops it.`}>
@@ -956,6 +1124,33 @@ function advice(grab: Grab | null, snapping: boolean): string {
   if (grab === null) return modifier
   if (grab.axis === null) return `X or Y locks an axis, Esc puts it back. ${modifier}`
   return `Locked to ${grab.axis.toUpperCase()} — Esc puts it back. ${modifier}`
+}
+
+/**
+ * What is being turned, named.
+ *
+ * A count rather than a list once there is more than one: six names would fill
+ * the bar and push the angle — the number the human is actually watching — off
+ * the end of it.
+ */
+function turnSubject(turn: Turn): string {
+  return turn.entities.length === 1 ? 'turning' : `turning ${turn.entities.length} entities`
+}
+
+/**
+ * What to say to somebody in the middle of a turn.
+ *
+ * The same two-lengths shape the move's advice has, and the same rule about what
+ * the modifier's sentence says: what it will *do*, never what it is called
+ * after. Somebody holding a sprite in mid-air wants to know where it will land.
+ */
+function turnAdvice(snapping: boolean, whole: boolean): string {
+  const modifier = snapping
+    ? `Hold Ctrl to turn freely${whole ? ` rather than in ${ANGLE_STEP}° steps` : ''}.`
+    : `Hold Ctrl for ${ANGLE_STEP}° steps.`
+  return whole
+    ? `${modifier} A click puts it down, Esc puts it back where it was.`
+    : `${modifier} Click to place, Esc puts it back.`
 }
 
 /** The same advice for a panel with room for it, which is the tooltip's. */

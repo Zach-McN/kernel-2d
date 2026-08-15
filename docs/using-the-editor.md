@@ -8,8 +8,7 @@ It is kept current by the definition of done in `CLAUDE.md`: a session that
 changes what you can do, or how you do it, changes this page in the same commit.
 If this page and the editor disagree, the editor is right and the page is a bug.
 
-Last true as of: **the snap switch, and Play greyed for the whole of a move**
-(2026-08-15).
+Last true as of: **`R` to turn what is selected** (2026-08-15).
 
 ---
 
@@ -517,7 +516,9 @@ time, space-drag still pans, and the wheel still zooms.
 | Hold `Ctrl` while dragging | Flip the snap switch while you hold it |
 | `G` | Grab the selected entity — it moves with the pointer, nothing held |
 | `X` / `Y` while grabbing | Hold it to that axis, from where it started |
-| `Esc` while grabbing | Put it back exactly where it was |
+| `R` | Turn what is selected — it follows the pointer, nothing held |
+| Click, or `Enter` | Put down whatever you are moving or turning |
+| `Esc` while grabbing or turning | Put it back exactly where it was |
 | `Shift-D` | A copy of the selected entity, in the same place, selected |
 | Right-click a sprite | A small window next to it with its position, ready to type into |
 | Right-click empty space | Close that window |
@@ -560,6 +561,33 @@ start on the sprite starts by hiding it.
 - Anything that takes the level away — pressing Play, closing the level, clicking
   another row in the Outliner, or the window losing focus — puts the entity back
   the way `Esc` does. Nothing was decided, so nothing is kept.
+
+#### Turning things with `R`
+
+**Press `R` and what you have selected turns with the pointer.** A small ring
+follows the cursor with a line running back to the point everything is turning
+around, and a wedge fills in to show how far round you have come. The bar says the
+angle. **Click or press `Enter` to keep it; `Esc` puts it back exactly.**
+
+It is `G` with a different verb, and everything you know about `G` applies: the
+pointer can be anywhere when you press the key, the gesture owns the picture while
+it runs, and anything that takes the level away puts everything back.
+
+- **The angle is measured from where the pointer was when you pressed `R`**, so
+  nothing jumps, and taking the mouse right round and back leaves things exactly
+  where they started.
+- **With several selected they turn as one piece.** They swing around the point
+  midway between them — marked by the dot the line runs to — *and* each one turns
+  on its own axis, so the group keeps its shape. That midpoint is the average of
+  their positions, so it is not necessarily on top of any of them.
+- **The Snap switch governs the angle too**, in 15° steps. Hold `Ctrl` to turn
+  smoothly, or — with snapping off — to land on 15° after all. It takes effect the
+  moment you press the key, like it does for moving.
+- **However far you turn, it is one press of `Ctrl-Z`**, and so is turning six
+  things at once.
+- Very close to the middle the pointer stops steering, because an angle measured
+  from a point you are sitting on is meaningless and would spin wildly. Move
+  further out and it picks up again.
 
 **`Shift-D` copies the selected entity** onto exactly the same spot and selects the
 copy, which is the same thing the Outliner's *Duplicate* button does. `Shift-D`
@@ -616,9 +644,9 @@ exactly where you were: same level, same selection, same camera.
   button and you do not need one.
 - **Play is greyed while you are still holding something.** A level runs from the
   file, so it cannot start halfway through a move — the button stays out for the
-  whole of a drag or a `G` grab, including the parts where your hand is not
-  moving, and says so if you hover it. Put the entity down, or press `Esc`, and it
-  comes straight back.
+  whole of a drag, a `G` grab or an `R` turn, including the parts where your hand
+  is not moving, and says so if you hover it. Put the entity down, or press `Esc`,
+  and it comes straight back.
 - **Time passes**, and your project's own systems are what make it do anything.
   In the sample that is the health icon turning and the slime walking, and both
   keep going until you stop.
@@ -846,10 +874,11 @@ the editor takes the change.
   import settings at the next start and leaves its references pointing at where it
   was. Doing it inside the editor is what avoids both.
 - **Parenting or nesting.** The entity list is flat.
-- **Do anything to several entities at once except delete them.** Shift-click and
-  Ctrl-click build a selection and `Delete` removes all of it, but Duplicate, the
-  reorder arrows, dragging, `G` and `F` all act on the last one you clicked. There
-  is no moving six sprites together, and no editing six positions in one field.
+- **Do anything to several entities at once except delete and turn them.**
+  Shift-click and Ctrl-click build a selection; `Delete` removes all of it and `R`
+  turns all of it as one piece. Duplicate, the reorder arrows, dragging, `G` and
+  `F` still act on the last one you clicked, so there is no *moving* six sprites
+  together, and no editing six positions in one field.
 - **Select several files in the Assets panel.** The plural is only about entities,
   in the Outliner and in the picture. A file is still selected one at a time.
 - **Shift-click a range in the Outliner.** Shift adds the one row you clicked, not

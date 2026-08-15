@@ -1,6 +1,7 @@
 import type { ReactElement } from 'react'
 
 import type { DrawnEntity, ShownScene } from '../../runtime'
+import type { Turn } from '../shell/useSceneGestures'
 import { describeZoom } from '../shell/zoom'
 
 /**
@@ -27,6 +28,8 @@ interface SceneOverlayProps {
   selected: readonly string[]
   /** The axis a grab is held to, or null when nothing is being held to one. */
   axis: 'x' | 'y' | null
+  /** The turn in progress, or null. Everything it needs is already in pixels. */
+  turning: Turn | null
 }
 
 /**
@@ -41,7 +44,7 @@ interface SceneOverlayProps {
  * The list is walked rather than the scene, so an id that has gone — deleted
  * between the report and this render — simply draws nothing.
  */
-export function SceneOverlay({ shown, selected, axis }: SceneOverlayProps): ReactElement {
+export function SceneOverlay({ shown, selected, axis, turning }: SceneOverlayProps): ReactElement {
   const drawn = selected
     .map((id) => shown.entities.find((one) => one.id === id) ?? null)
     .filter((one): one is DrawnEntity => one !== null)
@@ -54,7 +57,108 @@ export function SceneOverlay({ shown, selected, axis }: SceneOverlayProps): Reac
       {drawn.map((entity) => (
         <Selected key={entity.id} entity={entity} primary={entity === primary} />
       ))}
+      {turning !== null && <Turning turn={turning} />}
     </svg>
+  )
+}
+
+/**
+ * The rotate gizmo: a ring on the cursor, a line back to the pivot, and the
+ * angle swept so far drawn as an arc between the two.
+ *
+ * **Drawn from the numbers the gesture used, not from a second derivation of
+ * them.** The pivot and the pointer arrive already in this SVG's pixels — that
+ * is why `Turn` carries them — so the line cannot disagree with what is actually
+ * being rotated about. Recomputing the pivot here from the outlines on screen
+ * would look identical until an entity's sprite failed to load, and then the
+ * line would point somewhere nothing is turning around.
+ *
+ * The arc is what makes a stepped angle legible as steps: a line that jumps
+ * between 15° positions reads as the mouse being laggy, and the same jump with a
+ * wedge behind it reads as snapping. It is also the only thing on screen saying
+ * which way round the turn has gone once it passes half a circle.
+ */
+function Turning({ turn }: { turn: Turn }): ReactElement {
+  const reach = Math.hypot(turn.at.x - turn.pivot.x, turn.at.y - turn.pivot.y)
+  // The arc is drawn at a fixed distance rather than at the cursor's, so it
+  // stays readable whether the hand is an inch from the pivot or across the
+  // panel — and never larger than the reach, so it cannot escape its own line.
+  const radius = Math.max(12, Math.min(44, reach - 6))
+
+  return (
+    <g className="scene__turn" data-testid="scene-turn" data-turn-degrees={turn.degrees}>
+      <Sweep pivot={turn.pivot} from={turn.from} degrees={turn.degrees} radius={radius} />
+      <line
+        className="scene__turn-line"
+        x1={turn.pivot.x}
+        y1={turn.pivot.y}
+        x2={turn.at.x}
+        y2={turn.at.y}
+      />
+      {/* The pivot: a small solid mark, distinct from a selected entity's
+          crosshair, because it is a point the group turns about rather than a
+          thing that is selected — and with several selected it is usually not
+          where any of them is. */}
+      <circle
+        className="scene__turn-pivot"
+        data-testid="scene-turn-pivot"
+        cx={turn.pivot.x}
+        cy={turn.pivot.y}
+        r={3.5}
+      />
+      <g className="scene__turn-gizmo" data-testid="scene-turn-gizmo">
+        <circle cx={turn.at.x} cy={turn.at.y} r={9} />
+        <circle cx={turn.at.x} cy={turn.at.y} r={2} />
+      </g>
+    </g>
+  )
+}
+
+/**
+ * The wedge between where the line started and where it is now.
+ *
+ * Screen y counts down while the turn's degrees are counter-clockwise in a y-up
+ * world, so the angle is subtracted rather than added when it is turned back
+ * into a screen position — the same flip `editor/shell/rotate.ts` makes going
+ * the other way, and the only place in the drawing that has to know about it.
+ *
+ * Nothing is drawn below a degree or so: a zero-width wedge is invisible anyway,
+ * and an arc whose two ends coincide is the one input the path syntax cannot
+ * express unambiguously.
+ */
+function Sweep({
+  pivot,
+  from,
+  degrees,
+  radius,
+}: {
+  pivot: { x: number; y: number }
+  from: { x: number; y: number }
+  degrees: number
+  radius: number
+}): ReactElement | null {
+  if (Math.abs(degrees) < 1) return null
+
+  const start = Math.atan2(from.y - pivot.y, from.x - pivot.x)
+  // Clamped to just under a full turn: at exactly 360° the arc's ends meet and
+  // the sweep becomes ambiguous, which SVG resolves by drawing nothing at all.
+  const swept = Math.max(-359.9, Math.min(359.9, degrees))
+  const end = start - (swept * Math.PI) / 180
+
+  const at = (angle: number): string =>
+    `${(pivot.x + radius * Math.cos(angle)).toFixed(2)} ${(pivot.y + radius * Math.sin(angle)).toFixed(2)}`
+
+  const large = Math.abs(swept) > 180 ? 1 : 0
+  // A positive scene rotation is counter-clockwise, which on a y-down canvas is
+  // the *negative* sweep direction.
+  const clockwise = swept > 0 ? 0 : 1
+
+  return (
+    <path
+      className="scene__turn-sweep"
+      data-testid="scene-turn-sweep"
+      d={`M ${pivot.x} ${pivot.y} L ${at(start)} A ${radius} ${radius} 0 ${large} ${clockwise} ${at(end)} Z`}
+    />
   )
 }
 

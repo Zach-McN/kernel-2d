@@ -143,3 +143,33 @@ export function freePoint(point: Point): Point {
 export function placeOn(point: Point, snap: Snap, invert: boolean): Point {
   return snap.on !== invert ? snapPoint(point, snap) : freePoint(point)
 }
+
+/**
+ * How far apart the angles a turn can land on are, in degrees.
+ *
+ * A fixed number rather than `snap.step`, and that is not a shortcut: the step
+ * is **pixels**, and a 16-pixel grid says nothing whatever about degrees.
+ * Reading it here would make the interval control secretly mean two things and
+ * put the grid and the protractor on one dial.
+ *
+ * Fifteen because it divides the angles anybody actually wants — 15, 30, 45, 90,
+ * 180 are all on it — and because a finer step stops being a snap.
+ */
+export const ANGLE_STEP = 15
+
+/**
+ * Where a turn lands: the same switch and the same modifier as a placement.
+ *
+ * The twin of `placeOn`, sharing its exclusive-or so that the switch in the
+ * viewport bar means one thing across both gestures and `Ctrl` inverts both.
+ *
+ * **The angle that snaps is the amount turned, not the angle ended up at.** With
+ * several entities selected they start at different rotations, so rounding each
+ * *result* to a multiple of 15 would turn one member of the group by 15° and
+ * another by 4° — which is not a rigid rotation, which is the whole of what the
+ * gesture is. Rounding the delta turns every member by the same amount, which is.
+ */
+export function turnOn(degrees: number, snap: Snap, invert: boolean): number {
+  if (snap.on === invert) return freely(degrees)
+  return freely(Math.round(degrees / ANGLE_STEP) * ANGLE_STEP)
+}

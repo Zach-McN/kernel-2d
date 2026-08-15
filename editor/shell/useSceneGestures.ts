@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from 'react'
 
 import type { Point } from '../../runtime'
+import { angleFrom, tooNear } from './rotate'
 
 /**
  * Driving the scene viewport with a mouse and a handful of keys.
@@ -43,6 +44,19 @@ import type { Point } from '../../runtime'
  * completely still. There is no conflict with the `Ctrl`-click that takes an
  * entity out of the selection: that press starts no drag, so this reading is
  * only ever reached inside a move a plain press began.
+ *
+ * **`R` turns the selection, and it is `G` with a different verb.** A gizmo
+ * follows the pointer with a line back to the pivot — one entity's own position,
+ * or the mean of several, which then swing round it as one rigid group. A press
+ * confirms, `Esc` puts them back. Everything the grab does about owning the
+ * picture and about being taken away, this does identically, which is the point:
+ * the second modal gesture is what turns "how a grab behaves" into a shape.
+ *
+ * **One modal gesture at a time, and it is now a rule rather than a
+ * coincidence.** `R` is refused while a grab runs and `G` while a turn runs.
+ * With one of them there was nothing to say; with two, "the selected entity is
+ * being moved *and* turned by two gestures measuring from two origins" is a
+ * state worth being unable to reach.
  *
  * **A grab is a move with no button held, and while one is running it owns the
  * picture.** `G` starts the selected entity moving with the pointer wherever the
@@ -114,6 +128,28 @@ export interface ScenePlacement {
    */
   deleteSelected: () => void
   /**
+   * Remember where these entities are and what they are turned to, and say
+   * where they turn around — in the host's own pixels, for the gizmo's line.
+   *
+   * Null when there is nothing to turn: no scene, nothing selected, or entities
+   * that have gone. The gesture then never starts, rather than starting and
+   * doing nothing.
+   */
+  beginTurn: (entityIds: readonly string[]) => Point | null
+  /**
+   * Turn them all by this many degrees from where they started, rigidly about
+   * the pivot. `invert` is `Ctrl`, exactly as it is for a move.
+   *
+   * **Returns the angle that actually landed**, which is not always the one
+   * asked for: the snap lives on the other side of this call, so with the grid
+   * on a pointer at 37° turns the group by 30°. The caption and the gizmo's arc
+   * read the answer rather than the request, or they would describe a rotation
+   * that did not happen.
+   */
+  turnBy: (degrees: number, invert: boolean) => number
+  /** The turn is over: `drop` seals the undo step, `cancel` takes it all back. */
+  endTurn: (how: 'drop' | 'cancel') => void
+  /**
    * Remember where this entity is, without selecting it or moving it — what a
    * grab starts with, since it has no press to record it on.
    *
@@ -169,6 +205,11 @@ export interface SceneGestureOptions {
   frameEntity: (entityId: string) => void
   /** The selected entity, or null. What `F` frames and what `G` grabs. */
   selected: string | null
+  /**
+   * Every selected entity. What `R` turns — all of them, as one rigid group,
+   * which is why this is the whole list rather than the primary one.
+   */
+  selectedEntities: readonly string[]
   /** Shift-D: a copy of this entity, selected afterwards. */
   duplicate: (entityId: string) => void
   placement: ScenePlacement
@@ -179,6 +220,27 @@ export interface Grab {
   entity: string
   /** The axis the move is held to, or null while it is free in both. */
   axis: 'x' | 'y' | null
+}
+
+/**
+ * A turn in progress, as anything drawing it needs to know it.
+ *
+ * Carries where to draw as well as what is happening, because the overlay's
+ * standing rule is that it recomputes nothing: the pivot and the pointer are
+ * both already in the host's pixels here, so the gizmo is drawn from what the
+ * gesture actually used rather than from a second derivation of it.
+ */
+export interface Turn {
+  /** Every entity being turned, in selection order. */
+  entities: readonly string[]
+  /** Where they turn around, in the host's pixels. */
+  pivot: Point
+  /** Where the pointer is, in the host's pixels — where the gizmo sits. */
+  at: Point
+  /** Where the line started, so the swept angle can be drawn as an arc. */
+  from: Point
+  /** How far it has turned so far, in degrees, as applied to the document. */
+  degrees: number
 }
 
 export interface SceneGestures {
@@ -192,6 +254,8 @@ export interface SceneGestures {
   dragging: string | null
   /** The keyboard grab in progress, or null. */
   grabbing: Grab | null
+  /** The keyboard turn in progress, or null. */
+  turning: Turn | null
 }
 
 /**
@@ -206,17 +270,42 @@ interface LiveGrab extends Grab {
   origin: Point | null
 }
 
+/**
+ * A turn as the listeners hold it: the same thing, plus the angle it started at.
+ *
+ * `origin` is null until the pointer is next seen over the picture, which is
+ * what makes `R` work with the cursor anywhere — the same treatment a grab's
+ * origin gets, and for the same reason: there is no sensible angle to measure
+ * from until the hand comes back.
+ */
+interface LiveTurn extends Turn {
+  /** The pointer's angle from the pivot when `R` was pressed, or null. */
+  origin: number | null
+}
+
 /** How far the pointer travels before a click becomes a drag, in CSS pixels. */
 const DRAG_THRESHOLD = 3
 
 export function useSceneGestures(options: SceneGestureOptions): SceneGestures {
-  const { host, enabled, pan, zoom, frameAll, frameEntity, selected, duplicate, placement } = options
+  const {
+    host,
+    enabled,
+    pan,
+    zoom,
+    frameAll,
+    frameEntity,
+    selected,
+    selectedEntities,
+    duplicate,
+    placement,
+  } = options
 
   const [panning, setPanning] = useState(false)
   const [ready, setReady] = useState(false)
   const [picked, setPicked] = useState<string | null>(null)
   const [dragging, setDragging] = useState<string | null>(null)
   const [grabbing, setGrabbing] = useState<Grab | null>(null)
+  const [turning, setTurning] = useState<Turn | null>(null)
 
   // Read inside listeners that are attached once. Set during render so a
   // listener never sees a value from the render before last. `placement` in
@@ -226,6 +315,8 @@ export function useSceneGestures(options: SceneGestureOptions): SceneGestures {
   enabledRef.current = enabled
   const selectedRef = useRef(selected)
   selectedRef.current = selected
+  const selectedEntitiesRef = useRef(selectedEntities)
+  selectedEntitiesRef.current = selectedEntities
   const readyRef = useRef(ready)
   readyRef.current = ready
   const placementRef = useRef(placement)
@@ -242,8 +333,20 @@ export function useSceneGestures(options: SceneGestureOptions): SceneGestures {
    * pointer travelled in that frame. The state is the copy React draws.
    */
   const grabRef = useRef<LiveGrab | null>(null)
+  /** The turn, held for the same reason and read by the same two listener sets. */
+  const turnRef = useRef<LiveTurn | null>(null)
   /** Where the pointer was last seen over the picture, in client pixels. */
   const pointerAt = useRef<Point | null>(null)
+  /**
+   * The same sighting, in the host's own pixels.
+   *
+   * Two refs rather than one conversion, because the two gestures want different
+   * things. A move is a *delta*, and a delta is the same number in either space,
+   * so the grab is happy with client pixels. A turn is an *angle about a fixed
+   * point*, which needs both ends in one space — and the pivot has to be in host
+   * pixels because that is the space the overlay draws the gizmo in.
+   */
+  const pointerInHost = useRef<Point | null>(null)
   /** True while a button is held, so `G` cannot start a second move over a drag. */
   const pressed = useRef(false)
 
@@ -291,11 +394,90 @@ export function useSceneGestures(options: SceneGestureOptions): SceneGestures {
    * drag's press are two different things to measure from, and this needs to
    * work for both without knowing which is running.
    */
-  const reapply = useCallback((invert: boolean): boolean => {
-    const move = lastMove.current
-    if (move === null) return false
-    placementRef.current.moveBy(move.entity, move.dx, move.dy, invert)
-    return true
+  /**
+   * The entities, turned to wherever the pointer has got to.
+   *
+   * The angle is **measured, not accumulated**: it is the pointer's bearing from
+   * the pivot now, less its bearing when `R` was pressed. Adding up per-frame
+   * deltas would let rounding creep over a long turn — the same rule the drag
+   * keeps about travel, and here it is also what makes a full circle land
+   * exactly where it started.
+   *
+   * How far it *actually* turned comes back from the placement rather than being
+   * assumed, because the snap lives there: with the grid on, a pointer at 37°
+   * turns the group by 30°, and the caption and the gizmo's arc must say 30 or
+   * they are describing a rotation that did not happen.
+   */
+  const applyTurn = useCallback((invert: boolean): void => {
+    const turn = turnRef.current
+    const at = pointerInHost.current
+    if (turn === null || turn.origin === null || at === null) return
+    // Too near the middle for a bearing to mean anything: keep the angle it has
+    // rather than letting a pixel of noise spin the group (`./rotate.ts`).
+    if (tooNear(turn.pivot, at)) return
+
+    const wanted = angleFrom(turn.pivot, at) - turn.origin
+    const degrees = placementRef.current.turnBy(wanted, invert)
+    turnRef.current = { ...turn, at, degrees }
+    setTurning({ entities: turn.entities, pivot: turn.pivot, at, from: turn.from, degrees })
+  }, [])
+
+  /**
+   * Whatever is being moved or turned, put down again under a modifier that has
+   * just changed.
+   *
+   * One function for both gestures so the `Ctrl` handler does not have to know
+   * which is running — it asks for "again, with this modifier" and gets it.
+   * A move replays its remembered travel; a turn re-measures, which is free
+   * because a turn's angle was never accumulated in the first place.
+   */
+  const reapply = useCallback(
+    (invert: boolean): boolean => {
+      if (turnRef.current !== null) {
+        applyTurn(invert)
+        return true
+      }
+      const move = lastMove.current
+      if (move === null) return false
+      placementRef.current.moveBy(move.entity, move.dx, move.dy, invert)
+      return true
+    },
+    [applyTurn],
+  )
+
+  const endTurn = useCallback((how: 'drop' | 'cancel'): void => {
+    if (turnRef.current === null) return
+    turnRef.current = null
+    setTurning(null)
+    placementRef.current.endTurn(how)
+  }, [])
+
+  /**
+   * `R`: start turning everything selected about its mean pivot.
+   *
+   * Refused while anything else modal is running — a grab, a press, or a
+   * repeat-placing mode — for the reason written at the top of this file: two
+   * gestures measuring from two origins is a state worth being unable to reach.
+   */
+  const startTurn = useCallback((): void => {
+    if (turnRef.current !== null || grabRef.current !== null || pressed.current) return
+    if (placementRef.current.stamping) return
+
+    const entities = selectedEntitiesRef.current
+    if (entities.length === 0) return
+
+    const pivot = placementRef.current.beginTurn(entities)
+    if (pivot === null) return
+
+    // The bearing is null until the pointer is next seen, so `R` works with the
+    // hand anywhere — including outside the panel, where there is no angle to
+    // measure from until it comes back.
+    const at = pointerInHost.current
+    const origin = at === null || tooNear(pivot, at) ? null : angleFrom(pivot, at)
+    const from = at ?? pivot
+
+    turnRef.current = { entities, pivot, at: from, from, degrees: 0, origin }
+    setTurning({ entities, pivot, at: from, from, degrees: 0 })
   }, [])
 
   const endGrab = useCallback((how: 'drop' | 'cancel'): void => {
@@ -308,7 +490,7 @@ export function useSceneGestures(options: SceneGestureOptions): SceneGestures {
   }, [])
 
   const startGrab = useCallback((): void => {
-    if (grabRef.current !== null || pressed.current) return
+    if (grabRef.current !== null || turnRef.current !== null || pressed.current) return
     // One mode at a time: while every press is placing a copy, a grab's own
     // press-to-finish would be two meanings for one button (`placing.tsx`).
     if (placementRef.current.stamping) return
@@ -375,13 +557,18 @@ export function useSceneGestures(options: SceneGestureOptions): SceneGestures {
       // an f into the entity's name field.
       element.focus({ preventScroll: true })
 
-      // A grab owns the picture, so finishing it is the whole of what this
-      // press does — it picks nothing, changes no selection and starts no pan.
-      // Above space, deliberately: a grab is a move already in progress and the
+      // A modal gesture owns the picture, so finishing it is the whole of what
+      // this press does — it picks nothing, changes no selection and starts no
+      // pan. Above space, deliberately: the entity is already in the air and the
       // human has to be able to put it down without letting go of anything.
       // The right button is swallowed with everything else: Esc is the way out.
       if (grabRef.current !== null) {
         if (left) endGrab('drop')
+        return
+      }
+
+      if (turnRef.current !== null) {
+        if (left) endTurn('drop')
         return
       }
 
@@ -440,9 +627,26 @@ export function useSceneGestures(options: SceneGestureOptions): SceneGestures {
     }
 
     const onPointerMove = (event: PointerEvent): void => {
-      // Kept up to date whatever else is going on, because it is what a grab
-      // started later measures its travel from.
+      // Kept up to date whatever else is going on, because it is what a gesture
+      // started later measures its travel — or its bearing — from.
       pointerAt.current = { x: event.clientX, y: event.clientY }
+      pointerInHost.current = pointIn(event)
+
+      const turn = turnRef.current
+      if (turn !== null) {
+        // The first sighting since `R` is the bearing to measure from rather
+        // than a movement, exactly as a grab's first sighting is its origin.
+        if (turn.origin === null) {
+          if (!tooNear(turn.pivot, pointerInHost.current)) {
+            const at = pointerInHost.current
+            turnRef.current = { ...turn, origin: angleFrom(turn.pivot, at), at, from: at }
+            setTurning({ entities: turn.entities, pivot: turn.pivot, at, from: at, degrees: 0 })
+          }
+        } else {
+          applyTurn(event.ctrlKey || event.metaKey)
+        }
+        return
+      }
 
       const grab = grabRef.current
       if (grab !== null) {
@@ -509,11 +713,14 @@ export function useSceneGestures(options: SceneGestureOptions): SceneGestures {
     }
 
     const onPointerLeave = (): void => {
-      // Where the pointer is stops being known, so a grab started while the hand
-      // is somewhere else does not measure its travel from a point it left ten
-      // minutes ago. A grab already running keeps the origin it has — its travel
-      // is from where it started, and the pointer is free to leave and come back.
-      if (grabRef.current === null) pointerAt.current = null
+      // Where the pointer is stops being known, so a gesture started while the
+      // hand is somewhere else does not measure from a point it left ten minutes
+      // ago. One already running keeps the origin it has — it measures from
+      // where it started, and the pointer is free to leave and come back.
+      if (grabRef.current === null && turnRef.current === null) {
+        pointerAt.current = null
+        pointerInHost.current = null
+      }
       if (holding === null && placing === null) setPicked(null)
     }
 
@@ -538,8 +745,10 @@ export function useSceneGestures(options: SceneGestureOptions): SceneGestures {
       if (event.deltaY === 0) return
       // Prevented but ignored while a grab is running: the scale is what turns
       // the pointer's travel into level units, so zooming mid-grab would move
-      // the entity without the pointer having moved at all.
-      if (grabRef.current !== null) return
+      // the entity without the pointer having moved at all. A turn is worse —
+      // zooming moves the pivot on screen, so the bearing it was measured from
+      // stops meaning anything and the group jumps.
+      if (grabRef.current !== null || turnRef.current !== null) return
 
       zoom(pointIn(event), event.deltaY < 0 ? 1 : -1)
     }
@@ -566,7 +775,7 @@ export function useSceneGestures(options: SceneGestureOptions): SceneGestures {
       element.removeEventListener('contextmenu', onContextMenu)
       element.removeEventListener('wheel', onWheel)
     }
-  }, [host, pan, zoom, applyGrab, endGrab])
+  }, [host, pan, zoom, applyGrab, endGrab, applyTurn, endTurn])
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
@@ -599,9 +808,25 @@ export function useSceneGestures(options: SceneGestureOptions): SceneGestures {
        * reversing into it is the kind of half-taken-back move this hook is
        * careful about everywhere else. `Esc` is still the way to call it off.
        */
-      if ((event.ctrlKey || event.metaKey) && grabRef.current === null) return
+      if ((event.ctrlKey || event.metaKey) && grabRef.current === null && turnRef.current === null) return
 
       const key = event.key.toLowerCase()
+
+      /*
+       * A turn owns the keyboard the same way a grab does, and offers less:
+       * there is one axis to rotate about in a flat level, so there is no lock
+       * to spell. Put it down, or put it back.
+       */
+      if (turnRef.current !== null) {
+        if (event.key === 'Escape') {
+          event.preventDefault()
+          endTurn('cancel')
+        } else if (event.key === 'Enter') {
+          event.preventDefault()
+          endTurn('drop')
+        }
+        return
+      }
 
       /*
        * A grab owns the keyboard for as long as it runs. The snap modifier has
@@ -674,6 +899,15 @@ export function useSceneGestures(options: SceneGestureOptions): SceneGestures {
         return
       }
 
+      // Nothing selected means nothing to turn. The whole selection goes, not
+      // the primary one: several entities turn as one rigid group about the
+      // mean of their positions (`./rotate.ts`).
+      if (key === 'r') {
+        event.preventDefault()
+        startTurn()
+        return
+      }
+
       // Removes everything selected rather than the one entity `F` would frame
       // — the whole selection is what the human built, and it is one press of
       // Ctrl-Z to get it back (`editor/shell/useDeleteEntities.ts`).
@@ -705,12 +939,13 @@ export function useSceneGestures(options: SceneGestureOptions): SceneGestures {
     }
 
     // Alt-tabbing away while holding space would otherwise leave the editor
-    // believing it is still held, and the next left-click would pan. A grab is
-    // worse: it is driven by a pointer this window can no longer see, so it
-    // would still be running — invisibly — when the human came back.
+    // believing it is still held, and the next left-click would pan. A modal
+    // gesture is worse: it is driven by a pointer this window can no longer see,
+    // so it would still be running — invisibly — when the human came back.
     const onBlur = (): void => {
       setReady(false)
       endGrab('cancel')
+      endTurn('cancel')
     }
 
     window.addEventListener('keydown', onKeyDown)
@@ -722,27 +957,48 @@ export function useSceneGestures(options: SceneGestureOptions): SceneGestures {
       window.removeEventListener('keyup', onKeyUp)
       window.removeEventListener('blur', onBlur)
     }
-  }, [frameAll, frameEntity, startGrab, endGrab, lockGrab, reapply])
+  }, [frameAll, frameEntity, startGrab, startTurn, endGrab, endTurn, lockGrab, reapply])
 
   /*
-   * The two ways a grab can be ended by something other than the human.
+   * The two ways a modal gesture can be ended by something other than the human.
    *
    * A level closing or Play starting takes the picture away, and the selection
    * moving to something else — which only another panel can do, since a press in
-   * this one is consumed by the grab — leaves a move running on an entity whose
-   * outline is no longer on screen. Both put the entity back rather than
+   * this one is consumed by the gesture — leaves it running on entities whose
+   * outlines are no longer on screen. Both put everything back rather than
    * dropping it where it happens to be: nothing was decided, so nothing should
    * be kept.
+   *
+   * A turn watches the *whole* selection rather than one entity, and compares by
+   * content rather than by identity: the selection list is rebuilt on every
+   * render, so `!==` would cancel every turn on its first frame.
    */
   useEffect(() => {
-    if (!enabled) endGrab('cancel')
-  }, [enabled, endGrab])
+    if (!enabled) {
+      endGrab('cancel')
+      endTurn('cancel')
+    }
+  }, [enabled, endGrab, endTurn])
 
   useEffect(() => {
     if (grabRef.current !== null && grabRef.current.entity !== selected) endGrab('cancel')
   }, [selected, endGrab])
 
-  return { panning, ready: ready && enabled, picked: enabled ? picked : null, dragging, grabbing }
+  const selectionKey = selectedEntities.join(' ')
+  useEffect(() => {
+    if (turnRef.current !== null && turnRef.current.entities.join(' ') !== selectionKey) {
+      endTurn('cancel')
+    }
+  }, [selectionKey, endTurn])
+
+  return {
+    panning,
+    ready: ready && enabled,
+    picked: enabled ? picked : null,
+    dragging,
+    grabbing,
+    turning,
+  }
 }
 
 /**
