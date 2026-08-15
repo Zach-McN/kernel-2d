@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useRef, type ReactElement, type ReactNode, type RefObject } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactElement, type ReactNode, type RefObject } from 'react'
 
 import {
   describeLoadProblem,
   inSceneUnits,
   storyStore,
   toScenePoint,
+  type Point,
   type SceneRequest,
   type ShownScene,
 } from '../../runtime'
@@ -28,6 +29,7 @@ import { useDuplicateEntity } from '../shell/useDuplicateEntity'
 import { usePlacePrefab } from '../shell/usePlacePrefab'
 import { describeZoom } from '../shell/zoom'
 import { abandonEdits, editDocument, sealEdits } from '../store/open-documents'
+import { EntityPopover } from './EntityPopover'
 import { NumberField } from './NumberField'
 import { SceneOverlay, describeScene } from './SceneOverlay'
 
@@ -145,9 +147,44 @@ export function ViewportPanel(): ReactElement {
   const selected = selection.selected.kind === 'entity' ? selection.selected.entity : null
   const ready = view.state === 'ready' ? view : null
 
+  // The right-click window: which entity it is about, where it sits in the
+  // stage's pixels, and the camera it was opened under — it is anchored in
+  // screen space, so a camera that moves takes its anchor away.
+  const [popover, setPopover] = useState<PopoverAnchor | null>(null)
+
+  const openPopover = (entityId: string | null, at: Point): void => {
+    // A right-click on empty space asks about nothing, which closes whatever
+    // was open — the same press that would have opened one, pointed away.
+    if (entityId === null || current === null || open.state !== 'open') {
+      setPopover(null)
+      return
+    }
+    // Selected as well as asked about, so the outline, the Inspector and this
+    // window all describe one entity.
+    selection.selectEntity(open.path, entityId)
+    // Next to the click, kept inside the stage: near an edge, "next to" means
+    // the near side rather than hanging off the picture.
+    const box = host.current?.getBoundingClientRect()
+    setPopover({
+      entity: entityId,
+      at: {
+        x: Math.max(8, Math.min(at.x + 12, (box?.width ?? 0) - POPOVER_ROOM.width)),
+        y: Math.max(8, Math.min(at.y + 8, (box?.height ?? 0) - POPOVER_ROOM.height)),
+      },
+      camera: { scale: current.camera.scale, x: current.camera.focus.x, y: current.camera.focus.y },
+    })
+  }
+
+  const closePopover = (): void => {
+    setPopover(null)
+    // Focus back on the picture, so Esc closing the window leaves the
+    // viewport's own keys working without another click.
+    host.current?.focus({ preventScroll: true })
+  }
+
   const placing = usePlacing()
   const stamp = usePlacePrefab(placing.stamping)
-  const placement = usePlacement(open, current, placing, stamp)
+  const placement = usePlacement(open, current, placing, stamp, openPopover)
   const copy = useDuplicateEntity()
   const gestures = useSceneGestures({
     host,
@@ -167,6 +204,39 @@ export function ViewportPanel(): ReactElement {
 
   const camera = current?.camera ?? null
   const visible = current === null ? null : onScreen(current)
+
+  /*
+   * Everything that takes the popover's situation away closes it: the entity
+   * going, the selection moving elsewhere, the camera moving (the window is
+   * anchored in screen space, so a moved camera leaves it pointing at
+   * nothing), a drag or grab starting, the level closing, Play starting. The
+   * same list-of-ways-out thinking as a grab's (`editor-ui` U33).
+   */
+  useEffect(() => {
+    if (popover === null) return
+    const entityGone =
+      open.state !== 'open' || !open.scene.entities.some((one) => one.id === popover.entity)
+    const cameraMoved =
+      current === null ||
+      current.camera.scale !== popover.camera.scale ||
+      current.camera.focus.x !== popover.camera.x ||
+      current.camera.focus.y !== popover.camera.y
+    if (
+      entityGone ||
+      cameraMoved ||
+      mode.active ||
+      selected !== popover.entity ||
+      gestures.dragging !== null ||
+      gestures.grabbing !== null
+    ) {
+      setPopover(null)
+    }
+  }, [popover, open, current, mode.active, selected, gestures.dragging, gestures.grabbing])
+
+  const popoverEntity =
+    popover === null || open.state !== 'open'
+      ? null
+      : (open.scene.entities.find((one) => one.id === popover.entity) ?? null)
 
   // Dragged with the button held, or grabbed with the keyboard — two gestures,
   // one situation to describe, so the caption and the outline do not have to
@@ -206,6 +276,7 @@ export function ViewportPanel(): ReactElement {
       data-scene-focus-y={camera === null ? '' : String(camera.focus.y)}
       data-scene-onscreen={visible === null ? '' : String(visible.count)}
       data-scene-picked={gestures.picked ?? ''}
+      data-popover-entity={popover?.entity ?? ''}
       data-scene-dragging={gestures.dragging ?? ''}
       data-scene-grabbing={gestures.grabbing?.entity ?? ''}
       data-scene-grab-axis={gestures.grabbing?.axis ?? ''}
@@ -231,6 +302,9 @@ export function ViewportPanel(): ReactElement {
         {/* No editor marks over a running game. */}
         {current !== null && !mode.active && (
           <SceneOverlay shown={current} selected={selected} axis={gestures.grabbing?.axis ?? null} />
+        )}
+        {current !== null && !mode.active && popover !== null && popoverEntity !== null && open.state === 'open' && (
+          <EntityPopover scenePath={open.path} entity={popoverEntity} at={popover.at} onClose={closePopover} />
         )}
       </Stage>
 
@@ -301,6 +375,16 @@ const noop = (): void => {}
 const noPan = (_dx: number, _dy: number): void => {}
 const noZoom = (_at: { x: number; y: number }, _direction: 1 | -1): void => {}
 
+/** The right-click window: which entity, where it sits, and the camera then. */
+interface PopoverAnchor {
+  entity: string
+  at: Point
+  camera: { scale: number; x: number; y: number }
+}
+
+/** Room the window needs inside the stage, so clamping keeps all of it visible. */
+const POPOVER_ROOM = { width: 240, height: 104 }
+
 /**
  * Which cursor the stage offers, in the order the gestures take priority.
  *
@@ -335,6 +419,8 @@ function usePlacement(
   current: ShownScene | null,
   placing: Placing,
   stamp: ReturnType<typeof usePlacePrefab>,
+  /** A right-click landed: the panel opens or closes its window about it. */
+  onContext: (entityId: string | null, at: Point) => void,
 ): ScenePlacement {
   const selection = useSelection()
   const scenePath = open.state === 'open' ? open.path : null
@@ -456,8 +542,10 @@ function usePlacement(
       },
 
       stopStamping: placing.stopStamping,
+
+      context: onContext,
     }
-  }, [current, scenePath, scale, entities, selection, placing, stamp])
+  }, [current, scenePath, scale, entities, selection, placing, stamp, onContext])
 }
 
 // --- the canvas ------------------------------------------------------------

@@ -1187,6 +1187,80 @@ body {
 }
 
 /*
+ * The right-click window: the same card anatomy as the editor's two dropdown
+ * menus, floated over the picture at the spot the panel chose. Sans inside it
+ * for the same reason the menus are — the entity's name is the human's word,
+ * not chrome.
+ */
+.entity-popover {
+  position: absolute;
+  z-index: 6;
+  width: 216px;
+  padding: 4px;
+  border: 1px solid var(--shell-line);
+  border-radius: var(--shell-radius);
+  background: var(--shell-surface);
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.5);
+  font-family: var(--shell-sans);
+}
+
+.entity-popover__bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 2px 6px 6px;
+}
+
+.entity-popover__name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.entity-popover__close {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--shell-radius-sm);
+  background: none;
+  color: var(--shell-text-dim);
+  font: inherit;
+  font-size: 11px;
+  cursor: default;
+}
+
+.entity-popover__close:hover {
+  background: var(--shell-raised);
+  color: var(--shell-text);
+}
+
+.entity-popover__row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 6px 4px;
+}
+
+.entity-popover__row .control--number {
+  width: 64px;
+  min-width: 0;
+}
+
+.entity-popover__label {
+  flex: none;
+  color: var(--shell-text-dim);
+  font-family: var(--shell-mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+/*
  * A file from the Assets panel is over the picture and letting go will put it
  * down here.
  *

@@ -297,7 +297,8 @@ last row is drawn in front.
   or by dragging a row to where it should sit. A line shows where it will land;
   `Ctrl-Z` takes either kind of reorder back in one press.
 - **Viewport** → click to select, drag to move, `G` to move without holding
-  anything, `Shift-D` for a copy.
+  anything, `Shift-D` for a copy, right-click for a small window with the
+  entity's position.
 - **Inspector** → name, position, rotation, scale, spin, and which texture it draws.
 
 #### Dragging things in
@@ -375,8 +376,8 @@ instances the level has.
 
 **Place by clicking** is the button for putting a lot of them down. Press it and
 every click in the picture puts another one where you clicked, on the snap,
-until you press `Esc` or press the button again. It is on the prefab's panel and
-on any instance of it, so you can start from either.
+until you press `Esc`, right-click, or press the button again. It is on the
+prefab's panel and on any instance of it, so you can start from either.
 
 Two things it deliberately does *not* do, because both would stop you at the
 second one: it does not select what it places, so the Inspector stays on the
@@ -403,7 +404,21 @@ time, space-drag still pans, and the wheel still zooms.
 | `X` / `Y` while grabbing | Hold it to that axis, from where it started |
 | `Esc` while grabbing | Put it back exactly where it was |
 | `Shift-D` | A copy of the selected entity, in the same place, selected |
-| `Esc` | Stop placing by clicking |
+| Right-click a sprite | A small window next to it with its position, ready to type into |
+| Right-click empty space | Close that window |
+| `Esc`, or right-click | Stop placing by clicking |
+
+#### The right-click window
+
+**Right-click an entity and a small window opens next to it** holding the
+entity's position, with the cursor already in the X field. It is the same
+position the Inspector shows — type in either and the other follows, and one
+edit is one press of `Ctrl-Z`. `Esc` closes it, and so does clicking anywhere
+else, panning, zooming, or right-clicking empty space. More of the entity's
+settings will appear in this window later.
+
+The browser's own right-click menu never opens over the picture — the right
+button belongs to the editor there, and to your game while one is running.
 
 #### Grabbing
 

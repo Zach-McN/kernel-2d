@@ -6,10 +6,13 @@ import type { Point } from '../../runtime'
  * Driving the scene viewport with a mouse and a handful of keys.
  *
  * **Left-press picks and places. Middle-drag and space-drag pan; the wheel zooms
- * toward the cursor.** That is what Godot, Unity's 2D view and Tiled have all
- * settled on, and the space-and-drag half is the habit every art tool since
- * Photoshop has taught. Right-drag is deliberately still unclaimed: it is a 3D
- * flythrough idiom and it collides with the context menu here.
+ * toward the cursor. A right-click asks about what is under it** — the panel
+ * decides what appears — **and while a placing mode is on it is the way out of
+ * the mode instead**, which is what the second button means in every editor
+ * with one. The browser's own context menu never opens over the picture: the
+ * right button belongs to the editor here, and to the game while one runs.
+ * Right-*drag* is deliberately still unclaimed: it is a 3D flythrough idiom
+ * and a click is not a drag.
  *
  * **One place decides what a press means.** Placing arrived after panning, and
  * the tempting shape is a second pointer layer on the same element for the new
@@ -101,6 +104,12 @@ export interface ScenePlacement {
   stampAt: (at: Point) => void
   /** Esc. Harmless when nothing is being stamped. */
   stopStamping: () => void
+  /**
+   * A right-click landed: what is under it, and where, in the host's own
+   * pixels. Null means empty space. This layer decides only that the press
+   * means "ask about this spot" — what appears is the panel's business.
+   */
+  context: (entityId: string | null, at: Point) => void
 }
 
 export interface SceneGestureOptions {
@@ -281,7 +290,8 @@ export function useSceneGestures(options: SceneGestureOptions): SceneGestures {
 
       const middle = event.button === 1
       const left = event.button === 0
-      if (!middle && !left) return
+      const right = event.button === 2
+      if (!middle && !left && !right) return
 
       event.preventDefault()
 
@@ -294,18 +304,33 @@ export function useSceneGestures(options: SceneGestureOptions): SceneGestures {
       // press does — it picks nothing, changes no selection and starts no pan.
       // Above space, deliberately: a grab is a move already in progress and the
       // human has to be able to put it down without letting go of anything.
+      // The right button is swallowed with everything else: Esc is the way out.
       if (grabRef.current !== null) {
         if (left) endGrab('drop')
         return
       }
 
       // Space wins over everything, so a pan can start anywhere — including on
-      // top of a sprite, which is exactly where the human will try it.
-      if (middle || readyRef.current) {
+      // top of a sprite, which is exactly where the human will try it. Only the
+      // buttons that pan, though: a right-click while space is held is still a
+      // right-click.
+      if (middle || (left && readyRef.current)) {
         holding = { id: event.pointerId, x: event.clientX, y: event.clientY }
         pressed.current = true
         element.setPointerCapture(event.pointerId)
         setPanning(true)
+        return
+      }
+
+      if (right) {
+        // While a mode is on, the second button is the way out of the mode —
+        // before it is anything else. Otherwise it asks about what is under it.
+        if (placementRef.current.stamping) {
+          placementRef.current.stopStamping()
+          return
+        }
+        const at = pointIn(event)
+        placementRef.current.context(placementRef.current.pick(at), at)
         return
       }
 
@@ -409,6 +434,13 @@ export function useSceneGestures(options: SceneGestureOptions): SceneGestures {
       if (event.button === 1 && enabledRef.current) event.preventDefault()
     }
 
+    // The browser's menu never opens over the picture — not gated on `enabled`,
+    // because while a level runs the right button is the game's, and the menu
+    // appearing over a running game is the same wrong answer.
+    const onContextMenu = (event: MouseEvent): void => {
+      event.preventDefault()
+    }
+
     const onWheel = (event: WheelEvent): void => {
       if (!enabledRef.current) return
       // Always, including the ctrl-wheel a trackpad pinch arrives as: without
@@ -430,6 +462,7 @@ export function useSceneGestures(options: SceneGestureOptions): SceneGestures {
     element.addEventListener('lostpointercapture', release)
     element.addEventListener('pointerleave', onPointerLeave)
     element.addEventListener('mousedown', onMouseDown)
+    element.addEventListener('contextmenu', onContextMenu)
     // Not through React's `onWheel`, which cannot preventDefault. See above.
     element.addEventListener('wheel', onWheel, { passive: false })
 
@@ -441,6 +474,7 @@ export function useSceneGestures(options: SceneGestureOptions): SceneGestures {
       element.removeEventListener('lostpointercapture', release)
       element.removeEventListener('pointerleave', onPointerLeave)
       element.removeEventListener('mousedown', onMouseDown)
+      element.removeEventListener('contextmenu', onContextMenu)
       element.removeEventListener('wheel', onWheel)
     }
   }, [host, pan, zoom, applyGrab, endGrab])

@@ -26,6 +26,8 @@ export interface NumberFieldProps {
   step?: number
   /** Whole pixels. A frame two-and-a-half pixels wide is not a thing. */
   integer?: boolean
+  /** For a field in a window that opened to be typed into, and nowhere else. */
+  autoFocus?: boolean
 }
 
 export function NumberField({
@@ -36,6 +38,7 @@ export function NumberField({
   min,
   step,
   integer,
+  autoFocus,
 }: NumberFieldProps): ReactElement {
   const [typed, setTyped] = useState<string | null>(null)
   const committed = useRef(value)
@@ -58,6 +61,7 @@ export function NumberField({
       value={typed ?? String(value)}
       min={min}
       step={step}
+      autoFocus={autoFocus}
       onChange={(event) => {
         const text = event.target.value
         setTyped(text)
