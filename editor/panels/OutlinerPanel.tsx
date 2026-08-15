@@ -1,4 +1,12 @@
-import { useRef, useState, type DragEvent, type MouseEvent, type ReactElement, type ReactNode } from 'react'
+import {
+  useEffect,
+  useRef,
+  useState,
+  type DragEvent,
+  type MouseEvent,
+  type ReactElement,
+  type ReactNode,
+} from 'react'
 
 import {
   SCENE_FORMAT,
@@ -8,6 +16,7 @@ import {
   type Entity,
 } from '../../runtime/formats/scene-schema'
 import { basename } from '../shell/asset-kinds'
+import { useEntityPopover, popoverSpot } from '../shell/entity-popover'
 import { freeName, namesIn } from '../shell/entity-names'
 import { useDeleteEntities } from '../shell/useDeleteEntities'
 import { useDuplicateEntity } from '../shell/useDuplicateEntity'
@@ -17,6 +26,7 @@ import { useResolvedScene, type ResolvedScene } from '../shell/scene-prefabs'
 import { useSelection } from '../shell/selection'
 import { mintId } from '../store/ids'
 import { editDocument } from '../store/open-documents'
+import { EntityPopover } from './EntityPopover'
 
 /**
  * What is in the open scene, in the order it is drawn.
@@ -47,6 +57,13 @@ import { editDocument } from '../store/open-documents'
  * list idiom, Shift-as-range-from-the-last-click, and that is the trade: one
  * meaning across both surfaces was worth more than the convenience, since the
  * picture has no order to take a range along.
+ *
+ * **A right-click on a row opens the editor's right-click window on that
+ * entity** — the same window a right-click on the sprite opens, in the same
+ * state, because it is one window with two doors rather than a second one built
+ * here (`../shell/entity-popover.tsx`). The pattern Duplicate and `Shift-D`
+ * already keep: a gesture the human learned over the picture has to mean the
+ * same thing in the list, or it is two half-features.
  *
  * Only Delete acts on the whole selection. Duplicate and the reorder arrows act
  * on the primary entity — the last one clicked — because there is no plural
@@ -85,6 +102,33 @@ export function OutlinerPanel(): ReactElement {
   // Counted rather than compared against `relatedTarget`: `dragleave` fires
   // when the pointer crosses onto a child row (`editor-ui` U35).
   const dragDepth = useRef(0)
+
+  // The editor's one right-click window, drawn here only while this panel is
+  // the one it was opened from (`../shell/entity-popover.tsx`).
+  const popovers = useEntityPopover()
+  const popover = popovers.anchor?.owner === 'outliner' ? popovers.anchor : null
+  // The panel it is measured against, and the list it hangs over — the second
+  // so a closed window can hand the keys back to the row it was about.
+  const panel = useRef<HTMLDivElement | null>(null)
+  const list = useRef<HTMLOListElement | null>(null)
+
+  /*
+   * What takes this window's situation away, in the two facts a hook can see
+   * before the states below are unpacked: the level it is about is no longer
+   * the open one, or the selection has moved off the entity it names. The
+   * third — the entity itself going — is answered at the bottom, where the
+   * list is in hand and the window is only drawn if its entity is in it.
+   *
+   * The list *scrolling* is the fourth and it is handled on the event, because
+   * the window is anchored to a spot in this panel rather than to the row: it
+   * is the same fact as the viewport's camera moving, one panel over.
+   */
+  const primary = removal.entities.at(-1) ?? null
+  const scenePath = open.state === 'open' ? open.path : null
+  useEffect(() => {
+    if (popover === null) return
+    if (popover.scene !== scenePath || popover.entity !== primary) popovers.close()
+  }, [popover, popovers, primary, scenePath])
 
   if (open.state === 'none') {
     return <Empty>No scene is open. Click a scene in the Assets panel to see what is in it.</Empty>
@@ -167,6 +211,42 @@ export function OutlinerPanel(): ReactElement {
     selection.selectEntity(path, id)
   }
 
+  /**
+   * A right-click on a row, which opens the editor's right-click window on that
+   * entity — the same window, in the same state, that a right-click on the
+   * sprite opens (`../shell/entity-popover.tsx`).
+   *
+   * It selects as well as asks, exactly as the viewport's does, so the row, the
+   * Inspector and the window are all describing one entity. And it says no to
+   * the browser's own menu: the right button means this in the picture already,
+   * and a list where it meant "reload / save as" instead would be the surface
+   * the gesture stopped working on.
+   */
+  const openPopover = (id: string, event: MouseEvent<HTMLElement>): void => {
+    event.preventDefault()
+    selection.selectEntity(path, id)
+    const box = panel.current?.getBoundingClientRect()
+    popovers.show({
+      owner: 'outliner',
+      scene: path,
+      entity: id,
+      at: popoverSpot(box, {
+        x: event.clientX - (box?.left ?? 0),
+        y: event.clientY - (box?.top ?? 0),
+      }),
+    })
+  }
+
+  /**
+   * Closed, with the keys handed back to the row it was about — so `Esc` leaves
+   * the list usable without another click. The viewport hands them back to the
+   * picture for exactly the same reason.
+   */
+  const closePopover = (id: string): void => {
+    popovers.close()
+    list.current?.querySelector<HTMLElement>(`[data-entity-id="${CSS.escape(id)}"]`)?.focus()
+  }
+
   const move = (id: string, by: number): void => {
     change('Reorder entity', (list) => {
       const at = list.findIndex((entity) => entity.id === id)
@@ -218,9 +298,20 @@ export function OutlinerPanel(): ReactElement {
   }
 
   const at = entities.findIndex((entity) => entity.id === selected)
+  // The file's entity, never the resolved one: everything the window changes
+  // goes to the document (`editor-ui` U23). Null is also how the window closes
+  // when its entity is deleted from under it — there is nothing to draw.
+  const popoverEntity =
+    popover === null ? null : (entities.find((entity) => entity.id === popover.entity) ?? null)
 
   return (
-    <div className="outliner" data-testid="outliner-panel" data-scene={path}>
+    <div
+      className="outliner"
+      data-testid="outliner-panel"
+      data-scene={path}
+      data-popover-entity={popoverEntity?.id ?? ''}
+      ref={panel}
+    >
       <header className="outliner__bar">
         <button type="button" className="control control--action" data-testid="entity-add" onClick={add}>
           Add
@@ -280,6 +371,25 @@ export function OutlinerPanel(): ReactElement {
         <ol
           className="outliner__list"
           aria-label={`Entities in ${name}`}
+          ref={list}
+          // A right-click that missed every row asks about nothing, which
+          // closes whatever was open — the same answer a right-click on empty
+          // space in the picture gives.
+          //
+          // The press is *asked where it landed* rather than being stopped by
+          // the row it landed on, which matters more than it looks: React's
+          // `stopPropagation` stops the native event too, so a row that
+          // swallowed its own press would also hide it from anything listening
+          // at the window — including the test that checks the browser's menu
+          // was told no.
+          onContextMenu={(event) => {
+            event.preventDefault()
+            if (rowUnder(event.target) === null) popovers.close()
+          }}
+          // The window hangs off a spot in the panel rather than off the row,
+          // so a list that scrolls takes its anchor away — the viewport's
+          // camera, one panel over.
+          onScroll={() => popovers.close()}
           onDragEnter={(event) => {
             if (!isRowDrag(event)) return
             event.preventDefault()
@@ -331,6 +441,7 @@ export function OutlinerPanel(): ReactElement {
                       : null
                 }
                 onSelect={(event) => clickRow(entity.id, event)}
+                onContext={(event) => openPopover(entity.id, event)}
                 onDragStart={(event) => {
                   // The marker is all a `dragover` can see; the id itself rides
                   // in the ref, readable while the drag is happening (U35).
@@ -347,12 +458,22 @@ export function OutlinerPanel(): ReactElement {
         </ol>
       )}
 
+      {popover !== null && popoverEntity !== null && (
+        <EntityPopover
+          scenePath={path}
+          entity={popoverEntity}
+          at={popover.at}
+          onClose={() => closePopover(popover.entity)}
+        />
+      )}
+
       {/* Where the modifiers are learned. A selection gesture nobody is told
           about is a selection gesture nobody uses, and there is nowhere else on
           screen that could mention Shift, Ctrl or the delete keys. */}
       <p className="outliner__note">
         The last one in the list is drawn in front — drag a row to reorder. Shift-click adds to the
-        selection, Ctrl-click takes away, Delete or Backspace removes what is selected.
+        selection, Ctrl-click takes away, right-click opens an entity's little window, Delete or
+        Backspace removes what is selected.
       </p>
     </div>
   )
@@ -394,6 +515,13 @@ function problemFor(
  */
 const ROW_DRAG_TYPE = 'application/x-kernel-2d-entity-row'
 
+/** The row an event landed on, or null for the list's own background. */
+function rowUnder(target: EventTarget | null): HTMLElement | null {
+  if (!(target instanceof HTMLElement)) return null
+  const row = target.closest('[data-entity-id]')
+  return row instanceof HTMLElement ? row : null
+}
+
 /** Ours rather than an asset, a text selection, or a file from Explorer. */
 function isRowDrag(event: DragEvent<HTMLElement>): boolean {
   return event.dataTransfer.types.includes(ROW_DRAG_TYPE)
@@ -421,6 +549,8 @@ interface RowProps {
   /** The edge the carried row would land on, for the line, or null. */
   dropLine: 'above' | 'below' | null
   onSelect: (event: MouseEvent<HTMLElement>) => void
+  /** A right-click on the row: the editor's right-click window, on this entity. */
+  onContext: (event: MouseEvent<HTMLElement>) => void
   onDragStart: (event: DragEvent<HTMLElement>) => void
   onDragEnd: () => void
 }
@@ -434,6 +564,7 @@ function Row({
   problem,
   dropLine,
   onSelect,
+  onContext,
   onDragStart,
   onDragEnd,
 }: RowProps): ReactElement {
@@ -451,6 +582,7 @@ function Row({
         data-entity-prefab={fromPrefab ?? ''}
         draggable
         onClick={onSelect}
+        onContextMenu={onContext}
         onDragStart={onDragStart}
         onDragEnd={onDragEnd}
       >

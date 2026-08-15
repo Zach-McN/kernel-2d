@@ -11,6 +11,11 @@ import { selectAsset } from './select-asset.js'
  * Position is asserted through the Inspector's fields, which read the same
  * document — the point of the window is that it is the same field in a second
  * place, not a second copy of the value.
+ *
+ * **It has two doors**: a right-click on the sprite, and a right-click on the
+ * entity's row in the Outliner. The second half of this file is about the list,
+ * and about the one thing two doors into one window has to guarantee — that
+ * only one of them is ever open.
  */
 
 const LEVEL_ONE = 'scenes/level-01.json'
@@ -154,9 +159,124 @@ test('leaves a picture of the window over the picture', async ({ page }, testInf
   await page.getByTestId('viewport-panel').screenshot({ path: testInfo.outputPath('entity-popover.png') })
 })
 
+// --- the Outliner's door ---------------------------------------------------
+
+test('right-clicking a row opens the same window, on that entity', async ({ page }) => {
+  await openLevel(page)
+
+  await row(page, 'Knight').click({ button: 'right' })
+
+  const popover = inOutliner(page)
+  await expect(popover).toBeVisible()
+  await expect(popover).toContainText('Knight')
+  // Selected as well as asked about, exactly as the picture's right-click does.
+  await expect(page.getByTestId('inspector-name')).toHaveText('Knight')
+})
+
+test('the row window edits the position, and the Inspector agrees', async ({ page }) => {
+  await openLevel(page)
+  await row(page, 'Knight').click({ button: 'right' })
+  await expect(inOutliner(page)).toBeVisible()
+
+  await inOutliner(page).getByTestId('popover-x-control').fill('456')
+
+  await expect(page.getByTestId('entity-x-control')).toHaveValue('456')
+})
+
+test('Esc closes the row window and the row has the keys again', async ({ page }) => {
+  await openLevel(page)
+  await row(page, 'Knight').click({ button: 'right' })
+  await expect(inOutliner(page)).toBeVisible()
+
+  await page.keyboard.press('Escape')
+
+  await expect(inOutliner(page)).toBeHidden()
+  await expect(row(page, 'Knight')).toBeFocused()
+})
+
+test('selecting another row closes it', async ({ page }) => {
+  await openLevel(page)
+  await row(page, 'Knight').click({ button: 'right' })
+  await expect(inOutliner(page)).toBeVisible()
+
+  await row(page, 'Ground').click()
+
+  await expect(inOutliner(page)).toBeHidden()
+})
+
+test('the browser context menu never opens over a row', async ({ page }) => {
+  await openLevel(page)
+  await page.evaluate(() => {
+    const flags = { seen: 0, prevented: 0 }
+    const host = globalThis as unknown as {
+      __rowMenu?: typeof flags
+      addEventListener: (type: string, listener: (event: { defaultPrevented: boolean }) => void) => void
+    }
+    host.__rowMenu = flags
+    host.addEventListener('contextmenu', (event) => {
+      flags.seen += 1
+      if (event.defaultPrevented) flags.prevented += 1
+    })
+  })
+
+  await row(page, 'Knight').click({ button: 'right' })
+
+  const flags = await page.evaluate(
+    () => (globalThis as unknown as { __rowMenu: { seen: number; prevented: number } }).__rowMenu,
+  )
+  expect(flags.seen).toBeGreaterThanOrEqual(1)
+  expect(flags.prevented).toBe(flags.seen)
+})
+
+test('only one window is ever open, whichever door was used last', async ({ page }) => {
+  const spot = await entitySpot(page, 'Knight')
+  await page.mouse.click(spot.x, spot.y, { button: 'right' })
+  await expect(inViewport(page)).toBeVisible()
+
+  // The same entity, from the other door: the picture's window is not left
+  // standing beside the list's — it is one window that moved.
+  await row(page, 'Knight').click({ button: 'right' })
+
+  await expect(inOutliner(page)).toBeVisible()
+  await expect(inViewport(page)).toBeHidden()
+  await expect(page.getByTestId('entity-popover')).toHaveCount(1)
+})
+
+test('the picture takes it back again', async ({ page }) => {
+  const spot = await entitySpot(page, 'Knight')
+  await row(page, 'Knight').click({ button: 'right' })
+  await expect(inOutliner(page)).toBeVisible()
+
+  await page.mouse.click(spot.x, spot.y, { button: 'right' })
+
+  await expect(inViewport(page)).toBeVisible()
+  await expect(inOutliner(page)).toBeHidden()
+})
+
+test('leaves a picture of the window over the list', async ({ page }, testInfo) => {
+  await openLevel(page)
+  await row(page, 'Knight').click({ button: 'right' })
+  await expect(inOutliner(page)).toBeVisible()
+  await page
+    .getByTestId('outliner-panel')
+    .screenshot({ path: testInfo.outputPath('outliner-popover.png') })
+})
+
 // --- driving ---------------------------------------------------------------
 
 const viewport = (page: Page): Locator => page.getByTestId('viewport-panel')
+
+const inViewport = (page: Page): Locator => viewport(page).getByTestId('entity-popover')
+
+const inOutliner = (page: Page): Locator =>
+  page.getByTestId('outliner-panel').getByTestId('entity-popover')
+
+/** The level open and drawn, which is all the list's own tests need. */
+async function openLevel(page: Page): Promise<void> {
+  await selectAsset(page, LEVEL_ONE)
+  await expect(viewport(page)).toHaveAttribute('data-scene-showing', LEVEL_ONE)
+  await settled(page)
+}
 
 const row = (page: Page, name: string): Locator =>
   page.getByTestId('outliner-panel').locator('[data-entity-id]').filter({ hasText: name }).first()

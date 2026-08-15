@@ -5,6 +5,7 @@ import type { ReactElement } from 'react'
 import { StatusStrip } from './StatusStrip'
 import { AssetBrowsingProvider } from './asset-browsing'
 import { AssetMetaProvider } from './asset-meta-context'
+import { EntityPopoverProvider } from './entity-popover'
 import { LayoutProvider, useLayout } from './layout-context'
 import { OpenSceneProvider } from './open-scene'
 import { PANEL_COMPONENTS, layOutPanels } from './panels'
@@ -68,27 +69,29 @@ export function App(): ReactElement {
   return (
     <ProjectProvider>
       <SelectionProvider>
-        <PlacingProvider>
-          <AssetBrowsingProvider>
-            <AssetMetaProvider>
-              <OpenSceneProvider>
-                <ScenePrefabsProvider>
-                  <SceneAssetsProvider>
-                    <ViewportProvider>
-                      <SceneViewProvider>
-                        <PlayModeProvider>
-                          <LayoutProvider>
-                            <Shell connection={connection} />
-                          </LayoutProvider>
-                        </PlayModeProvider>
-                      </SceneViewProvider>
-                    </ViewportProvider>
-                  </SceneAssetsProvider>
-                </ScenePrefabsProvider>
-              </OpenSceneProvider>
-            </AssetMetaProvider>
-          </AssetBrowsingProvider>
-        </PlacingProvider>
+        <EntityPopoverProvider>
+          <PlacingProvider>
+            <AssetBrowsingProvider>
+              <AssetMetaProvider>
+                <OpenSceneProvider>
+                  <ScenePrefabsProvider>
+                    <SceneAssetsProvider>
+                      <ViewportProvider>
+                        <SceneViewProvider>
+                          <PlayModeProvider>
+                            <LayoutProvider>
+                              <Shell connection={connection} />
+                            </LayoutProvider>
+                          </PlayModeProvider>
+                        </SceneViewProvider>
+                      </ViewportProvider>
+                    </SceneAssetsProvider>
+                  </ScenePrefabsProvider>
+                </OpenSceneProvider>
+              </AssetMetaProvider>
+            </AssetBrowsingProvider>
+          </PlacingProvider>
+        </EntityPopoverProvider>
       </SelectionProvider>
     </ProjectProvider>
   )

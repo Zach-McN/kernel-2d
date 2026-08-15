@@ -295,7 +295,8 @@ last row is drawn in front.
   **drag a file onto the level** — see below.
 - **Outliner** → add, duplicate, delete, and reorder — with the `↑` `↓` buttons,
   or by dragging a row to where it should sit. A line shows where it will land;
-  `Ctrl-Z` takes either kind of reorder back in one press.
+  `Ctrl-Z` takes either kind of reorder back in one press. Right-click a row for
+  the same small window a right-click on the sprite opens.
 - **Viewport** → click to select, drag to move, `G` to move without holding
   anything, `Shift-D` for a copy, right-click for a small window with the
   entity's position.
@@ -535,8 +536,17 @@ edit is one press of `Ctrl-Z`. `Esc` closes it, and so does clicking anywhere
 else, panning, zooming, or right-clicking empty space. More of the entity's
 settings will appear in this window later.
 
-The browser's own right-click menu never opens over the picture — the right
-button belongs to the editor there, and to your game while one is running.
+**It opens from the Outliner too.** Right-click an entity's row in the list and
+the same window appears next to the row, about the same entity, with the same
+field in it — the right button means one thing in both places. Only ever one
+window is open: opening it from the list closes it over the picture, and the
+other way round. In the list it closes on `Esc`, on selecting another row, or on
+scrolling the list, and closing it hands the keys back to the row so you can
+carry on with the keyboard.
+
+The browser's own right-click menu never opens over the picture or over a row —
+the right button belongs to the editor there, and to your game while one is
+running.
 
 #### Grabbing
 

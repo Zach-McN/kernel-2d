@@ -1579,7 +1579,14 @@ body {
 
 /* --- the outliner ------------------------------------------------------- */
 
+/*
+ * Positioned, because the right-click window a row opens hangs off this panel
+ * rather than off the row — the spot it sits at is measured against this box,
+ * and the same clamping that keeps it inside the picture keeps it inside here
+ * (`editor/shell/entity-popover.tsx`).
+ */
 .outliner {
+  position: relative;
   display: flex;
   flex-direction: column;
   height: 100%;

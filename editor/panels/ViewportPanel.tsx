@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactElement, type ReactNode, type RefObject } from 'react'
+import { useEffect, useMemo, useRef, type ReactElement, type ReactNode, type RefObject } from 'react'
 
 import {
   describeLoadProblem,
@@ -25,6 +25,7 @@ import { pivotOf, shortestTurn, turnAbout, type Moved, type Turned } from '../sh
 import { ANGLE_STEP, SNAP_INTERVALS, freely, placeOn, turnOn } from '../shell/snap'
 import { useSceneDropTarget, type SceneDropTarget } from '../shell/useSceneDropTarget'
 import { useSceneGestures, type Grab, type ScenePlacement, type Turn } from '../shell/useSceneGestures'
+import { useEntityPopover, popoverSpot } from '../shell/entity-popover'
 import { useSelection } from '../shell/selection'
 import { useDeleteEntities } from '../shell/useDeleteEntities'
 import { useDuplicateEntity } from '../shell/useDuplicateEntity'
@@ -154,16 +155,21 @@ export function ViewportPanel(): ReactElement {
   const removal = useDeleteEntities()
   const ready = view.state === 'ready' ? view : null
 
-  // The right-click window: which entity it is about, where it sits in the
-  // stage's pixels, and the camera it was opened under — it is anchored in
-  // screen space, so a camera that moves takes its anchor away.
-  const [popover, setPopover] = useState<PopoverAnchor | null>(null)
+  // The right-click window — the editor's one window, which the Outliner's rows
+  // open too (`editor/shell/entity-popover.tsx`). This panel draws it only when
+  // it is the one it was opened from.
+  const popovers = useEntityPopover()
+  const popover = popovers.anchor?.owner === 'viewport' ? popovers.anchor : null
+  // The camera it was opened under. A ref rather than state, because nothing
+  // draws it: it exists so the panel can notice the picture moving out from
+  // under a window that is anchored in screen space.
+  const popoverCamera = useRef<{ scale: number; x: number; y: number } | null>(null)
 
   const openPopover = (entityId: string | null, at: Point): void => {
     // A right-click on empty space asks about nothing, which closes whatever
     // was open — the same press that would have opened one, pointed away.
     if (entityId === null || current === null || open.state !== 'open') {
-      setPopover(null)
+      popovers.close()
       return
     }
     // Selected as well as asked about, so the outline, the Inspector and this
@@ -171,19 +177,21 @@ export function ViewportPanel(): ReactElement {
     selection.selectEntity(open.path, entityId)
     // Next to the click, kept inside the stage: near an edge, "next to" means
     // the near side rather than hanging off the picture.
-    const box = host.current?.getBoundingClientRect()
-    setPopover({
+    popoverCamera.current = {
+      scale: current.camera.scale,
+      x: current.camera.focus.x,
+      y: current.camera.focus.y,
+    }
+    popovers.show({
+      owner: 'viewport',
+      scene: open.path,
       entity: entityId,
-      at: {
-        x: Math.max(8, Math.min(at.x + 12, (box?.width ?? 0) - POPOVER_ROOM.width)),
-        y: Math.max(8, Math.min(at.y + 8, (box?.height ?? 0) - POPOVER_ROOM.height)),
-      },
-      camera: { scale: current.camera.scale, x: current.camera.focus.x, y: current.camera.focus.y },
+      at: popoverSpot(host.current?.getBoundingClientRect(), at),
     })
   }
 
   const closePopover = (): void => {
-    setPopover(null)
+    popovers.close()
     // Focus back on the picture, so Esc closing the window leaves the
     // viewport's own keys working without another click.
     host.current?.focus({ preventScroll: true })
@@ -223,12 +231,16 @@ export function ViewportPanel(): ReactElement {
   useEffect(() => {
     if (popover === null) return
     const entityGone =
-      open.state !== 'open' || !open.scene.entities.some((one) => one.id === popover.entity)
+      open.state !== 'open' ||
+      open.path !== popover.scene ||
+      !open.scene.entities.some((one) => one.id === popover.entity)
+    const was = popoverCamera.current
     const cameraMoved =
       current === null ||
-      current.camera.scale !== popover.camera.scale ||
-      current.camera.focus.x !== popover.camera.x ||
-      current.camera.focus.y !== popover.camera.y
+      was === null ||
+      current.camera.scale !== was.scale ||
+      current.camera.focus.x !== was.x ||
+      current.camera.focus.y !== was.y
     if (
       entityGone ||
       cameraMoved ||
@@ -238,9 +250,19 @@ export function ViewportPanel(): ReactElement {
       gestures.grabbing !== null ||
       gestures.turning !== null
     ) {
-      setPopover(null)
+      popovers.close()
     }
-  }, [popover, open, current, mode.active, selected, gestures.dragging, gestures.grabbing, gestures.turning])
+  }, [
+    popover,
+    popovers,
+    open,
+    current,
+    mode.active,
+    selected,
+    gestures.dragging,
+    gestures.grabbing,
+    gestures.turning,
+  ])
 
   const popoverEntity =
     popover === null || open.state !== 'open'
@@ -449,16 +471,6 @@ function labelForMove(count: number): string {
 const noop = (): void => {}
 const noPan = (_dx: number, _dy: number): void => {}
 const noZoom = (_at: { x: number; y: number }, _direction: 1 | -1): void => {}
-
-/** The right-click window: which entity, where it sits, and the camera then. */
-interface PopoverAnchor {
-  entity: string
-  at: Point
-  camera: { scale: number; x: number; y: number }
-}
-
-/** Room the window needs inside the stage, so clamping keeps all of it visible. */
-const POPOVER_ROOM = { width: 240, height: 104 }
 
 /**
  * Which cursor the stage offers, in the order the gestures take priority.
