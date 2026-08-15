@@ -8,8 +8,8 @@ It is kept current by the definition of done in `CLAUDE.md`: a session that
 changes what you can do, or how you do it, changes this page in the same commit.
 If this page and the editor disagree, the editor is right and the page is a bug.
 
-Last true as of: **grabbing an entity with `G` and copying one with `Shift-D`**
-(2026-08-14).
+Last true as of: **the list of what it cannot do yet, read against the editor and
+checked line by line** (2026-08-15).
 
 ---
 
@@ -654,10 +654,9 @@ starts, from the same files, through the same code. Anything with a spin turns
 there too.
 
 It deliberately leaves out everything the starting level does not reach: your
-`assets/source` originals, the audio nothing plays yet, the levels you have not
-pointed at. The command prints what it left out, by folder, so it is never a
-silent decision. When a level can eventually send you to another level, the export
-will follow that and grow with the game.
+`assets/source` originals, the audio no level names, the levels nothing can get
+to. The command prints what it left out, by folder, so it is never a silent
+decision.
 
 **How you open it.** The folder has to be *served* rather than opened by
 double-clicking. That is a browser rule and not a shortfall in the export: a page
@@ -731,25 +730,38 @@ the editor takes the change.
 
 ## What it cannot do yet
 
-- **Anything a player can do.** No input at all: no keys, no mouse, no touch.
-  A level runs and things in it move, but nobody plays it. This is the next big
-  gap and it is waiting on the game design, because what the first verb is is a
-  question about the game rather than about the editor.
+- **Play with anything but keys and a click.** A running level hears the
+  keyboard, and it hears the left mouse button at the spot in the level it landed
+  — and that is the whole of it. Where the pointer is when no button is down, a
+  drag, the right button, the middle button and a gamepad all reach nothing. On a
+  touchscreen a tap arrives as a click and nothing else is built for a finger.
+- **Pause or step a running level.** **Play** and **Stop** are the two buttons
+  there are. A level cannot be held still for a moment and looked at, or walked
+  forward a step at a time, so anything that happens too fast to see has to be
+  slowed down by the game's own code.
+- **Look at or forget what a game remembers.** The few facts a game keeps between
+  runs live in your browser, and nothing in the editor lists them, changes them or
+  clears them. Starting again from nothing means clearing the browser's site data
+  for the editor's address, which forgets every project's memory at once rather
+  than the one you are working on.
 - **Write or edit code from inside the editor.** Your game's systems are files in
   `src/`, edited in a text editor. The editor compiles them and re-reads them when
   you press Play; it does not show them to you or let you change them.
 - **See a system's data in the Inspector.** A component the engine does not know —
-  like the sample's `patrol` — is named there but cannot be edited. Setting one up
-  means typing it into the level file, or a tool built for it later.
+  the sample's `patrol`, or the level a door opens — is named there but cannot be
+  edited. Setting one up means typing it into the level file, or a tool built for
+  it later. **This is how a door is authored**, so joining two levels together is
+  a job for the game's code and the file rather than for a panel.
 - **Collision, gravity or physics.** Two sprites in the same place are two
   sprites in the same place.
 - **Choose or preview a sound effect.** A level's *music* is a file you pick in
   the Inspector; an effect is notes the game's own code describes, so there is
   nothing to pick and no way to hear one without pressing Play. Clicking an audio
   file in the Assets panel still does not play it.
-- **Choose which levels go in an export.** There is one starting level and the
-  export takes what it reaches. Nothing yet gets you from one level to another, so
-  there is nothing else for an export to include.
+- **Choose which levels go in an export.** There is one starting level, and the
+  export takes it together with every level the game can reach from it through a
+  door. A level nothing reaches is left out, and there is no list to tick it back
+  onto — the way to include one is to make the game able to get there.
 - **Make a `project.json` from inside the editor.** A project made with
   `npm run sample-project` has one. If yours has not got one, the export says so
   and nothing in the editor will create it.
