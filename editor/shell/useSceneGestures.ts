@@ -158,6 +158,15 @@ export interface ScenePlacement {
    */
   beginMove: (entityId: string) => boolean
   /**
+   * Is this entity part of what is currently selected?
+   *
+   * Asked on a press so the gesture layer can tell "pick this one up" from
+   * "pick up the group it is in" without holding a copy of the selection —
+   * which would be a second answer to what is selected, refreshed on its own
+   * schedule (`editor-ui` U9's argument, one layer down).
+   */
+  selected: (entityId: string) => boolean
+  /**
    * Total travel since the press.
    *
    * `invert` is `Ctrl`: it flips the snap toggle for as long as it is held, so
@@ -167,8 +176,16 @@ export interface ScenePlacement {
    * how the next reader writes the inversion backwards (`editor/shell/snap.ts`).
    */
   moveBy: (entityId: string, screenDx: number, screenDy: number, invert: boolean) => void
-  /** The press ended, whether or not anything moved. */
-  drop: () => void
+  /**
+   * The press ended, whether or not anything moved.
+   *
+   * `finished` is passed by the gestures that came from a press on an entity,
+   * and carries the one thing only the release knows: whether the press ever
+   * became a drag. A press that did not is a *click*, and a click inside a
+   * multi-selection means "just this one" — see the note on the implementation.
+   * A keyboard grab passes nothing, because it changes no selection.
+   */
+  drop: (finished?: { entity: string; moved: boolean }) => void
   /**
    * The move was called off: put the entity back where it started and leave no
    * trace of it in the undo history.
@@ -613,7 +630,26 @@ export function useSceneGestures(options: SceneGestureOptions): SceneGestures {
       // over six careful clicks, gone to a seventh that missed.
       if (entity === null && mode !== 'replace') return
 
-      placementRef.current.select(entity, mode)
+      /*
+       * **A press inside the selection does not collapse it**, which is what
+       * makes a group draggable at all: the whole point of pressing one of six
+       * selected sprites is usually to move all six. The selection layer is
+       * asked instead to remember where everything is and start a move.
+       *
+       * A press on something *not* selected replaces the selection first, as it
+       * always has. Which of the two happened is decided by `beginMove` from the
+       * selection as it was before this press — the only reading available here,
+       * since React has not re-rendered, and the right one either way.
+       *
+       * The click that *does* collapse a group is the one that never moves, and
+       * it is answered on the release: until the pointer travels, nobody knows
+       * whether this was a click or the start of a drag.
+       */
+      if (entity !== null && mode === 'replace' && placementRef.current.selected(entity)) {
+        placementRef.current.beginMove(entity)
+      } else {
+        placementRef.current.select(entity, mode)
+      }
       if (entity === null) return
 
       // Only a plain press starts a move. Shift and Ctrl are about *which*
@@ -702,13 +738,16 @@ export function useSceneGestures(options: SceneGestureOptions): SceneGestures {
 
       if (placing !== null && event.pointerId === placing.id) {
         if (element.hasPointerCapture(event.pointerId)) element.releasePointerCapture(event.pointerId)
+        const finished = { entity: placing.entity, moved: placing.moved }
         placing = null
         pressed.current = false
         lastMove.current = null
         setDragging(null)
         // Always, even for a press that never moved: it seals the undo step, and
-        // sealing one that was never opened costs nothing.
-        placementRef.current.drop()
+        // sealing one that was never opened costs nothing. What it also carries
+        // is whether this press was a click, which is what decides whether a
+        // multi-selection collapses onto the entity under it.
+        placementRef.current.drop(finished)
       }
     }
 

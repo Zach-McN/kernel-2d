@@ -18,11 +18,21 @@ import { freely } from './snap'
  * a question re-asked at every use.
  */
 
-/** One entity as a turn found it: what has to be remembered to turn it. */
-export interface Turned {
+/**
+ * One entity as a *move* found it: what has to be remembered to carry it.
+ *
+ * Here beside `Turned` rather than in the panel that uses it because the two are
+ * the same idea one field apart — a gesture remembers where things started and
+ * applies its travel to that, never to wherever they have got to.
+ */
+export interface Moved {
   id: string
   x: number
   y: number
+}
+
+/** One entity as a turn found it: a `Moved`, plus the angle it was facing. */
+export interface Turned extends Moved {
   rotation: number
 }
 

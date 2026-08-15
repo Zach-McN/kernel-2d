@@ -21,8 +21,8 @@ import { useRunningLevel, type RunSeams } from '../shell/running-level'
 import { describeProblem, problemsIn, useSceneAssets } from '../shell/scene-assets'
 import { describePrefabProblem, prefabProblemsIn, useResolvedScene } from '../shell/scene-prefabs'
 import { useDrawScene, useSceneView, type SceneViewState } from '../shell/scene-view-context'
-import { pivotOf, shortestTurn, turnAbout, type Turned } from '../shell/rotate'
-import { ANGLE_STEP, SNAP_INTERVALS, placeOn, turnOn } from '../shell/snap'
+import { pivotOf, shortestTurn, turnAbout, type Moved, type Turned } from '../shell/rotate'
+import { ANGLE_STEP, SNAP_INTERVALS, freely, placeOn, turnOn } from '../shell/snap'
 import { useSceneDropTarget, type SceneDropTarget } from '../shell/useSceneDropTarget'
 import { useSceneGestures, type Grab, type ScenePlacement, type Turn } from '../shell/useSceneGestures'
 import { useSelection } from '../shell/selection'
@@ -359,6 +359,11 @@ export function ViewportPanel(): ReactElement {
           offScreen={offScreenIn(open, current, selected)}
           moving={beingMoved}
           grab={gestures.grabbing}
+          // The selection *is* what a move carries, by construction rather than
+          // by being told: a press inside the selection keeps it and moves all
+          // of it, and a press outside replaces it with the one entity it then
+          // moves. So this needs no second copy of that rule to count from.
+          movingCount={removal.entities.length}
           turning={gestures.turning}
           placing={placing}
           stampingName={
@@ -436,6 +441,11 @@ function labelForTurn(count: number): string {
   return count === 1 ? 'Rotate entity' : `Rotate ${count} entities`
 }
 
+/** The same, for a move. */
+function labelForMove(count: number): string {
+  return count === 1 ? 'Move entity' : `Move ${count} entities`
+}
+
 const noop = (): void => {}
 const noPan = (_dx: number, _dy: number): void => {}
 const noZoom = (_at: { x: number; y: number }, _direction: 1 | -1): void => {}
@@ -495,7 +505,7 @@ function usePlacement(
   const scale = current?.camera.scale ?? null
 
   /**
-   * Where the entity was when the move began, and the undo run this move is.
+   * Where everything being moved was when the move began, and the undo run it is.
    *
    * A move is applied as travel from where it started rather than as a running
    * sum of pointer wobbles: with snapping on, adding up rounded steps would let
@@ -505,8 +515,14 @@ function usePlacement(
    * `Esc` able to take a move back exactly (`editor/store/documents.ts`): the
    * run is identified by nothing else, so a key shared with the *previous* move
    * of the same entity would see that one taken back too.
+   *
+   * **`anchor` is the one under the cursor**, and it is the whole of how a group
+   * stays rigid: the snap is applied to the anchor's position and every other
+   * entity gets that same travel. Snapping each one to the grid independently
+   * would pull three sprites three units apart onto one grid position — the same
+   * argument a rotation makes about not snapping the positions it orbits.
    */
-  const from = useRef<{ entity: string; x: number; y: number; key: string } | null>(null)
+  const from = useRef<{ anchor: string; started: Moved[]; key: string } | null>(null)
   const moves = useRef(0)
 
   /**
@@ -523,20 +539,43 @@ function usePlacement(
   const entities = open.state === 'open' ? open.scene.entities : null
 
   return useMemo<ScenePlacement>(() => {
-    /** Remembers where an entity is, so travel from here can be measured. */
-    const begin = (entityId: string): boolean => {
+    /**
+     * Remembers where everything about to move is, so travel can be measured.
+     *
+     * **What moves is decided here, from the selection as it was *before* this
+     * press** — and that is deliberate rather than convenient. Pressing an
+     * entity that is already selected moves the whole selection; pressing one
+     * that is not moves only it, because the press has just replaced the
+     * selection with it.
+     *
+     * Reading the pre-press selection is also the only thing that *works*: the
+     * press calls `select` and then this, and React has not re-rendered in
+     * between, so `selection` here is still the old one either way. Deriving the
+     * group from the rule above rather than from "whatever is selected now"
+     * turns that from a hazard into the answer.
+     */
+    const begin = (anchorId: string): boolean => {
       from.current = null
       if (scenePath === null) return false
 
-      const entity = entities?.find((one) => one.id === entityId)
-      if (entity === undefined) return false
+      const group = selection.selectedEntities.includes(anchorId)
+        ? selection.selectedEntities
+        : [anchorId]
+
+      const started: Moved[] = []
+      for (const id of group) {
+        const entity = entities?.find((one) => one.id === id)
+        if (entity !== undefined) started.push({ id, x: entity.transform.x, y: entity.transform.y })
+      }
+      // The anchor itself has to be in there, or there is nothing to measure the
+      // travel against — an id that has gone since the selection was made.
+      if (!started.some((one) => one.id === anchorId)) return false
 
       moves.current += 1
       from.current = {
-        entity: entityId,
-        x: entity.transform.x,
-        y: entity.transform.y,
-        key: `${scenePath}#${entityId}#move${moves.current}`,
+        anchor: anchorId,
+        started,
+        key: `${scenePath}#${anchorId}#move${moves.current}`,
       }
       return true
     }
@@ -573,35 +612,73 @@ function usePlacement(
 
       beginMove: (entityId) => begin(entityId),
 
+      selected: (entityId) => selection.selectedEntities.includes(entityId),
+
       moveBy: (entityId, screenDx, screenDy, invert) => {
         const start = from.current
-        if (start === null || start.entity !== entityId) return
+        if (start === null || start.anchor !== entityId) return
         if (scenePath === null || scale === null) return
+
+        const anchor = start.started.find((one) => one.id === entityId)
+        if (anchor === undefined) return
 
         // Screen y counts down and the level's counts up, so the vertical
         // travel is subtracted. The scale is the only part of the camera that
         // matters here: a drag is a distance, not a place.
-        const wanted = { x: start.x + screenDx / scale, y: start.y - screenDy / scale }
+        const wanted = { x: anchor.x + screenDx / scale, y: anchor.y - screenDy / scale }
         // The toggle and the held modifier are combined in one place, and this
         // is not it (`editor/shell/snap.ts`).
         const at = placeOn(wanted, placing.snap, invert)
 
-        editDocument(scenePath, { label: 'Move entity', merge: start.key }, (document) => {
-          if (document.format !== SCENE_FORMAT) return
-          // Re-found by id rather than remembered as an index: between the
-          // press and this move, a text editor may have changed the file.
-          const target = document.entities.find((one) => one.id === entityId)
-          if (target === undefined) return
-          target.transform.x = at.x
-          target.transform.y = at.y
-        })
+        // **The snapped travel, taken once and given to everything.** The grid
+        // is applied to the entity under the cursor and the rest are carried by
+        // the same distance, so a group keeps its shape — snapping each one
+        // separately would pull sprites three units apart onto one grid
+        // position, which is a formation destroyed by being nudged.
+        const dx = at.x - anchor.x
+        const dy = at.y - anchor.y
+
+        editDocument(
+          scenePath,
+          { label: labelForMove(start.started.length), merge: start.key },
+          (document) => {
+            if (document.format !== SCENE_FORMAT) return
+            for (const one of start.started) {
+              // Re-found by id rather than remembered as an index: between the
+              // press and this move, a text editor may have changed the file.
+              const target = document.entities.find((entity) => entity.id === one.id)
+              if (target === undefined) continue
+              // The anchor lands exactly where the snap put it; everything else
+              // is placed freely, because it is carrying the anchor's travel
+              // rather than being snapped on its own account.
+              target.transform.x = one.id === entityId ? at.x : freely(one.x + dx)
+              target.transform.y = one.id === entityId ? at.y : freely(one.y + dy)
+            }
+          },
+        )
       },
 
-      drop: () => {
+      /**
+       * The press is over.
+       *
+       * **A press on an already-selected entity that never moved collapses the
+       * selection onto it**, and that is the other half of not collapsing on the
+       * way down. Keeping the selection on the press is what lets a group be
+       * dragged at all; without this, a selection of six would be a state with no
+       * way out except clicking empty space, because every click inside it would
+       * pick up all six again. Decided on the release, because that is the first
+       * moment anybody knows a click was a click rather than a drag.
+       */
+      drop: (finished) => {
         from.current = null
         // Always, even for a press that never moved: it seals the undo step, and
         // sealing one that was never opened costs nothing.
         sealEdits()
+
+        if (finished === undefined || finished.moved || scenePath === null) return
+        if (selection.selectedEntities.length < 2) return
+        if (!selection.selectedEntities.includes(finished.entity)) return
+        selection.selectEntity(scenePath, finished.entity)
       },
 
       /**
@@ -860,6 +937,8 @@ interface CaptionProps {
   moving: Entity | null
   /** The keyboard grab in progress, which is the half of `moving` with keys. */
   grab: Grab | null
+  /** How many entities the move is carrying. One, usually. */
+  movingCount: number
   /** The turn in progress, or null. Its own sentence: it says an angle, not a position. */
   turning: Turn | null
   /** What a press lands on, and whether a press is placing at all. */
@@ -891,6 +970,7 @@ function Caption({
   offScreen,
   moving,
   grab,
+  movingCount,
   turning,
   placing,
   stampingName,
@@ -1035,10 +1115,10 @@ function Caption({
       ) : moving !== null ? (
         <Note
           testId={grab === null ? 'viewport-dragging' : 'viewport-grabbing'}
-          title={`${moving.name} — ${moving.transform.x}, ${moving.transform.y}. ${wholeAdvice(grab, placing.snap.on)}`}
+          title={`${movingSubject(moving, movingCount)} — ${moving.transform.x}, ${moving.transform.y}. ${wholeAdvice(grab, placing.snap.on)}`}
         >
-          <strong>{moving.name}</strong> — {moving.transform.x}, {moving.transform.y}.{' '}
-          {advice(grab, placing.snap.on)}
+          <strong>{movingSubject(moving, movingCount)}</strong> — {moving.transform.x},{' '}
+          {moving.transform.y}. {advice(grab, placing.snap.on)}
         </Note>
       ) : offScreen.kind === 'all' ? (
         <Note bad testId="viewport-offscreen">Everything is off screen — press Home to bring it back.</Note>
@@ -1124,6 +1204,18 @@ function advice(grab: Grab | null, snapping: boolean): string {
   if (grab === null) return modifier
   if (grab.axis === null) return `X or Y locks an axis, Esc puts it back. ${modifier}`
   return `Locked to ${grab.axis.toUpperCase()} — Esc puts it back. ${modifier}`
+}
+
+/**
+ * What is being moved, named.
+ *
+ * The count replaces the name once there is more than one, rather than joining
+ * it: six names would fill the bar and push the position — the pair the human is
+ * watching — off the end of it. The position stays the *anchor's*, which is the
+ * one under the cursor and the only one of the six with a number worth showing.
+ */
+function movingSubject(moving: Entity, count: number): string {
+  return count > 1 ? `${count} entities` : moving.name
 }
 
 /**

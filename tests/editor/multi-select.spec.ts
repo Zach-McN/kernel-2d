@@ -84,6 +84,11 @@ async function openScene(page: Page): Promise<void> {
  * Found by selecting it on its own and reading the outline the renderer
  * reported, which is the same trick `drag-place.spec.ts` uses: nothing here
  * works out where a sprite ought to be a second time.
+ *
+ * **It changes the selection**, because selecting is how it makes the outline
+ * appear. Call it *before* building the selection a test is about and keep the
+ * point — calling it afterwards silently collapses the selection onto one
+ * entity, which turns a multi-entity test into a single-entity one that passes.
  */
 async function spotOf(page: Page, name: string): Promise<{ x: number; y: number }> {
   await row(page, name).click()
@@ -356,5 +361,156 @@ test.describe('the Delete key', () => {
     await page.keyboard.press('Delete')
 
     await expect(rows(page)).toHaveCount(5)
+  })
+})
+
+// --- acceptance: moving several at once -------------------------------------
+
+/** What the Inspector says about the selected entity, in the level's own units. */
+async function position(page: Page): Promise<{ x: number; y: number }> {
+  return {
+    x: Number(await page.getByTestId('entity-x-control').inputValue()),
+    y: Number(await page.getByTestId('entity-y-control').inputValue()),
+  }
+}
+
+async function cameraScale(page: Page): Promise<number> {
+  return Number(await viewport(page).getAttribute('data-scene-scale'))
+}
+
+/** A left-drag from a point, settled before it returns. */
+async function dragFrom(page: Page, from: { x: number; y: number }, dx: number, dy: number): Promise<void> {
+  await page.mouse.move(from.x, from.y)
+  await page.mouse.down()
+  await page.mouse.move(from.x + dx, from.y + dy, { steps: 8 })
+  await page.mouse.up()
+  await expect(viewport(page)).toHaveAttribute('data-scene-dragging', '')
+}
+
+test.describe('moving several at once', () => {
+  test('dragging one of them carries the whole selection, keeping its shape', async ({ page }) => {
+    await openScene(page)
+
+    await row(page, 'Knight').click()
+    const knightBefore = await position(page)
+    await row(page, 'Slime').click()
+    const slimeBefore = await position(page)
+    const slimeSpot = await spotOf(page, 'Slime')
+
+    await row(page, 'Knight').click()
+    await row(page, 'Slime').click({ modifiers: ['Shift'] })
+    await expect.poll(() => selectedCount(page)).toBe(2)
+
+    const scale = await cameraScale(page)
+    await dragFrom(page, slimeSpot, 20 * scale, 0)
+
+    // The one under the cursor moved...
+    const slimeAfter = await position(page)
+    expect(slimeAfter.x).toBeCloseTo(slimeBefore.x + 20, 0)
+
+    // ...and so did the other, by exactly the same travel. Equal deltas are the
+    // assertion rather than equal positions: a group that keeps its shape is the
+    // whole claim, and an implementation snapping each entity on its own account
+    // moves them by *different* amounts onto the same grid.
+    await row(page, 'Knight').click()
+    const knightAfter = await position(page)
+    expect(knightAfter.x - knightBefore.x).toBeCloseTo(slimeAfter.x - slimeBefore.x, 1)
+    expect(knightAfter.y - knightBefore.y).toBeCloseTo(slimeAfter.y - slimeBefore.y, 1)
+  })
+
+  test('G carries the whole selection too', async ({ page }) => {
+    await openScene(page)
+
+    await row(page, 'Knight').click()
+    const knightBefore = await position(page)
+    await row(page, 'Slime').click({ modifiers: ['Shift'] })
+    const slimeBefore = await position(page)
+
+    const spot = await page.getByTestId('viewport-stage').boundingBox()
+    await page.mouse.move((spot?.x ?? 0) + 200, (spot?.y ?? 0) + 120)
+    await page.keyboard.press('g')
+    await expect(viewport(page)).not.toHaveAttribute('data-scene-grabbing', '')
+    await page.mouse.move((spot?.x ?? 0) + 260, (spot?.y ?? 0) + 120, { steps: 8 })
+    await page.keyboard.press('Enter')
+
+    const slimeAfter = await position(page)
+    expect(slimeAfter.x).not.toBeCloseTo(slimeBefore.x, 1)
+
+    await row(page, 'Knight').click()
+    const knightAfter = await position(page)
+    expect(knightAfter.x - knightBefore.x).toBeCloseTo(slimeAfter.x - slimeBefore.x, 1)
+  })
+
+  test('moving several is one press of Ctrl-Z', async ({ page }) => {
+    await openScene(page)
+    await row(page, 'Knight').click()
+    const before = await position(page)
+    await row(page, 'Slime').click({ modifiers: ['Shift'] })
+    const spot = await spotOf(page, 'Slime')
+
+    await row(page, 'Knight').click()
+    await row(page, 'Slime').click({ modifiers: ['Shift'] })
+    const scale = await cameraScale(page)
+    await dragFrom(page, spot, 20 * scale, 0)
+
+    await page.keyboard.press('ControlOrMeta+z')
+
+    await row(page, 'Knight').click()
+    await expect.poll(async () => (await position(page)).x).toBeCloseTo(before.x, 1)
+  })
+
+  /**
+   * A press inside the selection must not collapse it, or a group could never be
+   * picked up — and the click that *does* collapse it is the one that never
+   * moved. Both halves are here, because keeping only the first makes a
+   * selection of several a state with no way out except clicking empty space.
+   */
+  test('pressing one of several keeps the selection; a click that does not move collapses it', async ({
+    page,
+  }) => {
+    await openScene(page)
+    // Taken before the selection is built, and reused: asking again afterwards
+    // would collapse the very selection under test.
+    const spot = await spotOf(page, 'Slime')
+
+    await row(page, 'Knight').click()
+    await row(page, 'Slime').click({ modifiers: ['Shift'] })
+    await expect.poll(() => selectedCount(page)).toBe(2)
+
+    // Dragged: still two selected afterwards.
+    const scale = await cameraScale(page)
+    await dragFrom(page, spot, 20 * scale, 0)
+    await expect.poll(() => selectedCount(page)).toBe(2)
+
+    // Clicked without moving, on the sprite where it has *now* got to.
+    await clickIn(page, { x: spot.x + 20 * scale, y: spot.y })
+    await expect.poll(() => selectedCount(page)).toBe(1)
+    await expect(row(page, 'Slime')).toHaveAttribute('data-selected', 'true')
+  })
+
+  test('pressing something outside the selection picks up only that one', async ({ page }) => {
+    await openScene(page)
+    // Both taken up front, for the reason in `spotOf`'s note.
+    const knightSpot = await spotOf(page, 'Knight')
+    const knightBefore = await position(page)
+    await row(page, 'Ground').click()
+    const groundBefore = await position(page)
+
+    await row(page, 'Slime').click()
+    await row(page, 'Ground').click({ modifiers: ['Shift'] })
+    await expect.poll(() => selectedCount(page)).toBe(2)
+
+    // The Knight is not in that selection, so pressing it replaces the selection
+    // and drags it alone.
+    const scale = await cameraScale(page)
+    await dragFrom(page, knightSpot, 20 * scale, 0)
+
+    await expect.poll(() => selectedCount(page)).toBe(1)
+    await expect(row(page, 'Knight')).toHaveAttribute('data-selected', 'true')
+    expect((await position(page)).x).toBeCloseTo(knightBefore.x + 20, 0)
+
+    // And nothing that *was* selected came along for the ride.
+    await row(page, 'Ground').click()
+    expect((await position(page)).x).toBeCloseTo(groundBefore.x, 1)
   })
 })

@@ -8,7 +8,7 @@ It is kept current by the definition of done in `CLAUDE.md`: a session that
 changes what you can do, or how you do it, changes this page in the same commit.
 If this page and the editor disagree, the editor is right and the page is a bug.
 
-Last true as of: **`R` to turn what is selected** (2026-08-15).
+Last true as of: **moving and turning several entities at once** (2026-08-15).
 
 ---
 
@@ -554,6 +554,7 @@ start on the sprite starts by hiding it.
 - **`Esc` puts it back**, exactly, and leaves nothing behind: the next `Ctrl-Z`
   reverses whatever you did *before* the grab, not the grab you called off.
 - **The snap and `Ctrl` work exactly as they do for a drag.**
+- **It carries everything you have selected**, exactly as a drag does.
 - **While a grab is running it has the picture.** The wheel will not zoom, `Home`
   and `F` will not move the camera, and a click puts the entity down rather than
   selecting something else. All of those would move the entity out from under your
@@ -561,6 +562,26 @@ start on the sprite starts by hiding it.
 - Anything that takes the level away — pressing Play, closing the level, clicking
   another row in the Outliner, or the window losing focus — puts the entity back
   the way `Esc` does. Nothing was decided, so nothing is kept.
+
+#### Moving several at once
+
+**Drag any one of the selected sprites and they all come**, keeping their spacing
+exactly. `G` does the same. The one under your cursor is the one that lands on the
+snap, and the rest are carried by the same distance — so a row of tiles you have
+lined up stays lined up.
+
+Two rules about what a press picks up, and they are the same ones every editor
+has:
+
+- **Press a sprite that is already selected and the selection stays**, so the
+  whole group moves.
+- **Press one that is not, and the selection is replaced by it** — you drag just
+  that one, and whatever was selected before stays where it is.
+
+**Clicking one of several without dragging selects just that one.** That is how
+you get out of a group without clicking empty space first.
+
+However many you move, it is one press of `Ctrl-Z`.
 
 #### Turning things with `R`
 
@@ -874,11 +895,10 @@ the editor takes the change.
   import settings at the next start and leaves its references pointing at where it
   was. Doing it inside the editor is what avoids both.
 - **Parenting or nesting.** The entity list is flat.
-- **Do anything to several entities at once except delete and turn them.**
-  Shift-click and Ctrl-click build a selection; `Delete` removes all of it and `R`
-  turns all of it as one piece. Duplicate, the reorder arrows, dragging, `G` and
-  `F` still act on the last one you clicked, so there is no *moving* six sprites
-  together, and no editing six positions in one field.
+- **Duplicate or reorder several at once.** Moving, turning and deleting all
+  work on the whole selection now; Duplicate, the `↑` `↓` arrows and `F` still act
+  on the last one you clicked. There is also no editing six positions in one
+  field — the Inspector describes one entity at a time.
 - **Select several files in the Assets panel.** The plural is only about entities,
   in the Outliner and in the picture. A file is still selected one at a time.
 - **Shift-click a range in the Outliner.** Shift adds the one row you clicked, not
