@@ -31,6 +31,7 @@ import { EntityInspector } from './EntityInspector'
 import { Field, Note, Section } from './fields'
 import { PrefabInspector } from './PrefabInspector'
 import { ProjectInspector } from './ProjectInspector'
+import { SceneMusicPicker } from './SceneMusicPicker'
 import { SaveFailure, TextureSettings } from './TextureSettings'
 
 /**
@@ -290,6 +291,11 @@ function DocumentBody({ path }: { path: string }): ReactElement {
           testId="inspector-entity-count"
         />
       )}
+      {/* The level's own two settings so far: its entities are the Outliner's,
+          but its music is nobody else's to hold. Editable only once the scene
+          is the open one, because a control must edit the store (U12) and
+          opening is what puts it there. */}
+      {scene !== null && <SceneMusicPicker scenePath={path} value={scene.music ?? null} />}
       <Note data-testid="inspector-note">
         It is open in the Viewport. Select an entity in the Outliner to tune it.
       </Note>

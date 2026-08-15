@@ -18,8 +18,10 @@ import {
   zoomAbout,
   type Camera,
   type Entity,
+  type MusicState,
   type Point,
   type Rect,
+  type SceneMusic,
   type SceneRequest,
   type SceneView,
   type ShownScene,
@@ -116,6 +118,11 @@ export type SceneViewState =
        */
       redraw: (entities: readonly Entity[]) => ShownScene | null
       onFrame: (tick: (elapsedMs: number) => void) => () => void
+      /** The level's music, started by a run and stopped with it — never by editing. */
+      playMusic: (music: SceneMusic) => void
+      stopMusic: () => void
+      /** What the sound is actually doing, read back off it (`phaser4-runtime` P4). */
+      musicState: () => MusicState
     }
 
 /**
@@ -402,6 +409,9 @@ export function SceneViewProvider({ children }: { children: ReactNode }): ReactE
       // rebuilt around it every time the picture changes.
       redraw: view.redraw,
       onFrame: view.onFrame,
+      playMusic: view.playMusic,
+      stopMusic: view.stopMusic,
+      musicState: view.musicState,
     }
   }, [bootProblem, view, shown, shownFor, problem, measure, pan, zoom, frameAll, frameEntity])
 

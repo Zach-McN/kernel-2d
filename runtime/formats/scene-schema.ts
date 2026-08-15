@@ -157,6 +157,15 @@ export interface Scene {
   version: typeof SCENE_VERSION
   /** In draw order: the first is furthest back. */
   entities: Entity[]
+  /**
+   * The sound this level plays while it runs, looping — or absent for a silent
+   * level. A reference like any other (D5): the path resolves it, the id
+   * witnesses it. On the scene rather than on an entity because it is a fact
+   * about the *level* — one level, one track — and an entity carrying it would
+   * make "which entity holds the music" a question with fifty wrong answers.
+   * Optional rather than nullable so every existing file is already valid.
+   */
+  music?: AssetRef | undefined
   /** Present only on scenes an AI produced. Read, preserved, never invented. */
   generatedBy?: string | undefined
   /** `YYYY-MM-DD`, alongside `generatedBy`. */
@@ -293,6 +302,7 @@ export const SceneSchema: z.ZodType<Scene> = z
     format: z.literal(SCENE_FORMAT),
     version: z.literal(SCENE_VERSION),
     entities: z.array(EntitySchema),
+    music: AssetRefSchema.optional(),
     generatedBy: z.string().min(1).optional(),
     generatedAt: z.string().min(1).optional(),
   })

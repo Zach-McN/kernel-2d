@@ -67,6 +67,14 @@ function writeProjectFile(startupScene: string | null): void {
   )
 }
 
+/** Points the starting level's music at a file, with the id its `.meta` holds. */
+function setLevelOneMusic(soundPath: string): void {
+  const meta = AssetMetaSchema.parse(JSON.parse(fs.readFileSync(project.file(`${soundPath}.meta`), 'utf8')))
+  const scene = JSON.parse(fs.readFileSync(project.file(LEVEL_ONE), 'utf8')) as { music?: unknown }
+  scene.music = { id: meta.id, path: soundPath }
+  fs.writeFileSync(project.file(LEVEL_ONE), JSON.stringify(scene, null, 2))
+}
+
 async function exportInto(folder: string): Promise<Awaited<ReturnType<typeof writeExport>>> {
   const planned = await planExport(project.root)
   if (!planned.ok) throw new Error(`the plan refused: ${planned.problem}`)
@@ -240,6 +248,32 @@ describe('what the folder holds', () => {
     const files = new Set(planned.plan.files)
     expect(files.has('scenes/level-02.json')).toBe(true)
     expect(planned.plan.leftOut.find((one) => one.path === 'scenes')).toBeUndefined()
+  })
+
+  it('ships the music a level plays, with its settings beside it', async () => {
+    const theme = 'assets/audio/music/theme-cave.mp3'
+    setLevelOneMusic(theme)
+
+    const planned = await planExport(project.root)
+    expect(planned.ok).toBe(true)
+    if (!planned.ok) return
+
+    const files = new Set(planned.plan.files)
+    expect(files.has(theme)).toBe(true)
+    expect(files.has(`${theme}.meta`)).toBe(true)
+  })
+
+  it('refuses music whose file is missing, naming it', async () => {
+    const theme = 'assets/audio/music/theme-cave.mp3'
+    setLevelOneMusic(theme)
+    // The settings survive the file: exactly the moved-or-deleted shape the
+    // refusal exists for.
+    fs.rmSync(project.file(theme))
+
+    const planned = await planExport(project.root)
+
+    expect(planned.ok).toBe(false)
+    expect(planned.ok === false && planned.problem).toContain(theme)
   })
 
   it('refuses a door to a scene that is not there, and says which door', async () => {

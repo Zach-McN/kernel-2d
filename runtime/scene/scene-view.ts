@@ -4,7 +4,7 @@ import { spriteOf, type Entity } from '../formats/scene-schema'
 import { forgetOldestBeyond, loadImage, setCanvasStyleSize } from '../textures/image-cache'
 import { applyImportSettings } from '../textures/import-settings'
 import { createEntityLayer, type DrawnEntity, type EntityLayer, type ResolvedSprite } from './entity-layer'
-import type { SceneRequest, SceneTexture } from './scene-request'
+import type { SceneMusic, SceneRequest, SceneTexture } from './scene-request'
 import {
   DEFAULT_CAMERA,
   snapCamera,
@@ -36,7 +36,7 @@ import {
  * half of the repo can compile — see the note at the top of `scene-request.ts`
  * for why that mattered. Re-exported here so nothing downstream can tell.
  */
-export type { SceneRequest, SceneTexture }
+export type { SceneMusic, SceneRequest, SceneTexture }
 
 export interface ShownScene {
   path: string
@@ -150,10 +150,27 @@ export interface SceneView {
    * nothing moves in edit mode.
    */
   onFrame: (tick: (elapsedMs: number) => void) => () => void
+  /**
+   * Starts this file looping — the level's music, for as long as the run lasts.
+   * Fetching and decoding happen once per file per version; asking for the
+   * track that is already playing changes nothing. Nothing plays until a run
+   * asks, which is the whole of why editing is silent.
+   */
+  playMusic: (music: SceneMusic) => void
+  /** Silence, and the way every run ends its music. Harmless when silent. */
+  stopMusic: () => void
+  /**
+   * What the sound system is actually doing, read back off it (P4) — never an
+   * echo of what was asked. `locked` is the browser holding audio until the
+   * player's first press; the music starts itself the moment that arrives.
+   */
+  musicState: () => MusicState
   /** Draws nothing at all. */
   clear: () => void
   destroy: () => void
 }
+
+export type MusicState = 'silent' | 'loading' | 'locked' | 'playing' | 'failed'
 
 /** How many decoded images to keep, so flicking between two scenes is free. */
 const IMAGE_CACHE_LIMIT = 32
@@ -184,7 +201,9 @@ export async function createSceneView(options: SceneViewOptions): Promise<SceneV
     transparent: true,
     scale: { mode: Phaser.Scale.NONE },
     banner: false,
-    audio: { noAudio: true },
+    // Audio stays on: this is the surface levels run in, and a running level
+    // may have music. The single-texture preview keeps `noAudio` — a picture
+    // has nothing to play — so the window still owns exactly one AudioContext.
     scene: new SceneStage((stage) => announceReady(stage)),
   })
 
@@ -261,6 +280,130 @@ export async function createSceneView(options: SceneViewOptions): Promise<SceneV
       if (stage.textures.exists(key)) keys.add(key)
     }
     return keys
+  }
+
+  // --- the level's music ----------------------------------------------------
+
+  /**
+   * Versioned like a texture's key, so a file re-saved from an audio editor
+   * while the editor is open is re-fetched rather than played stale.
+   */
+  const musicKeyFor = (path: string, version: number): string => `music:${path}@${version}`
+
+  /** The sound being played, or on its way to being played. */
+  let music: { key: string; sound: Phaser.Sound.BaseSound | null } | null = null
+  let musicState: MusicState = 'silent'
+  /**
+   * Which ask is current. A fetch and a decode both land later, and a run may
+   * have stopped — or asked for something else — in between; a continuation
+   * that is not the current ask does nothing. Same shape as `sequence` above.
+   */
+  let musicTicket = 0
+
+  const stopMusic = (): void => {
+    musicTicket += 1
+    if (music?.sound != null) {
+      music.sound.stop()
+      music.sound.destroy()
+    }
+    music = null
+    musicState = 'silent'
+  }
+
+  /**
+   * The decoded file, made into a looping sound and started.
+   *
+   * If the browser is still holding audio shut — sound before the player's
+   * first press — the start is parked on the manager's own `unlocked` event
+   * rather than dropped, so an exported game's music begins on the first
+   * click without anybody writing a retry.
+   */
+  const beginMusic = (key: string): void => {
+    const manager = game.sound
+    const sound = manager.add(key, { loop: true })
+    music = { key, sound }
+
+    if (manager.locked) {
+      musicState = 'locked'
+      const ticket = musicTicket
+      manager.once(Phaser.Sound.Events.UNLOCKED, () => {
+        if (ticket !== musicTicket) return
+        sound.play()
+        musicState = 'playing'
+      })
+      return
+    }
+
+    sound.play()
+    musicState = 'playing'
+  }
+
+  const playMusic = (wanted: SceneMusic): void => {
+    const key = musicKeyFor(wanted.path, wanted.version)
+    if (music !== null && music.key === key) return
+
+    stopMusic()
+    const ticket = ++musicTicket
+    music = { key, sound: null }
+
+    const manager = game.sound
+    // Decoding straight from bytes is the Web Audio manager's; the HTML5
+    // fallback cannot do it. Desktop browsers all take the Web Audio path, so
+    // the honest answer elsewhere is "failed", said in the state rather than
+    // thrown from inside a renderer.
+    if (!(manager instanceof Phaser.Sound.WebAudioSoundManager)) {
+      music = null
+      musicState = 'failed'
+      return
+    }
+
+    if (game.cache.audio.has(key)) {
+      beginMusic(key)
+      return
+    }
+
+    musicState = 'loading'
+
+    // Registered before `decodeAudio` is called, not after: the decode can
+    // settle in the same tick and an event nobody was listening for yet is an
+    // event that never happened.
+    const onDecoded = (decodedKey: string): void => {
+      if (ticket !== musicTicket || decodedKey !== key) return
+      cleanup()
+      beginMusic(key)
+    }
+    // Fires when every file handed to `decodeAudio` has decoded *or errored* —
+    // so a file that is not audio at all lands here with nothing in the cache,
+    // which is the only failure signal the decode offers.
+    const onSettled = (): void => {
+      if (ticket !== musicTicket) return
+      cleanup()
+      if (!game.cache.audio.has(key)) {
+        music = null
+        musicState = 'failed'
+      }
+    }
+    const cleanup = (): void => {
+      manager.off(Phaser.Sound.Events.DECODED, onDecoded)
+      manager.off(Phaser.Sound.Events.DECODED_ALL, onSettled)
+    }
+
+    void fetch(options.resolveAssetUrl(wanted.path, wanted.version))
+      .then((response) => {
+        if (!response.ok) throw new Error(String(response.status))
+        return response.arrayBuffer()
+      })
+      .then((bytes) => {
+        if (ticket !== musicTicket) return
+        manager.on(Phaser.Sound.Events.DECODED, onDecoded)
+        manager.on(Phaser.Sound.Events.DECODED_ALL, onSettled)
+        manager.decodeAudio(key, bytes)
+      })
+      .catch(() => {
+        if (ticket !== musicTicket) return
+        music = null
+        musicState = 'failed'
+      })
   }
 
   return {
@@ -349,6 +492,10 @@ export async function createSceneView(options: SceneViewOptions): Promise<SceneV
       return shown
     },
 
+    playMusic,
+    stopMusic,
+    musicState: () => musicState,
+
     clear: () => {
       sequence += 1
       current = null
@@ -356,6 +503,7 @@ export async function createSceneView(options: SceneViewOptions): Promise<SceneV
     },
 
     destroy: () => {
+      stopMusic()
       images.clear()
       game.destroy(true)
     },

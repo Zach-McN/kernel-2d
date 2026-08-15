@@ -104,6 +104,14 @@ describe('what still points at a file', () => {
     expect(usesOf(scene, 'assets/textures')).toBe(2)
   })
 
+  it('counts the music a level plays', () => {
+    const theme = { id: 'theme-id', path: 'assets/audio/music/theme.wav' }
+    const level: Scene = { ...sceneWith({ sprite: { texture: knight } }), music: theme }
+
+    expect(usesOf(level, 'assets/audio/music/theme.wav')).toBe(1)
+    expect(usesOf(level, 'assets/audio')).toBe(1)
+  })
+
   it('says nothing about a component type this editor has never heard of', () => {
     const scene = sceneWith({ patrol: { route: { id: 'route-id', path: 'assets/textures/knight.png' } } })
 
@@ -150,6 +158,19 @@ describe('rewriting a reference after a move', () => {
     expect(rewritten.entities[0]?.components['prefab']).toEqual({
       source: { id: 'slime-id', path: 'prefabs/enemies/slime.json' },
     })
+  })
+
+  it('follows the music a level plays, leaving its id exactly as it was', () => {
+    const level: Scene = {
+      ...sceneWith(),
+      music: { id: 'theme-id', path: 'assets/audio/music/theme.wav' },
+    }
+
+    const rewritten = rewriteReferences(level, 'assets/audio', 'assets/sound')
+
+    expect(rewritten).not.toBeNull()
+    if (rewritten === null || rewritten.format !== SCENE_FORMAT) throw new Error('expected a scene')
+    expect(rewritten.music).toEqual({ id: 'theme-id', path: 'assets/sound/music/theme.wav' })
   })
 
   it('answers with nothing at all when the document did not point at it', () => {

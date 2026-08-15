@@ -27,6 +27,7 @@ import {
 import { GENERATED_BY } from '../marking.js'
 import { sampleAssetId, sampleEntityId } from './ids.js'
 import { PixelCanvas, drawSprite, type Colour } from './png.js'
+import { silentMp3 } from './mp3.js'
 import { decay, encodeWav, sine } from './wav.js'
 
 /**
@@ -141,6 +142,14 @@ export function sampleFiles(generatedAt: string): SampleFile[] {
           return 0.25 * sine(note, time) * decay((time * 4) % 1, 2)
         },
       }),
+      marking: 'sidecar',
+    },
+    {
+      // A real MP3, so the format the music picker will most often be handed
+      // is the one the sample proves end to end. Silent by construction — see
+      // `mp3.ts` — where the WAV above carries an audible tune.
+      path: 'assets/audio/music/theme-cave.mp3',
+      contents: silentMp3(2),
       marking: 'sidecar',
     },
     {

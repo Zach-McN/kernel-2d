@@ -10,7 +10,7 @@ import {
   type Entity,
   type Scene,
 } from '../formats/scene-schema.js'
-import type { SceneRequest, SceneTexture } from './scene-request.js'
+import type { SceneMusic, SceneRequest, SceneTexture } from './scene-request.js'
 
 /**
  * Opening a level and turning it into something the renderer can draw — the
@@ -100,6 +100,14 @@ export type LoadProblem =
   | { kind: 'texture-not-a-texture'; path: string; type: string }
   /** The `.meta` is fine and belongs to a different file than the one referenced. */
   | { kind: 'texture-different-file'; path: string; expected: string; found: string }
+  /** No `.meta` beside the music, so there is nothing to witness it by. It plays nothing. */
+  | { kind: 'music-unannotated'; path: string }
+  /** There is a `.meta` beside the music and it could not be read. */
+  | { kind: 'music-unreadable'; path: string; detail: string }
+  /** The `.meta` is readable and says the file is not a sound. */
+  | { kind: 'music-not-audio'; path: string; type: string }
+  /** The `.meta` is fine and belongs to a different file than the one referenced. */
+  | { kind: 'music-different-file'; path: string; expected: string; found: string }
 
 export type SceneLoadResult =
   | {
@@ -128,12 +136,59 @@ export async function loadScene(reader: ProjectReader, path: string): Promise<Sc
   // this same one, which is the whole reason the two pictures can be compared.
   const entities = resolveEntities(scene.entities, prefabs)
   const textures = await readTextures(reader, entities, problems)
+  const music = await readMusic(reader, scene, problems)
 
   return {
     ok: true,
-    request: { path, scene: { ...scene, entities }, textures },
+    request: { path, scene: { ...scene, entities }, textures, ...(music === null ? {} : { music }) },
     problems: problems.sort(byUsefulness),
   }
+}
+
+/**
+ * The sound this level plays, resolved the way a texture is: the `.meta` beside
+ * it is what witnesses the reference (D5, D24), and a music file that cannot be
+ * resolved is named and the level runs silent — the same leniency, for the same
+ * reason. The type check is against `audio` because that is what the `.meta`
+ * format calls a sound; only the id needs witnessing beyond that.
+ */
+async function readMusic(
+  reader: ProjectReader,
+  scene: Scene,
+  problems: LoadProblem[],
+): Promise<SceneMusic | null> {
+  const wanted = scene.music
+  if (wanted === undefined) return null
+
+  const found = await readDocument(
+    reader,
+    metaPathFor(wanted.path),
+    AssetMetaSchema,
+    ASSET_META_FORMAT,
+    'set of import settings',
+  )
+
+  if (found.kind === 'missing') {
+    problems.push({ kind: 'music-unannotated', path: wanted.path })
+    return null
+  }
+  if (found.kind === 'unreadable') {
+    problems.push({ kind: 'music-unreadable', path: wanted.path, detail: found.detail })
+    return null
+  }
+
+  const meta: AssetMeta = found.value
+  if (meta.importSettings.type !== 'audio') {
+    problems.push({ kind: 'music-not-audio', path: wanted.path, type: meta.importSettings.type })
+    return null
+  }
+
+  // Witnessed, not vetoed: the file at the path is what the level points at.
+  if (meta.id !== wanted.id) {
+    problems.push({ kind: 'music-different-file', path: wanted.path, expected: wanted.id, found: meta.id })
+  }
+
+  return { path: wanted.path, version: reader.assetVersion(wanted.path) }
 }
 
 /**
@@ -338,6 +393,14 @@ export function describeLoadProblem(problem: LoadProblem): string {
       return `${name} cannot be drawn: its import settings say it is ${problem.type}, not a texture.`
     case 'texture-different-file':
       return `${name} is not the file this level was written against — it expected the one with id ${problem.expected} and found ${problem.found}. It is drawn anyway.`
+    case 'music-unannotated':
+      return `${name} has no import settings beside it, so this level's music cannot be resolved. The level runs silent.`
+    case 'music-unreadable':
+      return `${name} cannot be played: ${problem.detail}.`
+    case 'music-not-audio':
+      return `${name} cannot be played as this level's music: its import settings say it is ${problem.type}, not audio.`
+    case 'music-different-file':
+      return `${name} is not the file this level's music was written against — it expected the one with id ${problem.expected} and found ${problem.found}. It is played anyway.`
   }
 }
 

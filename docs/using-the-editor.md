@@ -366,6 +366,34 @@ update loop had something driving it before there was a game to drive it. Now th
 there is, Spin and its field go together — nothing depends on them any more, which
 is exactly the state that makes removing them safe. Do not build a level around it.
 
+### Music
+
+**A level can play a sound while it runs.** Click the level's file in the Assets
+panel and the Inspector shows a **Music** choice offering every sound in your
+project — MP3, WAV or OGG, anything the browser can decode. Pick one and it is
+written into the level within the second, like every other choice; `Ctrl-Z` takes
+it back, and "Nothing" makes the level silent again.
+
+It plays on a loop behind the **Play** button and in an exported folder, and it
+stops the moment you press **Stop**. **Editing stays silent** — nothing plays
+until a level runs. Levels reached through doors switch to their own music, or to
+silence if they have none.
+
+One thing the browser imposes on an exported game: sound is held shut until the
+player's first click or key press. The music starts itself the moment that
+arrives — nothing to build, but worth knowing so a quiet first second is not
+read as a bug. Behind the editor's Play button your click *is* that press, so it
+starts immediately.
+
+Sounds are files in your folder like everything else: drop an MP3 into
+`assets/audio` and it appears in the Music choice. If the file a level names
+goes missing, the level runs silent and the bar under the picture says which
+file, by name. An export refuses to build a folder whose music file is gone.
+
+What this deliberately is not yet: sound *effects*. A game's own code cannot
+trigger a sound when something happens — that arrives when a real game needs
+it, the way the keyboard and the doors did.
+
 ### Prefabs
 
 Define a thing once and place it many times. Every instance carries only a

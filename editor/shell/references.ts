@@ -91,7 +91,11 @@ export function usesOf(document: EditorDocument, target: string): number {
   if (document.format === PREFAB_FORMAT) return countIn(assetRefsOf(document), target)
 
   if (document.format === SCENE_FORMAT) {
-    return document.entities.reduce((total, entity) => total + countIn(assetRefsOf(entity), target), 0)
+    // The level's own music, plus every reference its entities carry.
+    const music = document.music !== undefined && pointsAt(document.music.path, target) ? 1 : 0
+    return (
+      music + document.entities.reduce((total, entity) => total + countIn(assetRefsOf(entity), target), 0)
+    )
   }
 
   return 0
@@ -126,6 +130,14 @@ export function rewriteReferences(document: EditorDocument, from: string, to: st
 
   if (copy.format === SCENE_FORMAT) {
     let changed = false
+    if (copy.music !== undefined) {
+      const moved = movedPath(copy.music.path, from, to)
+      if (moved !== null) {
+        // The address moves; the witness never does, exactly as below.
+        copy.music.path = moved
+        changed = true
+      }
+    }
     for (const entity of copy.entities) {
       if (rewriteHolder(entity.components, from, to)) changed = true
     }

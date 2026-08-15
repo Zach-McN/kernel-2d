@@ -164,6 +164,83 @@ describe('loading a level', () => {
   })
 })
 
+describe("a level's music", () => {
+  const theme = 'assets/audio/music/theme.mp3'
+  const THEME_META_ID = 'cafe0123beefbead'
+
+  function withMusic(id: string): Scene {
+    return { ...scene(entity('e1', 'Knight')), music: { id, path: theme } }
+  }
+
+  it('is resolved into the request, with the file version the host answers', async () => {
+    const reader = readerOver(
+      {
+        'scenes/one.json': withMusic(THEME_META_ID),
+        [`${theme}.meta`]: defaultMeta('audio', THEME_META_ID),
+      },
+      { [theme]: 41 },
+    )
+
+    const result = await loadScene(reader, 'scenes/one.json')
+    if (!result.ok) throw new Error(result.problem)
+
+    expect(result.problems).toEqual([])
+    expect(result.request.music).toEqual({ path: theme, version: 41 })
+  })
+
+  it('a level with no music asks for nothing and plays nothing', async () => {
+    const reader = readerOver({ 'scenes/one.json': scene(entity('e1', 'Knight')) })
+
+    const result = await loadScene(reader, 'scenes/one.json')
+    if (!result.ok) throw new Error(result.problem)
+
+    expect(result.request.music).toBeUndefined()
+    expect(reader.asked).toEqual(['scenes/one.json'])
+  })
+
+  it('music with no import settings beside it is named, and the level runs silent', async () => {
+    const reader = readerOver({ 'scenes/one.json': withMusic(THEME_META_ID) })
+
+    const result = await loadScene(reader, 'scenes/one.json')
+    if (!result.ok) throw new Error(result.problem)
+
+    expect(result.request.music).toBeUndefined()
+    expect(result.problems).toEqual([{ kind: 'music-unannotated', path: theme }])
+    expect(describeLoadProblem(result.problems[0]!)).toContain('runs silent')
+  })
+
+  it('a file whose settings say it is not audio is refused as music, by name', async () => {
+    const reader = readerOver({
+      'scenes/one.json': withMusic(THEME_META_ID),
+      [`${theme}.meta`]: defaultMeta('texture', THEME_META_ID),
+    })
+
+    const result = await loadScene(reader, 'scenes/one.json')
+    if (!result.ok) throw new Error(result.problem)
+
+    expect(result.request.music).toBeUndefined()
+    expect(result.problems).toEqual([{ kind: 'music-not-audio', path: theme, type: 'texture' }])
+  })
+
+  it('a different file at the path is played anyway, and said out loud', async () => {
+    // Witnessed, not vetoed (D5): the file at the path is what the level
+    // points at, and refusing to play it would say less than playing it and
+    // naming the disagreement.
+    const reader = readerOver({
+      'scenes/one.json': withMusic('theme00expected0'),
+      [`${theme}.meta`]: defaultMeta('audio', THEME_META_ID),
+    })
+
+    const result = await loadScene(reader, 'scenes/one.json')
+    if (!result.ok) throw new Error(result.problem)
+
+    expect(result.request.music).toEqual({ path: theme, version: 0 })
+    expect(result.problems).toEqual([
+      { kind: 'music-different-file', path: theme, expected: 'theme00expected0', found: THEME_META_ID },
+    ])
+  })
+})
+
 describe('a level that cannot be opened at all', () => {
   it('says so when there is no file there', async () => {
     const result = await loadScene(readerOver({}), 'scenes/gone.json')

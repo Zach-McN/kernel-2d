@@ -119,10 +119,16 @@ test('a press inside the window does not reach the picture', async ({ page }) =>
 test('the browser context menu never opens over the picture', async ({ page }) => {
   // Listening at the window, on the bubble, which runs after the stage's own
   // listener has decided: defaultPrevented is the browser being told no.
+  // `globalThis` rather than `window`, because this spec is compiled by the
+  // Node half of the repo, which has no DOM globals (`editor-ui` U4).
   await page.evaluate(() => {
     const flags = { seen: 0, prevented: 0 }
-    ;(window as unknown as { __contextMenu: typeof flags }).__contextMenu = flags
-    window.addEventListener('contextmenu', (event) => {
+    const host = globalThis as unknown as {
+      __contextMenu?: typeof flags
+      addEventListener: (type: string, listener: (event: { defaultPrevented: boolean }) => void) => void
+    }
+    host.__contextMenu = flags
+    host.addEventListener('contextmenu', (event) => {
       flags.seen += 1
       if (event.defaultPrevented) flags.prevented += 1
     })
@@ -134,7 +140,8 @@ test('the browser context menu never opens over the picture', async ({ page }) =
   await page.mouse.click(empty.x, empty.y, { button: 'right' })
 
   const flags = await page.evaluate(
-    () => (window as unknown as { __contextMenu: { seen: number; prevented: number } }).__contextMenu,
+    () =>
+      (globalThis as unknown as { __contextMenu: { seen: number; prevented: number } }).__contextMenu,
   )
   expect(flags.seen).toBeGreaterThanOrEqual(2)
   expect(flags.prevented).toBe(flags.seen)

@@ -74,6 +74,10 @@ describe('a scene survives a round trip', () => {
     ['one an AI produced', generated],
     ['an entity with no components at all', { ...scene, entities: [defaultEntity('abc123', 'Empty')] }],
     ['an entity that turns while the level runs', { ...scene, entities: [heart] }],
+    [
+      'a level with music',
+      { ...scene, music: { id: 'theme00deadbeef0', path: 'assets/audio/music/theme.mp3' } },
+    ],
   ])('reads back identical for %s', (_description, value) => {
     expect(SceneSchema.parse(JSON.parse(JSON.stringify(value)))).toEqual(value)
   })

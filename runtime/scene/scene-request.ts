@@ -30,6 +30,14 @@ export interface SceneTexture {
   settings: TextureImportSettings
 }
 
+/** The sound a level plays while it runs, resolved and ready to fetch. */
+export interface SceneMusic {
+  /** Project-relative, like a texture's. The URL is the host's to build. */
+  path: string
+  /** Changes whenever the file on disk does. Half the decode cache key. */
+  version: number
+}
+
 export interface SceneRequest {
   /** The scene's own path, project-relative. Reported back so the caller can tell what it is looking at. */
   path: string
@@ -43,4 +51,11 @@ export interface SceneRequest {
    * caller's job, not the renderer's.
    */
   textures: Readonly<Record<string, SceneTexture>>
+  /**
+   * The sound this level plays while it runs, or absent for a silent level —
+   * absent too when the level names one that could not be resolved, which the
+   * caller already knows and has said in words. Nothing plays while a level is
+   * merely being edited; starting it is the run's business.
+   */
+  music?: SceneMusic | undefined
 }

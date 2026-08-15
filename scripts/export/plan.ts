@@ -93,6 +93,7 @@ export async function planExport(projectPath: string): Promise<ExportPlanResult>
   const queue = [startupScene]
   const prefabs = new Set<string>()
   const textures = new Set<string>()
+  const sounds = new Set<string>()
   const warnings: string[] = []
 
   for (;;) {
@@ -133,17 +134,19 @@ export async function planExport(projectPath: string): Promise<ExportPlanResult>
     // The loader's own texture list — every `texture`-named reference in every
     // component, which is exactly what the game can come to draw mid-run.
     for (const texture of Object.keys(level.request.textures)) textures.add(texture)
+    // And the level's music, resolved by the same loader on the same terms.
+    if (level.request.music !== undefined) sounds.add(level.request.music.path)
 
     warnings.push(...level.problems.filter(isWitnessOnly).map(describeLoadProblem))
   }
 
-  const missingBytes = [...textures].sort().filter((texture) => !isFile(projectPath, texture))
+  const missingBytes = [...textures, ...sounds].sort().filter((asset) => !isFile(projectPath, asset))
   if (missingBytes.length > 0) {
     return {
       ok: false,
       problem: [
-        'The game draws pictures that are not in the project folder:',
-        ...missingBytes.map((texture) => `  - ${texture}`),
+        'The game uses files that are not in the project folder:',
+        ...missingBytes.map((asset) => `  - ${asset}`),
         'Their import settings are still there, so this is a file that has been moved, renamed or deleted.',
         'Nothing has been written.',
       ].join('\n'),
@@ -155,7 +158,8 @@ export async function planExport(projectPath: string): Promise<ExportPlanResult>
     ...scenes,
     ...prefabs,
     ...textures,
-    ...[...textures].map((texture) => metaPathFor(texture)),
+    ...sounds,
+    ...[...textures, ...sounds].map((asset) => metaPathFor(asset)),
   ].sort()
 
   return {
@@ -174,7 +178,11 @@ export async function planExport(projectPath: string): Promise<ExportPlanResult>
  * written against". They draw, so they warn rather than refuse.
  */
 function isWitnessOnly(problem: LoadProblem): boolean {
-  return problem.kind === 'prefab-different-file' || problem.kind === 'texture-different-file'
+  return (
+    problem.kind === 'prefab-different-file' ||
+    problem.kind === 'texture-different-file' ||
+    problem.kind === 'music-different-file'
+  )
 }
 
 type SettingsRead = { ok: true; startupScene: string } | { ok: false; problem: string }

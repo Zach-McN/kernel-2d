@@ -142,6 +142,7 @@ export function ViewportPanel(): ReactElement {
     host,
     playing,
     seams,
+    running?.request.music ?? null,
   )
 
   const selected = selection.selected.kind === 'entity' ? selection.selected.entity : null
@@ -292,6 +293,12 @@ export function ViewportPanel(): ReactElement {
       // in edit mode" is read from the outside.
       data-play-units={runningLevel === null ? '' : JSON.stringify(runningLevel.units)}
       data-play-steps={runningLevel === null ? '' : String(runningLevel.steps)}
+      // What the sound is doing, read back off the sound system itself
+      // (`phaser4-runtime` P4) — never an echo of what was asked for. Kept
+      // fresh by the same ten-a-second description a running level already
+      // publishes; empty whenever nothing runs, which is also how "editing is
+      // silent" is read from the outside.
+      data-play-music={running === null || view.state !== 'ready' ? '' : view.musicState()}
     >
       <Stage
         host={host}

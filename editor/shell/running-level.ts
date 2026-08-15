@@ -9,6 +9,7 @@ import {
   toScenePoint,
   type DrawnInScene,
   type Entity,
+  type SceneMusic,
   type ScenePoint,
   type ShownScene,
 } from '../../runtime'
@@ -81,6 +82,9 @@ export interface RunSeams {
  *   above.
  * @param seams the door and the story, read through a ref at the moment a run
  *   starts — a re-rendered seam object must not restart a level.
+ * @param music the level's music, resolved by the loader, or null for silence.
+ *   It starts with the run and stops with it, which is the whole of why
+ *   editing is silent: nothing else ever asks.
  */
 export function useRunningLevel(
   entities: readonly Entity[] | null,
@@ -88,10 +92,13 @@ export function useRunningLevel(
   host: React.RefObject<HTMLElement | null>,
   started: ShownScene | null,
   seams: RunSeams | null = null,
+  music: SceneMusic | null = null,
 ): RunningPicture | null {
   const view = useSceneView()
   const redraw = view.state === 'ready' ? view.redraw : null
   const onFrame = view.state === 'ready' ? view.onFrame : null
+  const playMusic = view.state === 'ready' ? view.playMusic : null
+  const stopMusic = view.state === 'ready' ? view.stopMusic : null
 
   const [picture, setPicture] = useState<RunningPicture | null>(null)
 
@@ -103,6 +110,12 @@ export function useRunningLevel(
 
   const seamsRef = useRef(seams)
   seamsRef.current = seams
+
+  // Same reasoning as the seams: a re-rendered music object must not restart
+  // the level. What starts a run is the effect below; the track it plays is
+  // whatever this holds at that moment.
+  const musicRef = useRef(music)
+  musicRef.current = music
 
   useEffect(() => {
     if (entities === null || !ready || redraw === null || onFrame === null) return
@@ -148,6 +161,12 @@ export function useRunningLevel(
     // brought is the one a late click travels through.
     const story = seamsRef.current?.story
 
+    // The level's music, for exactly as long as the run lasts. Pressing Play
+    // is the player's gesture, so the browser's autoplay lock is already open
+    // here; the exported page is where `locked` earns its keep.
+    const track = musicRef.current
+    if (track !== null && playMusic !== null) playMusic(track)
+
     const level = runLevel({
       entities,
       systems: currentSystems(),
@@ -175,9 +194,10 @@ export function useRunningLevel(
       surface?.removeEventListener('pointerdown', onPointerDown)
       keys.stop()
       level.stop()
+      stopMusic?.()
       setPicture(null)
     }
-  }, [entities, ready, redraw, onFrame, host])
+  }, [entities, ready, redraw, onFrame, host, playMusic, stopMusic])
 
   return picture
 }

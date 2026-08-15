@@ -165,6 +165,14 @@ export async function startGame(host: HTMLElement, systems: readonly System[]): 
 
   host.append(view.canvas)
 
+  // What the sound is doing, on the page beside the other attributes, read
+  // back off the sound system itself (P4). Refreshed with every report a
+  // running level already makes, so `locked` turning into `playing` on the
+  // player's first press is visible without anything polling.
+  const announceMusic = (): void => {
+    host.setAttribute('data-game-music', view.musicState())
+  }
+
   const draw = async (request: SceneRequest): Promise<void> => {
     const size = availableSize(host)
     view.resize(size.width, size.height)
@@ -274,6 +282,15 @@ export async function startGame(host: HTMLElement, systems: readonly System[]): 
   }
 
   const begin = (request: SceneRequest): void => {
+    // The level's music, for as long as this run lasts. A level with none
+    // silences whatever the previous level was playing — travelling through a
+    // door into a quiet level is the quiet being asked for. The browser holds
+    // audio shut until the player's first press; the renderer parks the start
+    // on that press, and `data-game-music` says `locked` until it lands.
+    if (request.music !== undefined) view.playMusic(request.music)
+    else view.stopMusic()
+    announceMusic()
+
     current = runLevel({
       entities: request.scene.entities,
       systems,
@@ -294,6 +311,7 @@ export async function startGame(host: HTMLElement, systems: readonly System[]): 
       watch: (state) => {
         steps = state.steps
         report('drawn', sceneNow)
+        announceMusic()
       },
     })
   }

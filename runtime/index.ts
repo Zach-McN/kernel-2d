@@ -123,6 +123,8 @@ export {
 
 export {
   createSceneView,
+  type MusicState,
+  type SceneMusic,
   type SceneRequest,
   type SceneTexture,
   type SceneView,
