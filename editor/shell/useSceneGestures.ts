@@ -19,8 +19,9 @@ import { angleFrom, tooNear } from './rotate'
  * plain replaces the selection and starts a drag, Shift adds to it, Ctrl takes
  * away from it, and neither modified press drags anything. That decision is
  * made in the one place below that already decides what a press means, which is
- * the whole point of the paragraph after this one. **`Delete` removes
- * everything selected**, from here or from the Outliner — the key listener is
+ * the whole point of the paragraph after this one. **`Delete` — or `Backspace`,
+ * which many keyboards have instead — removes everything selected**, from here
+ * or from the Outliner. The key listener is
  * on the window, which is why `Shift-D` has always worked with the hand in
  * either panel.
  *
@@ -119,7 +120,7 @@ export interface ScenePlacement {
    */
   select: (entityId: string | null, mode: SelectMode) => void
   /**
-   * The Delete key. Removes whatever is selected, in one step.
+   * `Delete` or `Backspace`. Removes whatever is selected, in one step.
    *
    * Here rather than behind a window listener of its own, because this hook has
    * already answered the four questions such a listener would have to re-answer
@@ -956,7 +957,19 @@ export function useSceneGestures(options: SceneGestureOptions): SceneGestures {
       // grab block keeps it out of a move in progress — a grab measures its
       // travel against an entity, and deleting that entity mid-move would leave
       // one running against nothing.
-      if (event.key === 'Delete') {
+      // `Backspace` alongside `Delete`, because a great many keyboards — every
+      // compact and most laptop layouts — have no `Delete` key at all, and
+      // because reaching for Backspace to remove a thing is what hands do. There
+      // is no case where one should work and the other should not: they are one
+      // key with two names here, and every guard above applies to both.
+      //
+      // The typing guard is what makes this safe rather than reckless: inside a
+      // name field Backspace is still a backspace, because this handler has
+      // already returned.
+      if (event.key === 'Delete' || event.key === 'Backspace') {
+        // Prevented for a second reason than the rest: older browsers spend a
+        // bare Backspace on going *back a page*, which would throw away the
+        // editor's whole window state.
         event.preventDefault()
         placementRef.current.deleteSelected()
         return

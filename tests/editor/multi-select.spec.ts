@@ -15,9 +15,11 @@ import { selectAsset } from './select-asset.js'
  * Nothing here asserts on a selection *store*. What is selected is read as the
  * highlighted rows, the outlines the renderer's report puts on screen, and what
  * the level ends up holding — behaviour, not structure (`editor-verification`
- * V1). The two negative tests are the load-bearing ones: a Delete key that fires
+ * V1). The two negative tests are the load-bearing ones: a delete key that fires
  * while somebody is renaming an entity, or while a level is running, passes
- * every positive test in this file.
+ * every positive test in this file — and `Backspace` makes the first of those
+ * sharper, since a key that is *only* ever a delete can be got wrong quietly
+ * while one that is also a character cannot.
  *
  * These tests change the shared sample project, so every file is snapshotted and
  * put back afterwards (V14).
@@ -266,9 +268,9 @@ test.describe('the picture', () => {
   })
 })
 
-// --- acceptance: the Delete key ---------------------------------------------
+// --- acceptance: the delete keys --------------------------------------------
 
-test.describe('the Delete key', () => {
+test.describe('the delete keys', () => {
   test('removes the one selected entity', async ({ page }) => {
     await openScene(page)
     await row(page, 'Slime').click()
@@ -338,6 +340,62 @@ test.describe('the Delete key', () => {
     // The character went; the entity did not.
     await expect(rows(page)).toHaveCount(5)
     await expect(name).toHaveValue('lime')
+  })
+
+  /**
+   * The same guard for `Backspace`, and it is the one that matters more: a
+   * `Delete` that leaked into a text field takes a character somebody can see
+   * going, while a `Backspace` that leaked *out* of one takes the entity they
+   * were halfway through renaming.
+   */
+  test('Backspace is still a backspace inside a name field', async ({ page }) => {
+    await openScene(page)
+    await row(page, 'Slime').click()
+
+    const name = page.getByTestId('entity-name-control')
+    await name.click()
+    await name.press('End')
+    await name.press('Backspace')
+
+    await expect(rows(page)).toHaveCount(5)
+    await expect(name).toHaveValue('Slim')
+  })
+
+  test('Backspace removes the selection, exactly as Delete does', async ({ page }) => {
+    await openScene(page)
+    await row(page, 'Knight').click()
+    await row(page, 'Slime').click({ modifiers: ['Shift'] })
+
+    await page.keyboard.press('Backspace')
+
+    await expect(rows(page)).toHaveCount(3)
+    expect(await names(page)).toEqual(['Ground', 'Knight running', 'Health icon'])
+
+    await page.keyboard.press('ControlOrMeta+z')
+    expect(await names(page)).toEqual(ALL_FIVE)
+  })
+
+  test('Backspace works from the picture too', async ({ page }) => {
+    await openScene(page)
+    const slime = await spotOf(page, 'Slime')
+    await clickIn(page, slime)
+    await expect.poll(() => selectedCount(page)).toBe(1)
+
+    await page.keyboard.press('Backspace')
+
+    await expect(rows(page)).toHaveCount(4)
+    expect(await names(page)).not.toContain('Slime')
+  })
+
+  /** A bare Backspace used to mean "go back a page", which would lose the window. */
+  test('Backspace does not navigate away from the editor', async ({ page }) => {
+    await openScene(page)
+    await row(page, 'Slime').click()
+
+    await page.keyboard.press('Backspace')
+
+    await expect(viewport(page)).toHaveAttribute('data-scene-showing', LEVEL_ONE)
+    await expect(page.getByTestId('assets-panel')).toBeVisible()
   })
 
   test('does not delete anything while a level is running', async ({ page }) => {

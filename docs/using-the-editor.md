@@ -8,7 +8,7 @@ It is kept current by the definition of done in `CLAUDE.md`: a session that
 changes what you can do, or how you do it, changes this page in the same commit.
 If this page and the editor disagree, the editor is right and the page is a bug.
 
-Last true as of: **moving and turning several entities at once** (2026-08-15).
+Last true as of: **`Backspace` deletes as well as `Delete`** (2026-08-15).
 
 ---
 
@@ -255,9 +255,9 @@ slicing and the filtering you set travel with it, so nothing is typed twice.
 once: rename `textures` to `art` and every level in the project follows.
 
 **Delete tells you first.** Press the **Delete** button in that row — the `Delete`
-*key* is about entities in a level, not files — and it names what still uses the
-file: "knight.png is still used once, in scenes/level-01.json". The button then
-becomes **Delete anyway**. It never refuses, because deleting something in order
+and `Backspace` *keys* are about entities in a level, not files — and it names
+what still uses the file: "knight.png is still used once, in
+scenes/level-01.json". The button then becomes **Delete anyway**. It never refuses, because deleting something in order
 to replace it is a normal thing to do; it just makes sure you knew. The settings
 file goes with it, so nothing is left stranded.
 
@@ -307,9 +307,10 @@ last row is drawn in front.
 Both work in the Outliner and in the picture, and they are the same selection:
 Shift-click three rows in the list and three outlines appear in the level.
 
-**Press `Delete` and everything selected goes** — from either panel, and the
-Outliner's Delete button says how many it is about to remove. However many that
-is, **one press of `Ctrl-Z` brings all of them back together.**
+**Press `Delete` — or `Backspace`, if your keyboard has no `Delete` — and
+everything selected goes**, from either panel, and the Outliner's Delete button
+says how many it is about to remove. However many that is, **one press of
+`Ctrl-Z` brings all of them back together.**
 
 Three things worth knowing:
 
@@ -322,8 +323,9 @@ Three things worth knowing:
   is the one the Inspector is describing. With several selected the Inspector says
   so above the fields, because those fields change that one entity and not the
   group.
-- **Only `Delete` acts on all of them.** Duplicate, the reorder arrows, `F`, `G`
-  and dragging all act on that one entity.
+- **Most things act on all of them.** Dragging, `G`, `R` and the delete keys all
+  work on the whole selection. What still acts on the one entity is Duplicate,
+  the `↑` `↓` reorder arrows, `F`, and the Inspector's fields.
 
 Selecting is not something `Ctrl-Z` reverses, here or anywhere else in the editor.
 It takes back the last thing you *changed*, never the last thing you looked at.
@@ -511,7 +513,7 @@ time, space-drag still pans, and the wheel still zooms.
 | Click a sprite | Select it, and only it |
 | Shift-click a sprite | Add it to what is already selected |
 | Ctrl-click a sprite | Take it out of what is selected |
-| `Delete` | Remove everything selected — one press of `Ctrl-Z` brings it all back |
+| `Delete`, or `Backspace` | Remove everything selected — one press of `Ctrl-Z` brings it all back |
 | Drag a sprite | Move it, landing on the snap |
 | Hold `Ctrl` while dragging | Flip the snap switch while you hold it |
 | `G` | Grab the selected entity — it moves with the pointer, nothing held |

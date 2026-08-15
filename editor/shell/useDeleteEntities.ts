@@ -8,8 +8,8 @@ import { useSelection } from './selection'
  *
  * Shared rather than owned by the Outliner that first had the button, for the
  * reason `useDuplicateEntity` is shared: the gesture is reachable from two
- * places — the Delete button in the Outliner and the Delete key over the
- * picture — and they are the same gesture. One implementation, so the two can
+ * places — the Delete button in the Outliner and the `Delete`/`Backspace` keys
+ * over the picture — and they are the same gesture. One implementation, so the two can
  * never disagree about what a delete is.
  *
  * **One transaction, whatever the count, and that is the whole of the undo
@@ -32,7 +32,7 @@ import { useSelection } from './selection'
  * still has something to describe and the level stays open.
  */
 export function useDeleteEntities(): {
-  /** The entities the Delete key and the Delete button would remove, in order. */
+  /** The entities a delete key and the Delete button would remove, in order. */
   entities: readonly string[]
   /** True when there is anything to delete, for a button's disabled state. */
   canDelete: boolean

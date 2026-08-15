@@ -497,7 +497,7 @@ function usePlacement(
   stamp: ReturnType<typeof usePlacePrefab>,
   /** A right-click landed: the panel opens or closes its window about it. */
   onContext: (entityId: string | null, at: Point) => void,
-  /** The Delete key, which is the Outliner's Delete button (`useDeleteEntities`). */
+  /** Delete/Backspace, which is the Outliner's Delete button (`useDeleteEntities`). */
   deleteSelected: () => void,
 ): ScenePlacement {
   const selection = useSelection()

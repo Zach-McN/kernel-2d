@@ -243,7 +243,7 @@ export function OutlinerPanel(): ReactElement {
           title={
             removal.entities.length > 1
               ? `Remove all ${removal.entities.length} selected entities. One press of Ctrl-Z brings them all back.`
-              : 'Remove the selected entity. Ctrl-Z brings it back. The Delete key does the same.'
+              : 'Remove the selected entity. Ctrl-Z brings it back. Delete or Backspace does the same.'
           }
           disabled={!removal.canDelete}
           onClick={removal.deleteSelected}
@@ -349,10 +349,10 @@ export function OutlinerPanel(): ReactElement {
 
       {/* Where the modifiers are learned. A selection gesture nobody is told
           about is a selection gesture nobody uses, and there is nowhere else on
-          screen that could mention Shift, Ctrl or the Delete key. */}
+          screen that could mention Shift, Ctrl or the delete keys. */}
       <p className="outliner__note">
         The last one in the list is drawn in front — drag a row to reorder. Shift-click adds to the
-        selection, Ctrl-click takes away, Delete removes what is selected.
+        selection, Ctrl-click takes away, Delete or Backspace removes what is selected.
       </p>
     </div>
   )
