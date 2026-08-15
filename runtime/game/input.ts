@@ -14,13 +14,19 @@ import type { Entity } from '../formats/scene-schema.js'
  * component. A test hands input to a system by putting `inputEntity(['Space'])`
  * in the fixture list, which is no machinery at all.
  *
- * **Presses, not held keys.** `pressed` holds the `KeyboardEvent.code` values
- * (`'Space'`, `'KeyW'` — physical buttons, independent of keyboard layout) that
- * went down since the previous step, so a press is seen by exactly one step and
- * a system acts on it exactly once. Held state is deliberately absent: the
- * first real consumer (tower-defense's Call Wave) needs a press, and a field
- * nothing reads would be a guess about the second game (`genre-spinup` S1).
- * The day a game holds a key to aim is the day this grows, shaped by that game.
+ * **Presses are events; held keys are state — and the two obey different
+ * disciplines.** `pressed` holds the `KeyboardEvent.code` values (`'Space'`,
+ * `'KeyW'` — physical buttons, independent of keyboard layout) that went down
+ * since the previous step, so a press is seen by exactly one step and a system
+ * acts on it exactly once. `held` holds the codes down *right now*, and every
+ * step of a frame sees the same answer — a catch-up frame that blanked it
+ * would read as the player letting go of everything for four steps, which no
+ * player did. Held state was deliberately absent until the second game needed
+ * it (`genre-spinup` S1 — the note here used to say "the day a game holds a
+ * key to aim is the day this grows, shaped by that game"): the platformer's
+ * walk, sprint and variable jump are all holds, and its jump cut is a release,
+ * which a system detects for itself by comparing `held` across its own steps.
+ * Releases therefore need no third field.
  *
  * **Clicks arrive in scene units, and that is the load-bearing choice.** A
  * system knows nothing of cameras, canvases or pixels — entities stand in
@@ -51,6 +57,11 @@ export interface ScenePoint {
 export interface InputSample {
   pressed: readonly string[]
   clicked: readonly ScenePoint[]
+  /**
+   * The codes down at this moment. Optional so a fixture or a host that only
+   * deals in presses says nothing about holding; absent reads as nothing held.
+   */
+  held?: readonly string[]
 }
 
 export const NOTHING: InputSample = { pressed: [], clicked: [] }
@@ -59,18 +70,26 @@ export const NOTHING: InputSample = { pressed: [], clicked: [] }
  * The carrier, ready to join a running level — or a test's fixture list, which
  * is the other place input comes from and the reason this is exported.
  */
-export function inputEntity(pressed: readonly string[] = [], clicked: readonly ScenePoint[] = []): Entity {
+export function inputEntity(
+  pressed: readonly string[] = [],
+  clicked: readonly ScenePoint[] = [],
+  held: readonly string[] = [],
+): Entity {
   return {
     id: INPUT_ENTITY_ID,
     name: 'Input',
     transform: { x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1 },
-    components: { input: { pressed: [...pressed], clicked: [...clicked] } },
+    components: { input: { pressed: [...pressed], clicked: [...clicked], held: [...held] } },
   }
 }
 
 /** What this step was handed. Replaces, never appends: input belongs to one step. */
 export function writeInput(carrier: Entity, sample: InputSample): void {
-  carrier.components['input'] = { pressed: [...sample.pressed], clicked: [...sample.clicked] }
+  carrier.components['input'] = {
+    pressed: [...sample.pressed],
+    clicked: [...sample.clicked],
+    held: [...(sample.held ?? [])],
+  }
 }
 
 /**
@@ -88,6 +107,13 @@ export function pressedIn(entities: readonly Entity[]): readonly string[] {
   return pressed.filter((code): code is string => typeof code === 'string')
 }
 
+/** The codes held down during this step, or nothing — same grounds. */
+export function heldIn(entities: readonly Entity[]): readonly string[] {
+  const held: unknown = fieldOf(entities, 'held')
+  if (!Array.isArray(held)) return []
+  return held.filter((code): code is string => typeof code === 'string')
+}
+
 /** The scene points clicked since the previous step, or nothing — same grounds. */
 export function clickedIn(entities: readonly Entity[]): readonly ScenePoint[] {
   const clicked: unknown = fieldOf(entities, 'clicked')
@@ -101,7 +127,7 @@ export function clickedIn(entities: readonly Entity[]): readonly ScenePoint[] {
   )
 }
 
-function fieldOf(entities: readonly Entity[], field: 'pressed' | 'clicked'): unknown {
+function fieldOf(entities: readonly Entity[], field: 'pressed' | 'clicked' | 'held'): unknown {
   const carrier = entities.find((entity) => entity.id === INPUT_ENTITY_ID)
   if (carrier === undefined) return undefined
 

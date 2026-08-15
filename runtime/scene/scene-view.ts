@@ -132,8 +132,14 @@ export interface SceneView {
    * The entities replace the ones the current request carried, so a resize or a
    * pan afterwards draws where things have got to rather than where they
    * started.
+   *
+   * The optional camera moves the view in the same draw — one sync, not a
+   * `restage` (stale entities) followed by a `redraw` (second sync). It is how
+   * a host honours the game's camera ask (`runtime/game/camera.ts`) without
+   * the picture and the viewpoint ever being a frame apart. Omitted, the view
+   * stays where it was, exactly as before the parameter existed.
    */
-  redraw: (entities: readonly Entity[]) => ShownScene | null
+  redraw: (entities: readonly Entity[], lookFrom?: Camera) => ShownScene | null
   /**
    * Calls back once per rendered frame with the milliseconds since the last
    * one, and answers with the way to stop. **The engine's own ticker is the one
@@ -423,8 +429,9 @@ export async function createSceneView(options: SceneViewOptions): Promise<SceneV
       return draw(current, registered(current))
     },
 
-    redraw: (entities) => {
+    redraw: (entities, lookFrom) => {
       if (current === null) return null
+      if (lookFrom !== undefined) camera = lookFrom
       // A new request object rather than an assignment into the old one: the
       // request handed to `show` belongs to whoever built it, and a running
       // level writing into it would change an object the editor is comparing

@@ -3,7 +3,7 @@ import { runLevel, type RunningLevel } from '../game/run-level'
 import { collectKeys } from './keyboard'
 import { storyStore } from './story-store'
 import type { System } from '../game/system'
-import { framing, toScenePoint } from '../scene/coordinates'
+import { clampFocus, framing, toScenePoint, type Camera } from '../scene/coordinates'
 import type { ScenePoint } from '../game/input'
 import { inSceneUnits, type DrawnInScene } from '../scene/drawn-in-scene'
 import { describeLoadProblem, loadScene, type LoadProblem, type ProjectReader } from '../scene/load-scene'
@@ -291,12 +291,20 @@ export async function startGame(host: HTMLElement, systems: readonly System[]): 
     else view.stopMusic()
     announceMusic()
 
+    // The game's camera ask (`runtime/game/camera.ts`), applied in the same
+    // draw as the frame that asked. The scale is the fit this page framed; the
+    // ask is clamped to the extent the level *started* with — the moving
+    // level's own bounds follow whatever jumped highest this frame, and a
+    // clamp that breathes reads as jitter.
+    const startBounds = shown === null ? null : shown.contentBounds
+    let aimed: Camera | null = null
+
     current = runLevel({
       entities: request.scene.entities,
       systems,
       onFrame: view.onFrame,
       input: () => {
-        const sample = { pressed: keys.drain(), clicked }
+        const sample = { pressed: keys.drain(), held: keys.held(), clicked }
         clicked = []
         return sample
       },
@@ -304,8 +312,13 @@ export async function startGame(host: HTMLElement, systems: readonly System[]): 
         void travel(next)
       },
       story: { scene: sceneNow, recall: store.recall, remember: store.remember },
+      camera: (focus) => {
+        if (shown === null) return
+        const scale = shown.camera.scale
+        aimed = { scale, focus: clampFocus(focus, startBounds, shown.canvasSize, scale) }
+      },
       draw: (moved) => {
-        const redrawn = view.redraw(moved)
+        const redrawn = aimed === null ? view.redraw(moved) : view.redraw(moved, aimed)
         if (redrawn !== null) shown = redrawn
       },
       watch: (state) => {

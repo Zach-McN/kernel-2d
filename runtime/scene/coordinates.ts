@@ -188,6 +188,34 @@ export function framing(content: Rect | null, scale: number): Camera {
 }
 
 /**
+ * A focus a game asked for, held to what there is to see.
+ *
+ * The camera seam (`runtime/game/camera.ts`) lets a running level aim the view;
+ * this is the host's half of the bargain, shared so the editor's play mode and
+ * an exported page clamp identically. On each axis the view — `canvas` at
+ * `scale` — is kept inside `content`; when the content is smaller than the
+ * view on an axis, the view centres on it, which is the only answer that does
+ * not jitter between the two edges. A null content clamps nothing, because
+ * there is nothing to hold the view to.
+ *
+ * Both rectangles are scene-space (`Rect`'s corner is the bottom-left there).
+ */
+export function clampFocus(focus: Point, content: Rect | null, canvas: Size, scale: number): Point {
+  if (content === null) return { x: focus.x, y: focus.y }
+
+  const half = { x: canvas.width / 2 / scale, y: canvas.height / 2 / scale }
+  const axis = (wanted: number, min: number, max: number, halfSpan: number): number => {
+    if (max - min <= halfSpan * 2) return (min + max) / 2
+    return Math.min(max - halfSpan, Math.max(min + halfSpan, wanted))
+  }
+
+  return {
+    x: axis(focus.x, content.x, content.x + content.width, half.x),
+    y: axis(focus.y, content.y, content.y + content.height, half.y),
+  }
+}
+
+/**
  * The same camera, nudged by less than a pixel so the scene's origin lands on
  * the device's own pixel grid.
  *

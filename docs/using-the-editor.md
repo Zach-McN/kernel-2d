@@ -537,9 +537,21 @@ at the start, the bar names every difference in pixels.
 
 **The keyboard belongs to the game while it runs.** Any key you press reaches
 the game's own code, which decides what — if anything — it means; in the tower
-defense, the spacebar calls the next wave. Typing in a panel's text field is
-still typing, and pressing Stop gives the keyboard back to the editor. An
-exported folder hears the same keys the same way.
+defense, the spacebar calls the next wave, and in the platformer holding an
+arrow walks the ninja and holding Shift sprints. Held keys count as held for as
+long as you hold them, and the arrow keys and spacebar will not scroll the page
+while a level runs. Typing in a panel's text field is still typing, and
+pressing Stop gives the keyboard back to the editor. An exported folder hears
+the same keys the same way.
+
+**The game can steer the view while it runs.** A game's own code may ask the
+camera to look somewhere — the platformer's camera chases the ninja across the
+level — and the view follows at whatever zoom you were using, never past the
+edges of the level. While the game is steering, your own camera keys are
+suspended with the rest of the editing gestures; **Stop puts the view back
+exactly where you were editing**. A game that never asks (the tower defense)
+plays under your frozen camera exactly as before. An exported folder follows
+the same asks at its own fitted zoom.
 
 **Clicks on the picture belong to the game too.** While a level runs, a click
 on the viewport is handed to the game's code at the spot in the level you

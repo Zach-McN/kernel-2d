@@ -116,8 +116,14 @@ export type SceneViewState =
        * would be sixty renders a second of a panel whose job is to describe the
        * picture rather than to produce it.
        */
-      redraw: (entities: readonly Entity[]) => ShownScene | null
+      redraw: (entities: readonly Entity[], lookFrom?: Camera) => ShownScene | null
       onFrame: (tick: (elapsedMs: number) => void) => () => void
+      /**
+       * The renderer's camera, moved without touching the state above — the
+       * running level's camera seam steers through `redraw`'s second argument,
+       * and this is how Stop puts the human's editing camera back afterwards.
+       */
+      restage: (camera: Camera) => ShownScene | null
       /** The level's music, started by a run and stopped with it — never by editing. */
       playMusic: (music: SceneMusic) => void
       stopMusic: () => void
@@ -409,6 +415,7 @@ export function SceneViewProvider({ children }: { children: ReactNode }): ReactE
       // rebuilt around it every time the picture changes.
       redraw: view.redraw,
       onFrame: view.onFrame,
+      restage: view.restage,
       playMusic: view.playMusic,
       stopMusic: view.stopMusic,
       musicState: view.musicState,

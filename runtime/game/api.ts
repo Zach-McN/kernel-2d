@@ -36,12 +36,15 @@ export {
   INPUT_ENTITY_ID,
   NOTHING,
   clickedIn,
+  heldIn,
   inputEntity,
   pressedIn,
   writeInput,
   type InputSample,
   type ScenePoint,
 } from './input.js'
+
+export { CAMERA_ENTITY_ID, aimCamera, cameraIn } from './camera.js'
 
 export { DOOR_ENTITY_ID, doorIn, openDoor } from './door.js'
 

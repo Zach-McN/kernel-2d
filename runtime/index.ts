@@ -91,6 +91,7 @@ export { framesFor, type FrameRect, type SlicedFrames } from './textures/frames'
 
 export {
   DEFAULT_CAMERA,
+  clampFocus,
   framing,
   isOnScreen,
   panBy,
@@ -158,12 +159,15 @@ export {
   INPUT_ENTITY_ID,
   NOTHING,
   clickedIn,
+  heldIn,
   inputEntity,
   pressedIn,
   writeInput,
   type InputSample,
   type ScenePoint,
 } from './game/input'
+
+export { CAMERA_ENTITY_ID, aimCamera, cameraIn } from './game/camera'
 
 export { collectKeys, type KeyCollector } from './web/keyboard'
 

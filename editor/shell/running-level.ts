@@ -3,10 +3,12 @@ import { useEffect, useRef, useState } from 'react'
 import { currentSystems } from 'virtual:game-systems'
 
 import {
+  clampFocus,
   collectKeys,
   inSceneUnits,
   runLevel,
   toScenePoint,
+  type Camera,
   type DrawnInScene,
   type Entity,
   type SceneMusic,
@@ -96,6 +98,7 @@ export function useRunningLevel(
 ): RunningPicture | null {
   const view = useSceneView()
   const redraw = view.state === 'ready' ? view.redraw : null
+  const restage = view.state === 'ready' ? view.restage : null
   const onFrame = view.state === 'ready' ? view.onFrame : null
   const playMusic = view.state === 'ready' ? view.playMusic : null
   const stopMusic = view.state === 'ready' ? view.stopMusic : null
@@ -167,19 +170,33 @@ export function useRunningLevel(
     const track = musicRef.current
     if (track !== null && playMusic !== null) playMusic(track)
 
+    // The game's camera ask, held until the same frame's draw so the picture
+    // and the viewpoint move together (`runtime/game/camera.ts`). The scale is
+    // the human's zoom, untouched; the ask is clamped to the extent the level
+    // *started* with, because the moving level's own bounds follow whatever
+    // jumped highest this frame — a clamp that breathes reads as jitter.
+    let aimed: Camera | null = null
+
     const level = runLevel({
       entities,
       systems: currentSystems(),
       onFrame,
       input: () => {
-        const sample = { pressed: keys.drain(), clicked }
+        const sample = { pressed: keys.drain(), held: keys.held(), clicked }
         clicked = []
         return sample
       },
       door: (scene) => seamsRef.current?.door?.(scene),
       ...(story === undefined ? {} : { story }),
+      camera: (focus) => {
+        const report = latest ?? startedRef.current
+        if (report === null) return
+        const bounds = startedRef.current?.contentBounds ?? report.contentBounds
+        const scale = report.camera.scale
+        aimed = { scale, focus: clampFocus(focus, bounds, report.canvasSize, scale) }
+      },
       draw: (moved) => {
-        latest = redraw(moved)
+        latest = aimed === null ? redraw(moved) : redraw(moved, aimed)
       },
       watch: (state) => {
         setPicture({
@@ -195,9 +212,15 @@ export function useRunningLevel(
       keys.stop()
       level.stop()
       stopMusic?.()
+      // If the game steered the view, Stop hands the human back the camera
+      // they were editing through — the run moved the renderer's camera, not
+      // the editor's state, so putting it back is one restage.
+      if (aimed !== null && restage !== null && startedRef.current !== null) {
+        restage(startedRef.current.camera)
+      }
       setPicture(null)
     }
-  }, [entities, ready, redraw, onFrame, host, playMusic, stopMusic])
+  }, [entities, ready, redraw, restage, onFrame, host, playMusic, stopMusic])
 
   return picture
 }

@@ -1,6 +1,7 @@
 import type { Entity } from '../formats/scene-schema.js'
+import { CAMERA_ENTITY_ID, cameraIn } from './camera.js'
 import { DOOR_ENTITY_ID, takeDoor } from './door.js'
-import { NOTHING, inputEntity, writeInput, type InputSample } from './input.js'
+import { NOTHING, inputEntity, writeInput, type InputSample, type ScenePoint } from './input.js'
 import { createLoop, type LoopOptions } from './loop.js'
 import { factsIn, storyEntity } from './story.js'
 import { stepSystems, type System } from './system.js'
@@ -87,6 +88,15 @@ export interface RunLevelOptions {
    */
   door?: (scene: string) => void
   /**
+   * Told where the game wants the view centred (`camera.ts`), on every moved
+   * frame with an ask standing — told *before* that frame's draw, so the
+   * picture and the viewpoint arrive together rather than a frame apart. The
+   * focus is in scene units; the scale, and any clamping to what there is to
+   * see, stay the host's. Absent means asks go nowhere: the ask stays in the
+   * level for a test to read.
+   */
+  camera?: (focus: ScenePoint) => void
+  /**
    * What the game remembers between runs, and which scene this is (`story.ts`).
    * When present, the runner injects the story carrier with `recall`'s facts,
    * and calls `remember` at the end of any frame that changed them — with the
@@ -158,12 +168,20 @@ export function runLevel(options: RunLevelOptions): RunningLevel {
     if (!running) return
 
     let firstStepOfFrame = true
+    let frameSample: InputSample = NOTHING
     const ran = loop.advance(frameMs, (dtSeconds) => {
       // Drained inside the step rather than before the frame, because most
       // frames at a high refresh rate run no steps — draining on one of those
       // would throw a press away between steps.
       if (carrier !== null && drain !== undefined) {
-        writeInput(carrier, firstStepOfFrame ? drain() : NOTHING)
+        // Presses and clicks are events and belong to exactly one step; held
+        // keys are state and belong to every step of the frame — a catch-up
+        // frame that blanked them would read as the player letting go.
+        if (firstStepOfFrame) frameSample = drain()
+        writeInput(
+          carrier,
+          firstStepOfFrame ? frameSample : { pressed: [], clicked: [], held: frameSample.held ?? [] },
+        )
         firstStepOfFrame = false
       }
       stepSystems(options.systems, entities, dtSeconds)
@@ -190,7 +208,16 @@ export function runLevel(options: RunLevelOptions): RunningLevel {
     // every consumer's idea of "the level's entities". A level carrying none
     // of them is handed over as-is, so what the systems mutate *is* what gets
     // drawn, identity included.
-    const hidden = (one: Entity): boolean => one === carrier || one === memory || one.id === DOOR_ENTITY_ID
+    // The viewpoint moves before the picture is drawn, so the two arrive in
+    // the same frame — a camera told afterwards trails the game by one frame,
+    // which reads as the level jittering against its own background.
+    if (options.camera !== undefined) {
+      const focus = cameraIn(entities)
+      if (focus !== null) options.camera(focus)
+    }
+
+    const hidden = (one: Entity): boolean =>
+      one === carrier || one === memory || one.id === DOOR_ENTITY_ID || one.id === CAMERA_ENTITY_ID
     options.draw(entities.some(hidden) ? entities.filter((one) => !hidden(one)) : entities)
 
     // A door the game opened this frame, told to the host after the picture —

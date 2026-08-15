@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   DEFAULT_CAMERA,
+  clampFocus,
   framing,
   isOnScreen,
   panBy,
@@ -282,5 +283,37 @@ describe('rotation', () => {
   it('takes degrees, not radians', () => {
     expect(toScreenRadians(180)).toBeCloseTo(-Math.PI, 10)
     expect(toScreenRadians(360)).toBeCloseTo(-2 * Math.PI, 10)
+  })
+})
+
+describe('clamping a game-asked focus to what there is to see', () => {
+  // A level 1024 wide and 304 tall, seen through a 320x304 window at 1x.
+  const content = { x: 0, y: 0, width: 1024, height: 304 }
+  const canvas: Size = { width: 320, height: 304 }
+
+  it('leaves a focus alone while the view it implies stays inside the content', () => {
+    expect(clampFocus({ x: 500, y: 152 }, content, canvas, 1)).toEqual({ x: 500, y: 152 })
+  })
+
+  it('holds the view at the edge when the ask would show past it', () => {
+    expect(clampFocus({ x: 10, y: 152 }, content, canvas, 1)).toEqual({ x: 160, y: 152 })
+    expect(clampFocus({ x: 2000, y: 152 }, content, canvas, 1)).toEqual({ x: 864, y: 152 })
+    expect(clampFocus({ x: 500, y: 9999 }, content, canvas, 1)).toEqual({ x: 500, y: 152 })
+  })
+
+  it('accounts for the scale, because the view is canvas pixels over it', () => {
+    // At 2x the window spans half as many scene units, so the clamp is looser.
+    expect(clampFocus({ x: 80, y: 152 }, content, canvas, 2)).toEqual({ x: 80, y: 152 })
+    expect(clampFocus({ x: 10, y: 152 }, content, canvas, 2)).toEqual({ x: 80, y: 152 })
+  })
+
+  it('centres on an axis the content cannot fill, rather than jittering between its edges', () => {
+    const narrow = { x: 100, y: 0, width: 50, height: 304 }
+    expect(clampFocus({ x: 0, y: 152 }, narrow, canvas, 1)).toEqual({ x: 125, y: 152 })
+    expect(clampFocus({ x: 999, y: 152 }, narrow, canvas, 1)).toEqual({ x: 125, y: 152 })
+  })
+
+  it('clamps nothing when there is no content to hold to', () => {
+    expect(clampFocus({ x: -500, y: 9000 }, null, canvas, 1)).toEqual({ x: -500, y: 9000 })
   })
 })

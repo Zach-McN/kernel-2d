@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { defaultEntity, type Entity } from '../../runtime/formats/scene-schema'
-import { clickedIn, inputEntity, pressedIn, writeInput } from '../../runtime/game/input'
+import { clickedIn, heldIn, inputEntity, pressedIn, writeInput } from '../../runtime/game/input'
 import { STEP_MS } from '../../runtime/game/loop'
 import { runLevel } from '../../runtime/game/run-level'
 import type { System } from '../../runtime/game/system'
@@ -77,6 +77,22 @@ describe('reading input off a level', () => {
     mangled.components['input'] = { clicked: [{ x: 'here' }] }
     expect(clickedIn([mangled])).toEqual([])
   })
+
+  it('answers the held codes the carrier holds', () => {
+    expect(heldIn([inputEntity([], [], ['ArrowRight', 'ShiftLeft'])])).toEqual(['ArrowRight', 'ShiftLeft'])
+  })
+
+  it('answers nothing held for a sample that says nothing about holding', () => {
+    const carrier = inputEntity(['Space'])
+    writeInput(carrier, { pressed: ['Space'], clicked: [] })
+    expect(heldIn([carrier])).toEqual([])
+  })
+
+  it('replaces held state when written to, exactly as it replaces presses', () => {
+    const carrier = inputEntity([], [], ['ArrowRight'])
+    writeInput(carrier, { pressed: [], clicked: [], held: ['ArrowLeft'] })
+    expect(heldIn([carrier])).toEqual(['ArrowLeft'])
+  })
 })
 
 describe('the runner feeding input', () => {
@@ -122,6 +138,36 @@ describe('the runner feeding input', () => {
     frames.frame(STEP_MS * 3 + 1)
 
     expect(ears.heard).toEqual([['Space'], [], []])
+  })
+
+  it('keeps held state for every step of a catching-up frame, while the press stays with the first', () => {
+    const frames = handCrankedFrames()
+    const seen: { pressed: string[]; held: string[] }[] = []
+    const ears: System = {
+      id: 'ears',
+      step: (entities) => {
+        seen.push({ pressed: [...pressedIn(entities)], held: [...heldIn(entities)] })
+      },
+    }
+
+    runLevel({
+      entities: [],
+      systems: [ears],
+      onFrame: frames.onFrame,
+      draw: () => {},
+      input: () => ({ pressed: ['Space'], clicked: [], held: ['ArrowRight'] }),
+    })
+
+    // One big frame buys three steps. The press belongs to the first; the held
+    // key is state and is true of all three — a player holding right through a
+    // hitch did not let go three times.
+    frames.frame(STEP_MS * 3 + 1)
+
+    expect(seen).toEqual([
+      { pressed: ['Space'], held: ['ArrowRight'] },
+      { pressed: [], held: ['ArrowRight'] },
+      { pressed: [], held: ['ArrowRight'] },
+    ])
   })
 
   it('injects no carrier when there is no input source', () => {
