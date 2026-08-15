@@ -82,6 +82,8 @@ Training data skews heavily Phaser 3. **Check the vendored Phaser 4 docs before 
 6. **Both repos clean.** Skill edits land in the linked `gamedev-skills` repo — commit and push there as well as here. Commit before starting work and after finishing.
 7. **Hand off a test plan.** End every session with concrete steps for the human to verify by hand ("open the editor, drop a PNG in assets/textures, confirm it appears within a second"), phrased as observable behavior.
 
+8. **Leave the ports free.** Anything a session started that listens on a port — the editor (5173, with its sidecar on 7331), a preview server, a test harness — is stopped before the session ends, whether or not the work went well. **Port 5173 belongs to the human's `Open editor.cmd` window**, and a session that walks away still holding it turns the next double-click into "Port 5173 is already in use", which reads as the editor being broken. Stop what you started rather than waiting to be asked; if a server is genuinely still needed at hand-off, say so by name and port in the report.
+
 No session ends red. If checks fail, fix them or revert. If work must stop mid-feature, park it on a branch marked WIP — never leave `main` red.
 
 ## Tests assert behavior, never implementation
