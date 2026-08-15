@@ -28,6 +28,16 @@ export interface NumberFieldProps {
   integer?: boolean
   /** For a field in a window that opened to be typed into, and nowhere else. */
   autoFocus?: boolean
+  /**
+   * Values worth offering as a dropdown, without making them the only ones.
+   *
+   * A `<datalist>` rather than a `<select>` beside a field, because that is the
+   * combo box the browser already has: the same input, with a list attached, so
+   * picking `16` and typing `24` go through one code path and commit by the same
+   * rule. A select plus a field would be two controls that can disagree about
+   * what the value is.
+   */
+  presets?: readonly number[]
 }
 
 export function NumberField({
@@ -39,7 +49,11 @@ export function NumberField({
   step,
   integer,
   autoFocus,
+  presets,
 }: NumberFieldProps): ReactElement {
+  // Tied to the field's own test id, so two fields on one bar cannot share a
+  // list — an id collision here shows up as the wrong dropdown, silently.
+  const listId = presets === undefined ? undefined : `${testId}-presets`
   const [typed, setTyped] = useState<string | null>(null)
   const committed = useRef(value)
 
@@ -53,6 +67,7 @@ export function NumberField({
   }, [value])
 
   return (
+    <>
     <input
       type="number"
       className="control control--number"
@@ -61,6 +76,7 @@ export function NumberField({
       value={typed ?? String(value)}
       min={min}
       step={step}
+      list={listId}
       autoFocus={autoFocus}
       onChange={(event) => {
         const text = event.target.value
@@ -82,5 +98,13 @@ export function NumberField({
         sealEdits()
       }}
     />
+      {listId !== undefined && (
+        <datalist id={listId} data-testid={`${testId}-presets`}>
+          {presets?.map((preset) => (
+            <option key={preset} value={preset} />
+          ))}
+        </datalist>
+      )}
+    </>
   )
 }

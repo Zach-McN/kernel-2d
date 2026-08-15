@@ -102,14 +102,16 @@ async function dragFrom(
   from: { x: number; y: number },
   dx: number,
   dy: number,
-  options: { alt?: boolean } = {},
+  options: { ctrl?: boolean } = {},
 ): Promise<void> {
   await page.mouse.move(from.x, from.y)
   await page.mouse.down()
-  if (options.alt === true) await page.keyboard.down('Alt')
+  // After the button, never before it: a press with Ctrl already held means
+  // "take this out of the selection" and starts no drag at all.
+  if (options.ctrl === true) await page.keyboard.down('Control')
   await page.mouse.move(from.x + dx, from.y + dy, { steps: 8 })
   await page.mouse.up()
-  if (options.alt === true) await page.keyboard.up('Alt')
+  if (options.ctrl === true) await page.keyboard.up('Control')
 
   await expect(viewport(page)).toHaveAttribute('data-scene-dragging', '')
 }
@@ -196,7 +198,7 @@ test('a drag that would land between units is snapped to one', async ({ page }) 
   expect(after.x).not.toBe(before.x)
 })
 
-test('holding Alt places it between whole units', async ({ page }) => {
+test('holding Ctrl places it between whole units', async ({ page }) => {
   await openScene(page)
   await row(page, 'Slime').click()
 
@@ -206,7 +208,7 @@ test('holding Alt places it between whole units', async ({ page }) => {
   for (let step = 0; step < 3; step += 1) await page.mouse.wheel(0, -120)
   await settled(page)
 
-  await dragFrom(page, await outlineCentre(page), 13, 0, { alt: true })
+  await dragFrom(page, await outlineCentre(page), 13, 0, { ctrl: true })
 
   const after = await position(page)
   expect(Number.isInteger(after.x)).toBe(false)

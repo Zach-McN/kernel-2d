@@ -8,7 +8,7 @@ It is kept current by the definition of done in `CLAUDE.md`: a session that
 changes what you can do, or how you do it, changes this page in the same commit.
 If this page and the editor disagree, the editor is right and the page is a bug.
 
-Last true as of: **selecting several entities and deleting them together**
+Last true as of: **the snap switch, and Play greyed for the whole of a move**
 (2026-08-15).
 
 ---
@@ -514,7 +514,7 @@ time, space-drag still pans, and the wheel still zooms.
 | Ctrl-click a sprite | Take it out of what is selected |
 | `Delete` | Remove everything selected — one press of `Ctrl-Z` brings it all back |
 | Drag a sprite | Move it, landing on the snap |
-| Hold `Alt` while dragging | Ignore the snap and put it anywhere |
+| Hold `Ctrl` while dragging | Flip the snap switch while you hold it |
 | `G` | Grab the selected entity — it moves with the pointer, nothing held |
 | `X` / `Y` while grabbing | Hold it to that axis, from where it started |
 | `Esc` while grabbing | Put it back exactly where it was |
@@ -552,7 +552,7 @@ start on the sprite starts by hiding it.
   is running along. Press the same key again to free it.
 - **`Esc` puts it back**, exactly, and leaves nothing behind: the next `Ctrl-Z`
   reverses whatever you did *before* the grab, not the grab you called off.
-- **The snap and `Alt` work exactly as they do for a drag.**
+- **The snap and `Ctrl` work exactly as they do for a drag.**
 - **While a grab is running it has the picture.** The wheel will not zoom, `Home`
   and `F` will not move the camera, and a click puts the entity down rather than
   selecting something else. All of those would move the entity out from under your
@@ -573,26 +573,38 @@ never reverses a pan.
 
 #### The snap
 
-Two numbers in the bar under the picture, **Snap** and **from**, decide where a
-drag or a click is allowed to put something.
+Three controls in the bar under the picture — a **Snap** switch, an interval, and
+a **from** — decide where a drag or a click is allowed to put something.
 
-- **Snap** is how far apart those positions are, in level units. It starts at
-  `1`, which is the whole units everything landed on before. Set it to `16` and
-  things land sixteen apart.
+- **Snap** turns the grid on and off. It lights up when it is on, and it starts
+  on. With it off, things land wherever you put them.
+- **The interval** is how far apart those positions are, in level units. Click the
+  box for the usual sizes — 1, 2, 4, 8, 16, 32, 64, 128 — or type any number over
+  it if your level wants something else, like `24`.
 - **from** is where that grid starts. `16 from 0` reaches 0, 16, 32; `16 from 8`
   reaches 8, 24, 40.
 
-That second number matters more than it looks. A sprite hangs off the *middle* of
+That last number matters more than it looks. A sprite hangs off the *middle* of
 its position, so a board of 16-unit tiles laid corner to corner has its tiles at
 8, 24, 40 — and a grid starting at 0 cannot land on any of them. If you are
-tiling something, the offset is usually half the step.
+tiling something, the offset is usually half the interval.
 
-`0` in the first box turns snapping off altogether, which is what holding `Alt`
-does for one drag.
+**Hold `Ctrl` while you are moving something and the switch flips for as long as
+you hold it.** With snapping on, `Ctrl` places it anywhere; with snapping off,
+`Ctrl` puts it on the grid — which is the useful half most of the time: lay a
+level out by eye, then hold `Ctrl` for the one piece you want lined up. It takes
+effect the moment you press the key, and undoes the moment you let go, without
+having to move the mouse.
 
-**It is not saved anywhere.** Like the zoom and where you are looking, it belongs
-to the window: reload and it is back to `1 from 0`. It never reaches your level,
-so `Ctrl-Z` cannot see it either.
+Press `Ctrl` *during* the move, not before it — holding `Ctrl` and then clicking
+means "take this out of the selection", so it never starts a move at all.
+
+Switching the grid off does not forget it. Turn it back on and your interval and
+offset are where you left them.
+
+**None of it is saved anywhere.** Like the zoom and where you are looking, it
+belongs to the window: reload and it is back to on, `1 from 0`. It never reaches
+your level, so `Ctrl-Z` cannot see it either.
 
 ### Play mode
 
@@ -602,6 +614,11 @@ exactly where you were: same level, same selection, same camera.
 
 - A change made a moment before you press Play is in what runs; there is no save
   button and you do not need one.
+- **Play is greyed while you are still holding something.** A level runs from the
+  file, so it cannot start halfway through a move — the button stays out for the
+  whole of a drag or a `G` grab, including the parts where your hand is not
+  moving, and says so if you hover it. Put the entity down, or press `Esc`, and it
+  comes straight back.
 - **Time passes**, and your project's own systems are what make it do anything.
   In the sample that is the health icon turning and the slime walking, and both
   keep going until you stop.
@@ -842,7 +859,7 @@ the editor takes the change.
   clicking them one at a time with Shift held.
 - **Rotate or scale handles in the viewport.** Position is the one thing the
   picture can change; everything else is typed in the Inspector.
-- **A grid or rulers you can see.** The snap is two numbers in the bar and
+- **A grid or rulers you can see.** The snap is a switch and two numbers in the bar and
   nothing is drawn for it, so a board lines up without ever showing you the
   lines it lined up to.
 - **Two levels open at once.**

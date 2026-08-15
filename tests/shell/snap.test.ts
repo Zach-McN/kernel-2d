@@ -1,6 +1,15 @@
 import { describe, expect, it } from 'vitest'
 
-import { WHOLE_UNITS, freePoint, freely, snapPoint, snapTo, type Snap } from '../../editor/shell/snap'
+import {
+  SNAP_INTERVALS,
+  WHOLE_UNITS,
+  freePoint,
+  freely,
+  placeOn,
+  snapPoint,
+  snapTo,
+  type Snap,
+} from '../../editor/shell/snap'
 
 /**
  * Where a placement is allowed to land, as arithmetic.
@@ -13,11 +22,18 @@ import { WHOLE_UNITS, freePoint, freely, snapPoint, snapTo, type Snap } from '..
  */
 
 /** The grid the first real game wants: 16-unit tiles, drawn from their middles. */
-const TILES: Snap = { step: 16, offset: 8 }
+const TILES: Snap = { on: true, step: 16, offset: 8 }
+
+describe('the intervals offered', () => {
+  it('are the powers of two a pixel editor is laid out in, and the default is one of them', () => {
+    expect(SNAP_INTERVALS).toEqual([1, 2, 4, 8, 16, 32, 64, 128])
+    expect(SNAP_INTERVALS).toContain(WHOLE_UNITS.step)
+  })
+})
 
 describe('the default', () => {
   it('is the whole units the editor placed on before any of this existed', () => {
-    expect(WHOLE_UNITS).toEqual({ step: 1, offset: 0 })
+    expect(WHOLE_UNITS).toEqual({ on: true, step: 1, offset: 0 })
     expect(snapTo(4.4, WHOLE_UNITS)).toBe(4)
     expect(snapTo(4.6, WHOLE_UNITS)).toBe(5)
     expect(snapTo(-4.6, WHOLE_UNITS)).toBe(-5)
@@ -25,7 +41,7 @@ describe('the default', () => {
 })
 
 describe('a grid through the origin', () => {
-  const sixteens: Snap = { step: 16, offset: 0 }
+  const sixteens: Snap = { on: true, step: 16, offset: 0 }
 
   it('reaches multiples of the step and nothing between them', () => {
     expect(snapTo(0, sixteens)).toBe(0)
@@ -70,16 +86,68 @@ describe('the offset', () => {
   })
 })
 
+/**
+ * The switch and the key that inverts it — all four combinations, because three
+ * of them are obvious and the fourth is the one that gets written backwards.
+ *
+ * An implementation that reads the modifier as "place freely" — which is what it
+ * meant while `Alt` owned it — passes every case here except `off + held`, and
+ * that case is silent when it fails: the entity lands where it would have landed
+ * anyway, so nothing on screen says the key did nothing.
+ */
+describe('the toggle, and Ctrl inverting it', () => {
+  const rough = { x: 9.4, y: 41.7 }
+  const onGrid = { x: 8, y: 40 }
+  const anywhere = { x: 9.4, y: 41.7 }
+
+  it('lands on the grid with snapping on and nothing held', () => {
+    expect(placeOn(rough, TILES, false)).toEqual(onGrid)
+  })
+
+  it('lands anywhere with snapping on and Ctrl held', () => {
+    expect(placeOn(rough, TILES, true)).toEqual(anywhere)
+  })
+
+  it('lands anywhere with snapping off and nothing held', () => {
+    expect(placeOn(rough, { ...TILES, on: false }, false)).toEqual(anywhere)
+  })
+
+  /** The one. Ctrl is not "free" — it is *the other thing*. */
+  it('lands on the grid with snapping off and Ctrl held', () => {
+    expect(placeOn(rough, { ...TILES, on: false }, true)).toEqual(onGrid)
+  })
+
+  /**
+   * Switching off must not throw the grid away, or setting one up and turning it
+   * on would be two steps that undo each other.
+   */
+  it('keeps the spacing while it is switched off', () => {
+    const off: Snap = { ...TILES, on: false }
+    expect(off.step).toBe(16)
+    expect(off.offset).toBe(8)
+    expect(placeOn(rough, { ...off, on: true }, false)).toEqual(onGrid)
+  })
+
+  /**
+   * The grid arithmetic deliberately does not consult the switch — asking there
+   * as well would make the inverted case above unreachable, since it has to snap
+   * to a grid the toggle says is off.
+   */
+  it('snaps by arithmetic alone, whatever the switch says', () => {
+    expect(snapTo(9.4, { ...TILES, on: false })).toBe(8)
+  })
+})
+
 describe('a step that is not a grid', () => {
-  it('places freely, which is what holding Alt does', () => {
-    expect(snapTo(4.5678, { step: 0, offset: 0 })).toBe(4.568)
-    expect(snapTo(4.5678, { step: -16, offset: 0 })).toBe(4.568)
-    expect(snapTo(4.5678, { step: Number.NaN, offset: 0 })).toBe(4.568)
-    expect(snapTo(4.5678, { step: Number.POSITIVE_INFINITY, offset: 0 })).toBe(4.568)
+  it('places freely, whatever else is asked for', () => {
+    expect(snapTo(4.5678, { on: true, step: 0, offset: 0 })).toBe(4.568)
+    expect(snapTo(4.5678, { on: true, step: -16, offset: 0 })).toBe(4.568)
+    expect(snapTo(4.5678, { on: true, step: Number.NaN, offset: 0 })).toBe(4.568)
+    expect(snapTo(4.5678, { on: true, step: Number.POSITIVE_INFINITY, offset: 0 })).toBe(4.568)
   })
 
   it('does the same for an offset nobody could mean', () => {
-    expect(snapTo(4.5678, { step: 16, offset: Number.NaN })).toBe(4.568)
+    expect(snapTo(4.5678, { on: true, step: 16, offset: Number.NaN })).toBe(4.568)
   })
 })
 
@@ -108,7 +176,7 @@ describe('what reaches the file', () => {
    * and a level would drift every time it was touched.
    */
   it('leaves a position that is already on the grid exactly where it is', () => {
-    for (const snap of [WHOLE_UNITS, TILES, { step: 0.25, offset: 0 }, { step: 0, offset: 0 }]) {
+    for (const snap of [WHOLE_UNITS, TILES, { on: true, step: 0.25, offset: 0 }, { on: true, step: 0, offset: 0 }]) {
       for (const rough of [0, 7.4, 25.9, -33.2]) {
         const once = snapTo(rough, snap)
         expect(snapTo(once, snap)).toBe(once)

@@ -115,19 +115,38 @@ async function setSnap(page: Page, step: number, offset: number): Promise<void> 
   await expect(page.getByTestId('scene-snap')).toHaveAttribute('data-snap-offset', String(offset))
 }
 
+/**
+ * Turn snapping on or off, and wait until the panel says it has taken it.
+ *
+ * The switch is pressed only when it is not already where it is wanted, so a
+ * test that asks for the state it is in does not silently toggle it away.
+ */
+async function setSnapping(page: Page, on: boolean): Promise<void> {
+  const showing = await page.getByTestId('scene-snap').getAttribute('data-snap-on')
+  if (showing !== String(on)) await page.getByTestId('scene-snap-toggle').click()
+  await expect(page.getByTestId('scene-snap')).toHaveAttribute('data-snap-on', String(on))
+}
+
+/**
+ * A drag, optionally with `Ctrl` held for its middle.
+ *
+ * The key goes down *after* the button, which is not tidiness — a press with
+ * `Ctrl` already held means "take this out of the selection" and starts no drag
+ * at all, so a test that held it first would be testing nothing.
+ */
 async function dragFrom(
   page: Page,
   from: { x: number; y: number },
   dx: number,
   dy: number,
-  options: { alt?: boolean } = {},
+  options: { ctrl?: boolean } = {},
 ): Promise<void> {
   await page.mouse.move(from.x, from.y)
   await page.mouse.down()
-  if (options.alt === true) await page.keyboard.down('Alt')
+  if (options.ctrl === true) await page.keyboard.down('Control')
   await page.mouse.move(from.x + dx, from.y + dy, { steps: 8 })
   await page.mouse.up()
-  if (options.alt === true) await page.keyboard.up('Alt')
+  if (options.ctrl === true) await page.keyboard.up('Control')
 
   await expect(viewport(page)).toHaveAttribute('data-scene-dragging', '')
 }
@@ -195,20 +214,118 @@ test('an offset moves the grid, so 16 from 8 reaches 8, 24 and 40', async ({ pag
   expect((after.y - 8) % 16).toBe(0)
 })
 
-test('Alt still places it anywhere, whatever the snap is', async ({ page }) => {
-  await openScene(page)
-  await setSnap(page, 16, 8)
-  await row(page, 'Slime').click()
-
-  // Zoomed in far enough that one screen pixel is a fraction of a level unit,
-  // which is the only zoom at which a free position is even expressible.
+/**
+ * Zoom in until one screen pixel is a fraction of a level unit, which is the
+ * only zoom at which a free position is even expressible — at 1x every drag
+ * lands on a whole number whether anything snapped it or not.
+ */
+async function zoomInHard(page: Page): Promise<void> {
   await page.mouse.move(...(Object.values(await outlineCentre(page)) as [number, number]))
   for (let step = 0; step < 3; step += 1) await page.mouse.wheel(0, -120)
   await settled(page)
+}
 
-  await dragFrom(page, await outlineCentre(page), 13, 0, { alt: true })
+test('Ctrl places it anywhere while snapping is on', async ({ page }) => {
+  await openScene(page)
+  await setSnapping(page, true)
+  await setSnap(page, 16, 8)
+  await row(page, 'Slime').click()
+  await zoomInHard(page)
+
+  await dragFrom(page, await outlineCentre(page), 13, 0, { ctrl: true })
 
   expect(Number.isInteger((await position(page)).x)).toBe(false)
+})
+
+test('the switch turns the grid off, and a drag then lands anywhere', async ({ page }) => {
+  await openScene(page)
+  await setSnap(page, 16, 8)
+  await row(page, 'Slime').click()
+  await zoomInHard(page)
+
+  await setSnapping(page, false)
+  await dragFrom(page, await outlineCentre(page), 13, 0)
+
+  expect(Number.isInteger((await position(page)).x)).toBe(false)
+})
+
+/**
+ * The half that catches an inversion written backwards.
+ *
+ * `Ctrl` is not "place freely" — it is *the other thing*. An implementation that
+ * kept the old meaning passes every other test in this file and fails only here,
+ * silently: the entity lands where it would have landed anyway.
+ */
+test('Ctrl lands it on the grid while snapping is off', async ({ page }) => {
+  await openScene(page)
+  await setSnap(page, 16, 8)
+  await row(page, 'Slime').click()
+  await zoomInHard(page)
+  await setSnapping(page, false)
+
+  // Freely first, so the entity is provably off the grid before the key is held.
+  await dragFrom(page, await outlineCentre(page), 13, 0)
+  expect(Number.isInteger((await position(page)).x)).toBe(false)
+
+  await dragFrom(page, await outlineCentre(page), 13, 0, { ctrl: true })
+
+  const after = await position(page)
+  expect((after.x - 8) % 16).toBe(0)
+})
+
+/** Switching off must not throw the grid away, or setting one up is two steps
+ *  that undo each other. */
+test('the spacing survives being switched off and on again', async ({ page }) => {
+  await openScene(page)
+  await setSnap(page, 16, 8)
+
+  await setSnapping(page, false)
+  await setSnapping(page, true)
+
+  await expect(page.getByTestId('scene-snap')).toHaveAttribute('data-snap-step', '16')
+  await expect(page.getByTestId('scene-snap')).toHaveAttribute('data-snap-offset', '8')
+})
+
+/**
+ * One asserting-nothing picture of the new control row, in both states, to look
+ * at when somebody reports the switch as looking wrong (`editor-verification`
+ * V31).
+ */
+test('leaves a picture of the snap controls, on and off', async ({ page }, testInfo) => {
+  await openScene(page)
+  await setSnap(page, 16, 8)
+
+  await setSnapping(page, true)
+  await page.getByTestId('scene-snap').screenshot({ path: testInfo.outputPath('snap-on.png') })
+
+  await setSnapping(page, false)
+  await page.getByTestId('scene-snap').screenshot({ path: testInfo.outputPath('snap-off.png') })
+})
+
+/** The interval offers a list and still takes anything typed over it. */
+test('the interval has presets to pick from, and accepts a number that is not one', async ({ page }) => {
+  await openScene(page)
+
+  const presets = page.getByTestId('scene-snap-step-presets').locator('option')
+  // Read as an attribute rather than through `HTMLOptionElement`, which the
+  // test project's lib does not carry.
+  expect(await presets.evaluateAll((options) => options.map((one) => one.getAttribute('value')))).toEqual([
+    '1',
+    '2',
+    '4',
+    '8',
+    '16',
+    '32',
+    '64',
+    '128',
+  ])
+
+  await setSnap(page, 24, 0)
+  await row(page, 'Slime').click()
+  const scale = await cameraScale(page)
+  await dragFrom(page, await outlineCentre(page), 30 * scale, 0)
+
+  expect((await position(page)).x % 24).toBe(0)
 })
 
 /**
@@ -219,11 +336,15 @@ test('Alt still places it anywhere, whatever the snap is', async ({ page }) => {
 test('the snap is not saved into the level, and a reload puts it back', async ({ page }) => {
   await openScene(page)
   await setSnap(page, 16, 8)
+  // The switch is part of the same window state, so it has to be moved off its
+  // default too — otherwise this only proves the two numbers reset.
+  await setSnapping(page, false)
 
   await page.reload()
   await expect(page.getByTestId('viewport-stage').locator('canvas')).toBeVisible()
   await openScene(page)
 
+  await expect(page.getByTestId('scene-snap')).toHaveAttribute('data-snap-on', 'true')
   await expect(page.getByTestId('scene-snap')).toHaveAttribute('data-snap-step', '1')
   await expect(page.getByTestId('scene-snap')).toHaveAttribute('data-snap-offset', '0')
 })

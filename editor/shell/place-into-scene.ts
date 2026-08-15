@@ -4,7 +4,7 @@ import type { Point } from '../../runtime/scene/coordinates'
 import { mintId } from '../store/ids'
 import { editDocument } from '../store/open-documents'
 import { freeName, namesIn } from './entity-names'
-import { snapPoint, type Snap } from './snap'
+import { placeOn, type Snap } from './snap'
 
 /**
  * The two ways something new arrives in a level: a copy of a prefab, and an
@@ -27,6 +27,12 @@ import { snapPoint, type Snap } from './snap'
  *
  * Neither contains any undo code. Both go through the transaction API, so one
  * drop is one press of Ctrl-Z (`editor-kernel` D7).
+ *
+ * Both land through `placeOn` with the modifier off, which is not a shrug: a
+ * drop and a stamp are single presses with no held key to read, so the toggle in
+ * the viewport bar is the whole answer for them. Going through the same door as
+ * a drag anyway is what makes switching that toggle off change *every* way of
+ * putting something down, rather than the one the human happened to test.
  */
 
 /** Where a new thing landed and what it is called, for whoever has to say so. */
@@ -56,7 +62,7 @@ export function placePrefabInstance({
   at: Point
   snap: Snap
 }): Placed {
-  const landing = snapPoint(at, snap)
+  const landing = placeOn(at, snap, false)
   const id = mintId()
   let name = ''
 
@@ -93,7 +99,7 @@ export function placeSpriteEntity({
   at: Point
   snap: Snap
 }): Placed {
-  const landing = snapPoint(at, snap)
+  const landing = placeOn(at, snap, false)
   const id = mintId()
   let name = ''
 

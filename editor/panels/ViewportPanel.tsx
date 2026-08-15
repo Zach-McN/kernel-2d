@@ -21,7 +21,7 @@ import { useRunningLevel, type RunSeams } from '../shell/running-level'
 import { describeProblem, problemsIn, useSceneAssets } from '../shell/scene-assets'
 import { describePrefabProblem, prefabProblemsIn, useResolvedScene } from '../shell/scene-prefabs'
 import { useDrawScene, useSceneView, type SceneViewState } from '../shell/scene-view-context'
-import { freePoint, snapPoint } from '../shell/snap'
+import { SNAP_INTERVALS, placeOn } from '../shell/snap'
 import { useSceneDropTarget, type SceneDropTarget } from '../shell/useSceneDropTarget'
 import { useSceneGestures, type Grab, type ScenePlacement } from '../shell/useSceneGestures'
 import { useSelection } from '../shell/selection'
@@ -361,7 +361,25 @@ export function ViewportPanel(): ReactElement {
           // missing. Play would then run against a baseline the human never
           // actually saw, and the comparison would be checking the running level
           // against a half-drawn one.
-          canPlay={current !== null && settled && !assets.loading && !resolved.loading}
+          //
+          // **A move in progress is its own reason, stated rather than relied
+          // upon**, and that last clause is the whole of a bug this button had.
+          // `settled` means "the picture on screen is of the level as it is
+          // now", which during a move is true whenever the renderer has caught
+          // up — so it went false on every mouse movement and true again in
+          // every pause between them, and the button flickered. It flickered
+          // *worst* in a `G` grab, where the hand is often perfectly still and
+          // the move is nowhere near finished. A readiness signal is sampled;
+          // an intent is not. Gating on the gesture makes the answer steady for
+          // as long as the gesture lasts, which is what the human sees.
+          canPlay={
+            current !== null &&
+            settled &&
+            !assets.loading &&
+            !resolved.loading &&
+            gestures.dragging === null &&
+            gestures.grabbing === null
+          }
         />
       )}
     </div>
@@ -520,7 +538,7 @@ function usePlacement(
 
       beginMove: (entityId) => begin(entityId),
 
-      moveBy: (entityId, screenDx, screenDy, free) => {
+      moveBy: (entityId, screenDx, screenDy, invert) => {
         const start = from.current
         if (start === null || start.entity !== entityId) return
         if (scenePath === null || scale === null) return
@@ -529,7 +547,9 @@ function usePlacement(
         // travel is subtracted. The scale is the only part of the camera that
         // matters here: a drag is a distance, not a place.
         const wanted = { x: start.x + screenDx / scale, y: start.y - screenDy / scale }
-        const at = free ? freePoint(wanted) : snapPoint(wanted, placing.snap)
+        // The toggle and the held modifier are combined in one place, and this
+        // is not it (`editor/shell/snap.ts`).
+        const at = placeOn(wanted, placing.snap, invert)
 
         editDocument(scenePath, { label: 'Move entity', merge: start.key }, (document) => {
           if (document.format !== SCENE_FORMAT) return
@@ -847,9 +867,10 @@ function Caption({
       ) : moving !== null ? (
         <Note
           testId={grab === null ? 'viewport-dragging' : 'viewport-grabbing'}
-          title={`${moving.name} — ${moving.transform.x}, ${moving.transform.y}. ${wholeAdvice(grab)}`}
+          title={`${moving.name} — ${moving.transform.x}, ${moving.transform.y}. ${wholeAdvice(grab, placing.snap.on)}`}
         >
-          <strong>{moving.name}</strong> — {moving.transform.x}, {moving.transform.y}. {advice(grab)}
+          <strong>{moving.name}</strong> — {moving.transform.x}, {moving.transform.y}.{' '}
+          {advice(grab, placing.snap.on)}
         </Note>
       ) : offScreen.kind === 'all' ? (
         <Note bad testId="viewport-offscreen">Everything is off screen — press Home to bring it back.</Note>
@@ -897,7 +918,9 @@ function Caption({
           title={
             canPlay
               ? 'Run this level from the file, drawn by the game runtime'
-              : 'Waiting for the level to finish opening'
+              : moving !== null
+                ? 'Put it down first — a level runs from the file, and this one is still being moved'
+                : 'Waiting for the level to finish opening'
           }
           onClick={onPlay}
         >
@@ -925,20 +948,27 @@ function Caption({
  * whole of it is next door, in the tooltip, on the same terms as every other
  * note here.
  */
-function advice(grab: Grab | null): string {
-  if (grab === null) return 'Hold Alt to place it anywhere.'
-  if (grab.axis === null) return 'X or Y locks an axis, Esc puts it back.'
-  return `Locked to ${grab.axis.toUpperCase()} — Esc puts it back.`
+function advice(grab: Grab | null, snapping: boolean): string {
+  // The modifier's sentence says what it will *do*, not what it is called after
+  // — "hold Ctrl to invert the snap" is a sentence about a checkbox, and the
+  // human moving a sprite wants to know where it will land.
+  const modifier = snapping ? 'Hold Ctrl to place it anywhere.' : 'Hold Ctrl to land on the grid.'
+  if (grab === null) return modifier
+  if (grab.axis === null) return `X or Y locks an axis, Esc puts it back. ${modifier}`
+  return `Locked to ${grab.axis.toUpperCase()} — Esc puts it back. ${modifier}`
 }
 
 /** The same advice for a panel with room for it, which is the tooltip's. */
-function wholeAdvice(grab: Grab | null): string {
-  if (grab === null) return 'Hold Alt to ignore the snap and place it anywhere.'
+function wholeAdvice(grab: Grab | null, snapping: boolean): string {
+  const modifier = snapping
+    ? 'Hold Ctrl to ignore the snap and place it anywhere.'
+    : 'Snapping is off — hold Ctrl to put it on the grid.'
+  if (grab === null) return modifier
   if (grab.axis === null) {
-    return 'X or Y holds it to one axis, a click puts it down, Esc puts it back where it was.'
+    return `X or Y holds it to one axis, a click puts it down, Esc puts it back where it was. ${modifier}`
   }
   const axis = grab.axis.toUpperCase()
-  return `Held to the ${axis} axis from where it started. ${axis} again frees it, a click puts it down, Esc puts it back where it was.`
+  return `Held to the ${axis} axis from where it started. ${axis} again frees it, a click puts it down, Esc puts it back where it was. ${modifier}`
 }
 
 /**
@@ -1054,10 +1084,24 @@ function PlayCaption({
  * zoom for the same reason: both are settings of the surface rather than of the
  * thing being looked at.
  *
- * **Two fields, and the second one is not an ornament.** A step alone describes
- * a grid through the origin, which is the wrong grid for any level whose sprites
- * hang off their middles — see `editor/shell/snap.ts`, which is where the
- * arithmetic and the reasoning both live.
+ * **A switch, an interval and an offset**, in that order — the order they are
+ * decided in.
+ *
+ * The switch is a switch rather than a zero typed into the interval, which is
+ * what it used to be. A number that secretly means "no" makes one field answer
+ * two questions, and worse, it throws the spacing away on the way out: turning
+ * the grid off and on again used to lose the grid. Both fields stay live while
+ * it is off, so a grid can be set up before it is switched on.
+ *
+ * The interval offers a list and still takes a typed number
+ * (`editor/shell/snap.ts`). A fixed list would put an odd spacing out of reach;
+ * a bare field makes the human type `16` every time for the sake of a case that
+ * almost never comes up.
+ *
+ * **The offset is not an ornament.** An interval alone describes a grid through
+ * the origin, which is the wrong grid for any level whose sprites hang off their
+ * middles — see `editor/shell/snap.ts`, where the arithmetic and the reasoning
+ * both live.
  *
  * Deliberately absent while a level is running, along with the whole editing
  * caption: nothing can be placed then, so a control offering to change where it
@@ -1067,14 +1111,34 @@ function SnapControls({ placing }: { placing: Placing }): ReactElement {
   const { snap, setSnap } = placing
 
   return (
-    <span className="viewport__snap" data-testid="scene-snap" data-snap-step={snap.step} data-snap-offset={snap.offset}>
-      <span className="viewport__snap-label">Snap</span>
+    <span
+      className="viewport__snap"
+      data-testid="scene-snap"
+      data-snap-on={String(snap.on)}
+      data-snap-step={snap.step}
+      data-snap-offset={snap.offset}
+    >
+      <button
+        type="button"
+        className="control control--toggle"
+        data-testid="scene-snap-toggle"
+        aria-pressed={snap.on}
+        title={
+          snap.on
+            ? 'Positions land on the grid. Hold Ctrl while moving to place anywhere. Click to turn snapping off.'
+            : 'Positions land anywhere. Hold Ctrl while moving to land on the grid. Click to turn snapping on.'
+        }
+        onClick={() => setSnap({ ...snap, on: !snap.on })}
+      >
+        Snap
+      </button>
       <NumberField
         testId="scene-snap-step"
-        title="How far apart the positions a drag or a click can land on are, in scene units. 0 places freely."
+        title="How far apart the positions a drag or a click can land on are, in scene units. Pick one or type your own."
         value={snap.step}
         min={0}
         step={1}
+        presets={SNAP_INTERVALS}
         onCommit={(step) => setSnap({ ...snap, step })}
       />
       <span className="viewport__snap-label">from</span>

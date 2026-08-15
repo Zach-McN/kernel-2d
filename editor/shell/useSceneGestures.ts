@@ -36,6 +36,14 @@ import type { Point } from '../../runtime'
  * placed only where the level was empty would place nothing at all on the first
  * level anybody tried it on.
  *
+ * **`Ctrl` held during a move inverts the snap toggle**, whichever gesture is
+ * doing the moving. Not "place freely" — the *other* thing, so with snapping off
+ * it puts the entity on the grid. It takes effect on the keypress rather than on
+ * the next mouse movement, which matters because a grab often sits with the hand
+ * completely still. There is no conflict with the `Ctrl`-click that takes an
+ * entity out of the selection: that press starts no drag, so this reading is
+ * only ever reached inside a move a plain press began.
+ *
  * **A grab is a move with no button held, and while one is running it owns the
  * picture.** `G` starts the selected entity moving with the pointer wherever the
  * pointer happens to be — over the sprite, across the panel, or nowhere near it
@@ -113,8 +121,16 @@ export interface ScenePlacement {
    * The gesture then never starts, rather than starting and doing nothing.
    */
   beginMove: (entityId: string) => boolean
-  /** Total travel since the press. `free` is Alt: place it anywhere. */
-  moveBy: (entityId: string, screenDx: number, screenDy: number, free: boolean) => void
+  /**
+   * Total travel since the press.
+   *
+   * `invert` is `Ctrl`: it flips the snap toggle for as long as it is held, so
+   * with snapping on it places freely and with snapping off it lands on the
+   * grid. Deliberately not called `free` — that was its meaning while `Alt`
+   * owned this, and a boolean whose sense has inverted while its name has not is
+   * how the next reader writes the inversion backwards (`editor/shell/snap.ts`).
+   */
+  moveBy: (entityId: string, screenDx: number, screenDy: number, invert: boolean) => void
   /** The press ended, whether or not anything moved. */
   drop: () => void
   /**
@@ -232,13 +248,28 @@ export function useSceneGestures(options: SceneGestureOptions): SceneGestures {
   const pressed = useRef(false)
 
   /**
+   * The travel of the move in progress, whichever gesture is doing it.
+   *
+   * Kept so that **pressing or releasing `Ctrl` can re-place the entity without
+   * the pointer moving.** The same argument the axis lock already makes below —
+   * the human pressed the key because they want the effect *now*, and a modifier
+   * that waited for the next wobble reads as not having worked — and it matters
+   * more here than there, because a `G` grab routinely sits with the hand
+   * completely still while the eye decides.
+   *
+   * A ref rather than state: nothing draws it, and it is written from a pointer
+   * listener that must not cause a render per mouse movement.
+   */
+  const lastMove = useRef<{ entity: string; dx: number; dy: number } | null>(null)
+
+  /**
    * The entity, moved to wherever the pointer has got to.
    *
    * Travel from the grab's own origin, never a sum of the movements in between
    * — the same rule a drag keeps, and for the same reason: added-up rounded
    * steps let a sprite creep away from the pointer and never come back.
    */
-  const applyGrab = useCallback((free: boolean): void => {
+  const applyGrab = useCallback((invert: boolean): void => {
     const grab = grabRef.current
     const at = pointerAt.current
     if (grab === null || grab.origin === null || at === null) return
@@ -246,17 +277,31 @@ export function useSceneGestures(options: SceneGestureOptions): SceneGestures {
     // A lock zeroes the travel on the other axis rather than remembering a
     // second position, so the entity sits exactly where it started on that axis
     // however far the pointer has wandered off it.
-    placementRef.current.moveBy(
-      grab.entity,
-      grab.axis === 'y' ? 0 : at.x - grab.origin.x,
-      grab.axis === 'x' ? 0 : at.y - grab.origin.y,
-      free,
-    )
+    const dx = grab.axis === 'y' ? 0 : at.x - grab.origin.x
+    const dy = grab.axis === 'x' ? 0 : at.y - grab.origin.y
+    lastMove.current = { entity: grab.entity, dx, dy }
+    placementRef.current.moveBy(grab.entity, dx, dy, invert)
+  }, [])
+
+  /**
+   * The move in progress, put down again under a modifier that has just changed.
+   *
+   * The travel is unchanged — only how it lands is — which is exactly why the
+   * remembered delta is replayed rather than recomputed: a grab's origin and a
+   * drag's press are two different things to measure from, and this needs to
+   * work for both without knowing which is running.
+   */
+  const reapply = useCallback((invert: boolean): boolean => {
+    const move = lastMove.current
+    if (move === null) return false
+    placementRef.current.moveBy(move.entity, move.dx, move.dy, invert)
+    return true
   }, [])
 
   const endGrab = useCallback((how: 'drop' | 'cancel'): void => {
     if (grabRef.current === null) return
     grabRef.current = null
+    lastMove.current = null
     setGrabbing(null)
     if (how === 'cancel') placementRef.current.cancelMove()
     else placementRef.current.drop()
@@ -405,7 +450,7 @@ export function useSceneGestures(options: SceneGestureOptions): SceneGestures {
         // a movement. Without this a grab started with the cursor outside the
         // panel would throw the entity across the level on the way back in.
         if (grab.origin === null) grab.origin = pointerAt.current
-        else applyGrab(event.altKey)
+        else applyGrab(event.ctrlKey || event.metaKey)
         return
       }
 
@@ -430,9 +475,10 @@ export function useSceneGestures(options: SceneGestureOptions): SceneGestures {
           setDragging(placing.entity)
         }
 
-        // Read off the event rather than remembered from the press, so Alt can
+        // Read off the event rather than remembered from the press, so Ctrl can
         // be taken or let go mid-drag.
-        placementRef.current.moveBy(placing.entity, dx, dy, event.altKey)
+        lastMove.current = { entity: placing.entity, dx, dy }
+        placementRef.current.moveBy(placing.entity, dx, dy, event.ctrlKey || event.metaKey)
         return
       }
 
@@ -454,6 +500,7 @@ export function useSceneGestures(options: SceneGestureOptions): SceneGestures {
         if (element.hasPointerCapture(event.pointerId)) element.releasePointerCapture(event.pointerId)
         placing = null
         pressed.current = false
+        lastMove.current = null
         setDragging(null)
         // Always, even for a press that never moved: it seals the undo step, and
         // sealing one that was never opened costs nothing.
@@ -523,16 +570,46 @@ export function useSceneGestures(options: SceneGestureOptions): SceneGestures {
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
-      if (!enabledRef.current || event.ctrlKey || event.metaKey) return
+      if (!enabledRef.current) return
       if (isTyping(event.target)) return
+
+      /*
+       * `Ctrl` while something is being moved is the snap modifier, and it is
+       * answered here — above the guard below, which exists to let `Ctrl-Z`
+       * through to the undo shortcuts and would otherwise swallow this.
+       *
+       * Only the modifier key *itself*, and only while a move is running, so
+       * `Ctrl-Z` and every other Ctrl chord are untouched. The entity is put
+       * down again on the press rather than on the next mouse movement — a grab
+       * often has the pointer sitting perfectly still, and a modifier that
+       * waited for a wobble would read as not having worked.
+       */
+      if (event.key === 'Control' || event.key === 'Meta') {
+        if (reapply(true)) event.preventDefault()
+        return
+      }
+
+      /*
+       * Every other Ctrl chord belongs to the window — `Ctrl-Z` above all — and
+       * is passed straight through. **Except while a grab is running**, because
+       * a grab owns the keyboard: the block below has to see `X` and `Y` with
+       * `Ctrl` held, which is precisely the hand position this feature creates.
+       * The cost is that `Ctrl-Z` mid-grab is swallowed rather than undoing, and
+       * that is the better answer anyway — a grab has an open merge run, and
+       * reversing into it is the kind of half-taken-back move this hook is
+       * careful about everywhere else. `Esc` is still the way to call it off.
+       */
+      if ((event.ctrlKey || event.metaKey) && grabRef.current === null) return
 
       const key = event.key.toLowerCase()
 
       /*
-       * A grab owns the keyboard for as long as it runs, and it is asked before
-       * Alt is looked at rather than after: Alt is the modifier that ignores the
-       * snap, so it is exactly what the human is holding when they decide to
-       * lock an axis or call the whole thing off.
+       * A grab owns the keyboard for as long as it runs. The snap modifier has
+       * already been answered above it, which is the right order for the same
+       * reason it used to be: `Ctrl` is exactly what the human is holding when
+       * they decide to lock an axis or call the whole thing off, and a lock that
+       * only worked with an empty hand would be a lock that stopped working
+       * halfway through the gesture it exists for.
        *
        * Everything else is swallowed rather than passed on. `Home` and `F` both
        * move the camera, and moving the camera mid-grab changes what the travel
@@ -547,11 +624,14 @@ export function useSceneGestures(options: SceneGestureOptions): SceneGestures {
           endGrab('drop')
         } else if (key === 'x' || key === 'y') {
           event.preventDefault()
-          lockGrab(key, event.altKey)
+          lockGrab(key, event.ctrlKey || event.metaKey)
         }
         return
       }
 
+      // Alt no longer means anything over the picture — the snap modifier is
+      // Ctrl. Any Alt chord reaching here is the window's or the system's, so a
+      // bare `f` inside one must not frame anything.
       if (event.altKey) return
 
       if (event.code === 'Space') {
@@ -618,6 +698,10 @@ export function useSceneGestures(options: SceneGestureOptions): SceneGestures {
 
     const onKeyUp = (event: KeyboardEvent): void => {
       if (event.code === 'Space') setReady(false)
+      // Letting the modifier go puts the entity back under the toggle, on the
+      // spot — the other half of applying it on the press. Without this, a snap
+      // turned off by Ctrl would stay off until the hand moved again.
+      if (event.key === 'Control' || event.key === 'Meta') reapply(false)
     }
 
     // Alt-tabbing away while holding space would otherwise leave the editor
@@ -638,7 +722,7 @@ export function useSceneGestures(options: SceneGestureOptions): SceneGestures {
       window.removeEventListener('keyup', onKeyUp)
       window.removeEventListener('blur', onBlur)
     }
-  }, [frameAll, frameEntity, startGrab, endGrab, lockGrab])
+  }, [frameAll, frameEntity, startGrab, endGrab, lockGrab, reapply])
 
   /*
    * The two ways a grab can be ended by something other than the human.

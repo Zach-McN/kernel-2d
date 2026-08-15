@@ -1035,10 +1035,42 @@ body {
   background: var(--shell-raised);
 }
 
+/*
+ * A switch that stays down, for a setting rather than an action.
+ *
+ * It wears the accent when it is on, which is the colour's one job: what is
+ * *current* (`--shell-accent`, and the note where it is defined). A button that
+ * looks identical in both states is a setting the human has to test by using it.
+ *
+ * A class of its own rather than a rule on `aria-pressed`, which would silently
+ * restyle the *Place by clicking* toggle — that one says its state in its label,
+ * and giving it a second way of saying it is a change nobody asked for.
+ */
+.control--toggle {
+  padding: 1px 10px;
+  cursor: pointer;
+  line-height: 16px;
+  background: var(--shell-raised);
+}
+
+.control--toggle[aria-pressed='true'] {
+  background: var(--shell-accent-wash);
+  border-color: var(--shell-accent-line);
+  color: var(--shell-accent);
+}
+
 .control--action:hover:not(:disabled),
-.control--step:hover:not(:disabled) {
+.control--step:hover:not(:disabled),
+.control--toggle:hover:not(:disabled) {
   background: #262933;
   border-color: #3a3f4a;
+}
+
+/* The hover must not take the "on" colour off, or the switch appears to turn
+   itself off under the pointer that is about to press it. */
+.control--toggle[aria-pressed='true']:hover:not(:disabled) {
+  background: var(--shell-accent-wash);
+  border-color: var(--shell-accent);
 }
 
 .control:disabled {
@@ -1350,6 +1382,23 @@ body {
 .viewport__snap .control--number {
   width: 5ch;
   flex: none;
+}
+
+/*
+ * A field with a dropdown needs room for the dropdown.
+ *
+ * Chrome draws its own indicator *inside* an `input[list]`, out of the same
+ * width the digits have — so the interval field, sized for four digits before
+ * the list existed, showed `16` as `1`. Found by looking at the screenshot the
+ * test leaves rather than by anything failing, which is what that habit is for
+ * (`editor-verification` V31).
+ *
+ * Selected on `[list]` rather than by adding a class, so it is the presence of
+ * the dropdown that buys the width — a field that stops offering one gives it
+ * back, and neither can be forgotten.
+ */
+.viewport__snap .control--number[list] {
+  width: 8ch;
 }
 
 /*
