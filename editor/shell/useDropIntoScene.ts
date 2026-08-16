@@ -98,7 +98,13 @@ async function placeDocument(
   // A level cannot hold a copy of itself, and a prefab dropped on the level it
   // is defined in is fine — only the first is impossible, and it is impossible
   // by the format rather than by this check.
-  return { ok: true, placed: placePrefabInstance({ scenePath, prefabPath: path, prefab: read.document, at, snap }) }
+  // A drop always places: only a stroke skips a cell that already holds one,
+  // and a drop is not a stroke. Null therefore cannot happen here, and if the
+  // level turned out to be closed between the read and the write there is
+  // still nothing to select — said as a sentence rather than crashed on.
+  const placed = placePrefabInstance({ scenePath, prefabPath: path, prefab: read.document, at, snap })
+  if (placed === null) return { ok: false, problem: `${name} could not be placed: the level is no longer open.` }
+  return { ok: true, placed }
 }
 
 /** Anything else: its import settings say what it is, and give the id to point at. */
@@ -130,16 +136,15 @@ async function placeAsset(
     return { ok: false, problem: `${name} is ${describeAsset(view.meta.type)}. A level draws textures and places prefabs.` }
   }
 
-  return {
-    ok: true,
-    placed: placeSpriteEntity({
-      scenePath,
-      texture: { id: view.meta.id, path },
-      stem: withoutExtension(name),
-      at,
-      snap,
-    }),
-  }
+  const placed = placeSpriteEntity({
+    scenePath,
+    texture: { id: view.meta.id, path },
+    stem: withoutExtension(name),
+    at,
+    snap,
+  })
+  if (placed === null) return { ok: false, problem: `${name} could not be placed: the level is no longer open.` }
+  return { ok: true, placed }
 }
 
 /** What a document is, in the words the human would use for it. */

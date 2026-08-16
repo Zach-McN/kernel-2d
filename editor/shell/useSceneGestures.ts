@@ -231,8 +231,16 @@ export interface ScenePlacement {
    * about one `pointerdown`.
    */
   stamping: boolean
-  /** A press landed while stamping. Nothing is selected and nothing is dragged. */
-  stampAt: (at: Point) => void
+  /**
+   * A press landed while stamping: the start of a stroke. Nothing is selected
+   * and nothing is dragged; what happens is one copy in this cell, and one more
+   * in every cell the pointer crosses until it is let go.
+   */
+  beginStroke: (at: Point) => void
+  /** The pointer moved with the button still down, mid-stroke. */
+  strokeTo: (at: Point) => void
+  /** The button came up, or Esc: the stroke is over and keeps what it placed. */
+  endStroke: () => void
   /** Esc. Harmless when nothing is being stamped. */
   stopStamping: () => void
   /**
@@ -725,6 +733,8 @@ export function useSceneGestures(options: SceneGestureOptions): SceneGestures {
     let holding: { id: number; x: number; y: number } | null = null
     /** A placement in progress: which entity, where the press was, and whether it has passed the threshold. */
     let placing: { id: number; entity: string; x: number; y: number; moved: boolean } | null = null
+    /** A paint stroke in progress: which pointer. Everything else about it is the placement's. */
+    let stroking: { id: number } | null = null
 
     /** Where an event happened, in the host's own pixels. Wheels and pointers alike. */
     const pointIn = (event: MouseEvent): Point => {
@@ -733,7 +743,7 @@ export function useSceneGestures(options: SceneGestureOptions): SceneGestures {
     }
 
     const onPointerDown = (event: PointerEvent): void => {
-      if (!enabledRef.current || holding !== null || placing !== null) return
+      if (!enabledRef.current || holding !== null || placing !== null || stroking !== null) return
 
       const middle = event.button === 1
       const left = event.button === 0
@@ -792,11 +802,16 @@ export function useSceneGestures(options: SceneGestureOptions): SceneGestures {
       }
 
       // Placing a copy is the whole of what this press does: it does not pick,
-      // it does not change the selection, and it starts no drag. Twenty of them
-      // in a row leave the Inspector exactly where it was, which is what makes
-      // the twenty-first as cheap as the first.
+      // it does not change the selection, and it starts no selection drag.
+      // Twenty of them in a row leave the Inspector exactly where it was, which
+      // is what makes the twenty-first as cheap as the first. Held down and
+      // moved, it is a stroke — one more copy per cell crossed — and the
+      // pointer is captured so a fast sweep out of the panel still ends cleanly.
       if (placementRef.current.stamping) {
-        placementRef.current.stampAt(pointIn(event))
+        stroking = { id: event.pointerId }
+        pressed.current = true
+        element.setPointerCapture(event.pointerId)
+        placementRef.current.beginStroke(pointIn(event))
         return
       }
 
@@ -897,6 +912,11 @@ export function useSceneGestures(options: SceneGestureOptions): SceneGestures {
         return
       }
 
+      if (stroking !== null && event.pointerId === stroking.id) {
+        placementRef.current.strokeTo(pointIn(event))
+        return
+      }
+
       if (placing !== null && event.pointerId === placing.id) {
         const dx = event.clientX - placing.x
         const dy = event.clientY - placing.y
@@ -923,6 +943,14 @@ export function useSceneGestures(options: SceneGestureOptions): SceneGestures {
     }
 
     const release = (event: PointerEvent): void => {
+      if (stroking !== null && event.pointerId === stroking.id) {
+        if (element.hasPointerCapture(event.pointerId)) element.releasePointerCapture(event.pointerId)
+        stroking = null
+        pressed.current = false
+        placementRef.current.endStroke()
+        return
+      }
+
       if (holding !== null && event.pointerId === holding.id) {
         if (element.hasPointerCapture(event.pointerId)) element.releasePointerCapture(event.pointerId)
         holding = null
@@ -955,7 +983,7 @@ export function useSceneGestures(options: SceneGestureOptions): SceneGestures {
         pointerAt.current = null
         pointerInHost.current = null
       }
-      if (holding === null && placing === null) setPicked(null)
+      if (holding === null && placing === null && stroking === null) setPicked(null)
     }
 
     // Chrome's autoscroll starts on the middle mousedown rather than on the

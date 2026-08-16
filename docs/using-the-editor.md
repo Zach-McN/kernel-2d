@@ -8,8 +8,8 @@ It is kept current by the definition of done in `CLAUDE.md`: a session that
 changes what you can do, or how you do it, changes this page in the same commit.
 If this page and the editor disagree, the editor is right and the page is a bug.
 
-Last true as of: **your game's own components get fields of every kind — text,
-a tick box, a list, a file, a level — not only numbers** (2026-08-15).
+Last true as of: **paint by dragging — with Place by clicking on, a held drag
+stamps one copy in every grid cell it crosses, as one Ctrl-Z** (2026-08-15).
 
 ---
 
@@ -623,6 +623,28 @@ every click in the picture puts another one where you clicked, on the snap,
 until you press `Esc`, right-click, or press the button again. It is on the
 prefab's panel and on any instance of it, so you can start from either.
 
+**Hold the button down and drag, and you are painting.** With Snap on, one copy
+lands in the cell you pressed in and one more in every grid cell the pointer
+crosses until you let go — a road is one sweep. Move as fast as you like: the
+cells between two places the pointer was seen are filled in, so a quick stroke
+is a solid line and not a dotted one. The Outliner and the picture fill up as
+you go, not only when you let go.
+
+- **One stroke is one `Ctrl-Z`**, however long it took, and one `Ctrl-Y` puts
+  the whole stroke back. A stroke never fuses with the click or the stroke
+  after it.
+- **A cell gets one copy.** Crossing the same cell twice in a stroke, or
+  painting back over a row you already painted, adds nothing — a cell that
+  already holds this prefab at that spot is left as it is. This is also true of
+  a single click on such a cell. A *different* prefab still stacks on top, as
+  it always has.
+- **`Esc` mid-stroke** ends the stroke and the mode; what was placed so far
+  stays, and is still one `Ctrl-Z`.
+- **Snap must be on.** A cell is the grid's idea. With Snap off a press still
+  places exactly one copy where it landed, and dragging does nothing more — the
+  bar under the picture says *Turn Snap on to paint* until the next press.
+- Nothing is painted while a level is running.
+
 Two things it deliberately does *not* do, because both would stop you at the
 second one: it does not select what it places, so the Inspector stays on the
 prefab and the panel does not jump about; and it does not care what is already
@@ -630,8 +652,12 @@ under the pointer, so clicking on top of your backdrop puts a tile down rather
 than picking the backdrop up. The bar under the picture names what you are
 placing the whole time it is on, and the cursor changes.
 
-Everything else still works while it is on — `Ctrl-Z` takes them back one at a
-time, space-drag still pans, and the wheel still zooms.
+Everything else still works while it is on — `Ctrl-Z` takes clicks back one at
+a time and strokes back one stroke at a time, space-drag still pans, and the
+wheel still zooms.
+
+There is no brush size, no rectangle fill and no eraser: painting is the click
+you already had, held down. Taking things away is still select-and-`Delete`.
 
 ### The viewport
 
@@ -647,6 +673,7 @@ time, space-drag still pans, and the wheel still zooms.
 | Ctrl-click a sprite | Take it out of what is selected |
 | `Delete`, or `Backspace` | Remove everything selected — one press of `Ctrl-Z` brings it all back |
 | Drag a sprite | Move it, landing on the snap |
+| Press and drag, with *Place by clicking* on | Paint: one copy per grid cell crossed, one `Ctrl-Z` for the stroke (Snap must be on) |
 | Hold `Ctrl` while dragging | Flip the snap switch while you hold it |
 | `G` | Grab the selected entity — it moves with the pointer, nothing held |
 | `X` / `Y` while grabbing | Hold it to that axis, from where it started |

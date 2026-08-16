@@ -80,6 +80,12 @@ export interface EditIntent {
 /** Writes one document to disk. Resolves when it is there, rejects when it is not. */
 export type WriteToDisk = (path: string, document: Document) => Promise<unknown>
 
+/** A run in progress. `edit` is `editDocument` for the run; `end` closes it. */
+export interface EditRun {
+  edit: (path: string, recipe: (document: Draft<Document>) => void) => void
+  end: () => void
+}
+
 export interface DocumentStoreOptions {
   writeToDisk: WriteToDisk
   /** Overridden by tests so a merge window can be crossed without waiting. */
@@ -140,6 +146,26 @@ export interface DocumentStore {
 
   /** Ends an open merge run, so the next edit starts a fresh undo step. */
   sealEdits: () => void
+
+  /**
+   * One undo step made of many edits over time — what a stroke is.
+   *
+   * A merge is for repeated edits to *one value* landing close together (typing
+   * `24`), and it is keyed and timed for exactly that: a pause longer than the
+   * window starts a new step, and a following edit with the same key joins the
+   * old one. Neither is right for a gesture that produces many *different*
+   * changes for as long as the hand is down — a paint stroke that pauses to
+   * think must still be one Ctrl-Z, and the stamp after the stroke must not
+   * fuse into it. So a run is identified by nothing but itself: every edit made
+   * through it lands in one history entry, however long it takes, and `end()`
+   * closes it. Each edit is applied and saved as it happens, so the picture
+   * moves with the hand; only the history is one.
+   *
+   * If something else moves the top of the stack while a run is open (Ctrl-Z
+   * mid-stroke), what follows opens a fresh entry rather than reaching under
+   * the undo to append to a step that is no longer on top.
+   */
+  beginRun: (intent: EditIntent) => EditRun
 
   /**
    * Takes a run of edits back, as though it had never happened — what a gesture
@@ -216,23 +242,40 @@ export function createDocumentStore(options: DocumentStoreOptions): DocumentStor
 
   // --- the transaction ------------------------------------------------------
 
-  const edit: DocumentStore['edit'] = (intent, recipe) => {
+  /**
+   * The one place a change becomes history. `into` is the entry an open run is
+   * appending to; without it, the merge rules decide whether this joins the top
+   * step. Answers the entry the change landed in, or null when it changed
+   * nothing.
+   */
+  const commit = (
+    intent: EditIntent,
+    recipe: (docs: Draft<Record<string, Document>>) => void,
+    into: HistoryEntry | null,
+  ): HistoryEntry | null => {
     const before = store.getState().docs
     const [after, patches, inversePatches] = produceWithPatches(before, recipe)
 
     // A control that re-emits the value it already had is not a change, and an
     // undo step that reverses nothing is a step Ctrl-Z appears to skip.
-    if (patches.length === 0) return
+    if (patches.length === 0) return null
 
     const at = now()
-    const merging =
-      intent.merge !== undefined && openMerge?.key === intent.merge && at - openMerge.at <= mergeWindowMs
-
     const previous = undoStack.at(-1)
-    if (merging && previous !== undefined) {
-      undoStack[undoStack.length - 1] = {
+    // A run appends to its own entry only while that entry is still on top:
+    // anything else having happened since means the run's step is closed.
+    const joining = into !== null && previous === into ? into : null
+    const merging =
+      joining === null &&
+      intent.merge !== undefined &&
+      openMerge?.key === intent.merge &&
+      at - openMerge.at <= mergeWindowMs
+
+    let landed: HistoryEntry
+    if ((joining !== null || merging) && previous !== undefined) {
+      landed = {
         label: intent.label,
-        merge: intent.merge,
+        merge: joining !== null ? undefined : intent.merge,
         patches: [...previous.patches, ...patches],
         // Inverses concatenate in reverse: undoing both means undoing the newer
         // change first. Same-field replaces would survive the naive order, so
@@ -240,15 +283,54 @@ export function createDocumentStore(options: DocumentStoreOptions): DocumentStor
         // case in hand and fails the first one that isn't.
         inversePatches: [...inversePatches, ...previous.inversePatches],
       }
+      undoStack[undoStack.length - 1] = landed
     } else {
-      undoStack.push({ label: intent.label, merge: intent.merge, patches, inversePatches })
+      landed = { label: intent.label, merge: joining !== null ? undefined : intent.merge, patches, inversePatches }
+      undoStack.push(landed)
     }
 
-    openMerge = intent.merge === undefined ? null : { key: intent.merge, at }
+    // A run is not a merge: nothing may join it by key, so it leaves no merge open.
+    openMerge = into !== null || intent.merge === undefined ? null : { key: intent.merge, at }
     redoStack.length = 0
 
     store.setState({ docs: after })
     scheduleSaves(pathsTouchedBy(patches))
+    return landed
+  }
+
+  const edit: DocumentStore['edit'] = (intent, recipe) => {
+    commit(intent, recipe, null)
+  }
+
+  const beginRun: DocumentStore['beginRun'] = (intent) => {
+    // The entry this run is building, once its first change has landed. It is
+    // replaced on every append (entries are rebuilt, not mutated), so the run
+    // follows the newest one — and a run that has been closed appends nowhere.
+    let entry: HistoryEntry | null = null
+    let open = true
+    // Nothing else may fuse into what a stroke did, so the merge that was open
+    // before it ends here.
+    sealEdits()
+
+    return {
+      edit: (path, recipe) => {
+        if (!open || store.getState().docs[path] === undefined) return
+        const landed = commit(
+          intent,
+          (docs) => {
+            const document = docs[path]
+            if (document !== undefined) recipe(document)
+          },
+          entry,
+        )
+        if (landed !== null) entry = landed
+      },
+      end: () => {
+        open = false
+        entry = null
+        sealEdits()
+      },
+    }
   }
 
   const editDocument: DocumentStore['editDocument'] = (path, intent, recipe) => {
@@ -430,6 +512,7 @@ export function createDocumentStore(options: DocumentStoreOptions): DocumentStor
     edit,
     editDocument,
     sealEdits,
+    beginRun,
     abandonEdits,
     undo: () => step(undoStack, redoStack, 'undo'),
     redo: () => step(redoStack, undoStack, 'redo'),

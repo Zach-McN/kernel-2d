@@ -413,6 +413,7 @@ export function ViewportPanel(): ReactElement {
           stampingName={
             placing.stamping === null ? null : (stamp.prefabName ?? basename(placing.stamping))
           }
+          strokeNote={stamp.strokeNote}
           dropping={dropTarget.over ? dropTarget.carrying : null}
           dropRefused={dropTarget.refused}
           onPlay={mode.start}
@@ -746,7 +747,7 @@ function usePlacement(
       stamping: placing.stamping !== null && current !== null && stamp.canPlace,
 
       /**
-       * A press, turned into a place in the level.
+       * A press, and the drag after it, turned into places in the level.
        *
        * **Inverted through the camera the renderer *drew* with, not the one it
        * was asked for.** They differ by less than a device pixel — the nudge
@@ -754,12 +755,23 @@ function usePlacement(
        * eighth of a level unit: small enough to read as noise, and large enough
        * to drop a tile on the wrong side of a snap boundary.
        */
-      stampAt: (at) => {
+      beginStroke: (at) => {
         if (current === null) return
-        stamp.placeAt(toScenePoint(at, current.drawnWith, current.canvasSize))
+        stamp.beginStroke(toScenePoint(at, current.drawnWith, current.canvasSize))
       },
+      strokeTo: (at) => {
+        if (current === null) return
+        stamp.strokeTo(toScenePoint(at, current.drawnWith, current.canvasSize))
+      },
+      endStroke: stamp.endStroke,
 
-      stopStamping: placing.stopStamping,
+      // Esc mid-stroke ends the stroke — keeping what it placed — before it
+      // ends the mode, so nothing is left writing into a run after the hand
+      // has been told to stop.
+      stopStamping: () => {
+        stamp.endStroke()
+        placing.stopStamping()
+      },
 
       context: onContext,
 
@@ -1094,6 +1106,8 @@ interface CaptionProps {
   placing: Placing
   /** What is being repeat-placed, in words, or null when nothing is. */
   stampingName: string | null
+  /** What a stroke wants said instead of the placing line — that there is no grid to paint on. */
+  strokeNote: string | null
   /** The file hovering over the picture right now, named, or null. */
   dropping: string | null
   /** Why the last file let go here put nothing down, or null. */
@@ -1124,6 +1138,7 @@ function Caption({
   scaling,
   placing,
   stampingName,
+  strokeNote,
   dropping,
   dropRefused,
   onPlay,
@@ -1269,8 +1284,17 @@ function Caption({
           {scaleAdvice(scaling, placing.snap.on, false)}
         </Note>
       ) : stampingName !== null ? (
-        <Note testId="viewport-stamping" title={`Every click in the level places another ${stampingName}. Esc stops it.`}>
-          Placing <strong>{stampingName}</strong> — Esc to stop.
+        <Note
+          testId="viewport-stamping"
+          title={`Every click in the level places another ${stampingName}; hold and drag to paint one per grid cell. Esc stops it.`}
+        >
+          {strokeNote !== null ? (
+            <span data-testid="viewport-stamping-note">{strokeNote}</span>
+          ) : (
+            <>
+              Placing <strong>{stampingName}</strong> — drag to paint, Esc to stop.
+            </>
+          )}
         </Note>
       ) : moving !== null ? (
         <Note

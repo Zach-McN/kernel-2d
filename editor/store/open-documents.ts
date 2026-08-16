@@ -97,6 +97,21 @@ export const redo: DocumentStore['redo'] = () => (editingSuspended ? false : sto
 export const abandonEdits: DocumentStore['abandonEdits'] = (mergeKey) =>
   editingSuspended ? false : store.abandonEdits(mergeKey)
 
+/**
+ * A run's edits are gated one at a time rather than the run refused up front:
+ * play could start mid-stroke, and the stroke then simply stops writing.
+ */
+export const beginRun: DocumentStore['beginRun'] = (intent) => {
+  const run = store.beginRun(intent)
+  return {
+    edit: (path, recipe) => {
+      if (editingSuspended) return
+      run.edit(path, recipe)
+    },
+    end: run.end,
+  }
+}
+
 export const { sealEdits, peekUndo, peekRedo, beginRead, adoptFromDisk, flushSaves } = store
 
 export type { Document }

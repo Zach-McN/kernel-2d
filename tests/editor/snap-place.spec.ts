@@ -552,12 +552,23 @@ test('a click lands where the camera says it landed, at any zoom', async ({ page
 
   // Much closer, and looking somewhere else: the middle of the canvas is now a
   // different point in the level, and one screen pixel is a fraction of a unit.
+  // Panned as well as zoomed, because a click on the very cell that already
+  // holds one is declined (a click is a stroke of one), and zooming about the
+  // middle would leave the middle on the same cell.
   await page.getByTestId('scene-zoom-in').click()
   await expect.poll(() => cameraScale(page)).toBeGreaterThan(0)
   const closer = await settled(page)
   expect(closer).toBeGreaterThan(0)
+  await page.keyboard.down('Space')
+  await page.mouse.move(first.x + first.width / 2, first.y + first.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(first.x + first.width / 2 + 90, first.y + first.height / 2 + 50, { steps: 5 })
+  await page.mouse.up()
+  await page.keyboard.up('Space')
+  await settled(page)
 
   const far = await focus(page)
+  expect(far).not.toEqual(near)
   const second = await canvasBox(page)
   await page.mouse.click(second.x + second.width / 2, second.y + second.height / 2)
 
@@ -593,3 +604,176 @@ function expectNear(
   expect(Math.abs((transform?.x ?? 0) - point.x)).toBeLessThanOrEqual(16)
   expect(Math.abs((transform?.y ?? 0) - point.y)).toBeLessThanOrEqual(16)
 }
+
+// --- acceptance: painting by dragging ---------------------------------------
+
+/**
+ * A stroke: press while the mode is on, and drag. One copy per grid cell the
+ * pointer crosses, one press of Ctrl-Z for the lot. Everything below is stated
+ * in cells — a drag of `n` cells' worth of screen pixels is `n` more entities —
+ * so it holds at whatever zoom the scene opened at.
+ */
+const STEP = 16
+
+/** How many screen pixels one grid cell is, at the current zoom. */
+async function cellPixels(page: Page): Promise<number> {
+  return STEP * (await cameraScale(page))
+}
+
+/** Arm the mode on a 16-from-8 grid, and answer where a stroke can start. */
+async function readyToPaint(page: Page): Promise<{ x: number; y: number }> {
+  await openScene(page)
+  await setSnapping(page, true)
+  await setSnap(page, STEP, 8)
+  await placeByClicking(page)
+  const canvas = await canvasBox(page)
+  return { x: canvas.x + canvas.width * 0.25, y: canvas.y + canvas.height * 0.5 }
+}
+
+test('a drag across five cells with the snap on places six, one in each cell', async ({ page }) => {
+  const from = await readyToPaint(page)
+  const before = await rows(page).count()
+  const cell = await cellPixels(page)
+
+  await page.mouse.move(from.x, from.y)
+  await page.mouse.down()
+  await page.mouse.move(from.x + 5 * cell, from.y, { steps: 10 })
+  await page.mouse.up()
+
+  await expect(rows(page)).toHaveCount(before + 6)
+  const level = await levelOnDisk(before + 6)
+  const placed = level.slice(-6)
+  // Six different cells, every one on the grid, all in one row.
+  expect(new Set(placed.map((entity) => `${entity.transform.x},${entity.transform.y}`)).size).toBe(6)
+  for (const entity of placed) {
+    expect(Math.abs((entity.transform.x - 8) % STEP)).toBe(0)
+    expect(entity.transform.y).toBe(placed[0]?.transform.y)
+  }
+})
+
+test('one Ctrl-Z takes the whole stroke back, and one Ctrl-Y puts it all back', async ({ page }) => {
+  const from = await readyToPaint(page)
+  const before = await rows(page).count()
+  const cell = await cellPixels(page)
+
+  await page.mouse.move(from.x, from.y)
+  await page.mouse.down()
+  await page.mouse.move(from.x + 4 * cell, from.y, { steps: 6 })
+  await page.mouse.up()
+  await expect(rows(page)).toHaveCount(before + 5)
+
+  await page.keyboard.press('ControlOrMeta+z')
+  await expect(rows(page)).toHaveCount(before)
+  await page.keyboard.press('ControlOrMeta+y')
+  await expect(rows(page)).toHaveCount(before + 5)
+  // And a stroke is one step however slowly it was drawn: undo again is the
+  // whole thing, not the last cell.
+  await page.keyboard.press('ControlOrMeta+z')
+  await expect(rows(page)).toHaveCount(before)
+})
+
+test('a fast sweep fills the cells in between, with no gaps', async ({ page }) => {
+  const from = await readyToPaint(page)
+  const before = await rows(page).count()
+  const cell = await cellPixels(page)
+
+  // One sample at each end and nothing between: every cell along the way is
+  // still stamped.
+  await page.mouse.move(from.x, from.y)
+  await page.mouse.down()
+  await page.mouse.move(from.x + 8 * cell, from.y, { steps: 1 })
+  await page.mouse.up()
+
+  await expect(rows(page)).toHaveCount(before + 9)
+})
+
+test('painting over the same row again adds nothing, and a slow stroke does not double a cell', async ({
+  page,
+}) => {
+  const from = await readyToPaint(page)
+  const before = await rows(page).count()
+  const cell = await cellPixels(page)
+
+  // Back and forth within one stroke: a cell crossed twice gets one copy.
+  await page.mouse.move(from.x, from.y)
+  await page.mouse.down()
+  await page.mouse.move(from.x + 3 * cell, from.y, { steps: 6 })
+  await page.mouse.move(from.x, from.y, { steps: 6 })
+  await page.mouse.up()
+  await expect(rows(page)).toHaveCount(before + 4)
+
+  // The same row again, as a second stroke: nothing new, and nothing to undo but
+  // the first stroke.
+  await page.mouse.move(from.x, from.y)
+  await page.mouse.down()
+  await page.mouse.move(from.x + 3 * cell, from.y, { steps: 6 })
+  await page.mouse.up()
+  await expect(rows(page)).toHaveCount(before + 4)
+  await page.keyboard.press('ControlOrMeta+z')
+  await expect(rows(page)).toHaveCount(before)
+})
+
+test('the Outliner fills as the stroke goes, not only when the button comes up', async ({ page }) => {
+  const from = await readyToPaint(page)
+  const before = await rows(page).count()
+  const cell = await cellPixels(page)
+
+  await page.mouse.move(from.x, from.y)
+  await page.mouse.down()
+  await expect(rows(page)).toHaveCount(before + 1)
+  await page.mouse.move(from.x + 2 * cell, from.y, { steps: 4 })
+  await expect(rows(page)).toHaveCount(before + 3)
+  await page.mouse.up()
+  await expect(rows(page)).toHaveCount(before + 3)
+})
+
+test('Esc mid-stroke ends it and keeps what was placed, as one step', async ({ page }) => {
+  const from = await readyToPaint(page)
+  const before = await rows(page).count()
+  const cell = await cellPixels(page)
+
+  await page.mouse.move(from.x, from.y)
+  await page.mouse.down()
+  await page.mouse.move(from.x + 2 * cell, from.y, { steps: 4 })
+  await page.keyboard.press('Escape')
+  await expect(page.getByTestId('viewport-stamping')).toHaveCount(0)
+  // Still held down and moving: nothing more is placed.
+  await page.mouse.move(from.x + 5 * cell, from.y, { steps: 4 })
+  await page.mouse.up()
+
+  await expect(rows(page)).toHaveCount(before + 3)
+  await page.keyboard.press('ControlOrMeta+z')
+  await expect(rows(page)).toHaveCount(before)
+})
+
+test('with the snap off a press places one, and a drag is answered with a sentence', async ({ page }) => {
+  await openScene(page)
+  await setSnapping(page, false)
+  await placeByClicking(page)
+  const canvas = await canvasBox(page)
+  const from = { x: canvas.x + canvas.width * 0.25, y: canvas.y + canvas.height * 0.5 }
+  const before = await rows(page).count()
+
+  await page.mouse.move(from.x, from.y)
+  await page.mouse.down()
+  await page.mouse.move(from.x + 120, from.y, { steps: 6 })
+  await page.mouse.up()
+
+  await expect(rows(page)).toHaveCount(before + 1)
+  await expect(page.getByTestId('viewport-stamping-note')).toContainText('Turn Snap on to paint')
+  // The sentence is about that attempt; the next press on the grid clears it.
+  await setSnapping(page, true)
+  await page.mouse.click(from.x, from.y + 60)
+  await expect(page.getByTestId('viewport-stamping-note')).toHaveCount(0)
+})
+
+test('a picture of a painted row', async ({ page }, testInfo) => {
+  const from = await readyToPaint(page)
+  const cell = await cellPixels(page)
+  await page.mouse.move(from.x, from.y)
+  await page.mouse.down()
+  await page.mouse.move(from.x + 6 * cell, from.y, { steps: 8 })
+  await page.mouse.up()
+  await expect(page.getByTestId('viewport-stamping')).toContainText('drag to paint')
+  await page.getByTestId('viewport-panel').screenshot({ path: testInfo.outputPath('paint-stroke.png') })
+})

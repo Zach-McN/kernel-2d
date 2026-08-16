@@ -811,3 +811,123 @@ describe('comparing two documents', () => {
     expect(sameJson(a, b)).toBe(false)
   })
 })
+
+/**
+ * One step made of many edits over time — a stroke.
+ *
+ * A merge is keyed and timed for typing one value; a run is identified by
+ * nothing but itself, so a stroke that pauses to think is still one Ctrl-Z, and
+ * the stamp that follows it never fuses in. The picture still moves with the
+ * hand: every edit is applied and saved as it lands, only the history is one.
+ */
+describe('a run of edits that is one step', () => {
+  function paint(run: ReturnType<DocumentStore['beginRun']>, id: string, name: string): void {
+    run.edit(LEVEL, (document) => {
+      if (document.format !== SCENE_FORMAT) return
+      document.entities.push(defaultEntity(id, name))
+    })
+  }
+
+  it('is one undo step however long the hand takes, and one redo', () => {
+    const run = harness.store.beginRun({ label: 'Paint' })
+    paint(run, 'c000000000000001', 'Tile')
+    harness.advance(5_000)
+    paint(run, 'c000000000000002', 'Tile 2')
+    harness.advance(5_000)
+    paint(run, 'c000000000000003', 'Tile 3')
+    run.end()
+
+    expect(harness.scene(LEVEL).entities).toHaveLength(5)
+    expect(harness.store.peekUndo()).toBe('Paint')
+
+    harness.store.undo()
+    expect(harness.scene(LEVEL).entities).toHaveLength(2)
+    // Undo took the whole stroke, not one tile of it.
+    expect(harness.store.peekUndo()).not.toBe('Paint')
+
+    harness.store.redo()
+    expect(harness.scene(LEVEL).entities.map((entity) => entity.name)).toEqual([
+      'Knight',
+      'Slime',
+      'Tile',
+      'Tile 2',
+      'Tile 3',
+    ])
+  })
+
+  it('applies each edit as it lands, so the picture moves with the hand', () => {
+    const run = harness.store.beginRun({ label: 'Paint' })
+    paint(run, 'c000000000000001', 'Tile')
+    expect(harness.scene(LEVEL).entities).toHaveLength(3)
+    paint(run, 'c000000000000002', 'Tile 2')
+    expect(harness.scene(LEVEL).entities).toHaveLength(4)
+    run.end()
+  })
+
+  it('does not fuse with what follows, and what follows does not fuse with it', () => {
+    setFrameWidth(KNIGHT, 2)
+    const run = harness.store.beginRun({ label: 'Paint' })
+    paint(run, 'c000000000000001', 'Tile')
+    run.end()
+    // The next stroke, immediately, is its own step.
+    const again = harness.store.beginRun({ label: 'Paint' })
+    paint(again, 'c000000000000002', 'Tile 2')
+    again.end()
+    // And so is a plain edit right after.
+    addEntity(LEVEL, 'c000000000000003', 'Loose')
+
+    harness.store.undo()
+    expect(harness.scene(LEVEL).entities).toHaveLength(4)
+    harness.store.undo()
+    expect(harness.scene(LEVEL).entities).toHaveLength(3)
+    harness.store.undo()
+    expect(harness.scene(LEVEL).entities).toHaveLength(2)
+    // The typing before the stroke was sealed by it, not swallowed into it.
+    expect(harness.settings(KNIGHT).slice).toMatchObject({ frameWidth: 2 })
+    harness.store.undo()
+    expect(harness.settings(KNIGHT).slice).toEqual({ mode: 'single' })
+  })
+
+  it('leaves nothing on the stack when its edits changed nothing', () => {
+    const run = harness.store.beginRun({ label: 'Paint' })
+    run.edit(LEVEL, () => {})
+    run.end()
+    expect(harness.store.peekUndo()).toBeNull()
+  })
+
+  it('writes nothing after it has ended', () => {
+    const run = harness.store.beginRun({ label: 'Paint' })
+    run.end()
+    paint(run, 'c000000000000001', 'Tile')
+    expect(harness.scene(LEVEL).entities).toHaveLength(2)
+  })
+
+  it('opens a fresh step for what follows an undo made mid-run, rather than reaching under it', () => {
+    const run = harness.store.beginRun({ label: 'Paint' })
+    paint(run, 'c000000000000001', 'Tile')
+    harness.store.undo()
+    expect(harness.scene(LEVEL).entities).toHaveLength(2)
+    paint(run, 'c000000000000002', 'Tile 2')
+    run.end()
+
+    expect(harness.scene(LEVEL).entities.map((entity) => entity.name)).toEqual(['Knight', 'Slime', 'Tile 2'])
+    harness.store.undo()
+    expect(harness.scene(LEVEL).entities).toHaveLength(2)
+    // Redo brings back the second tile only: the undone first one is gone for
+    // good, its redo cleared by the change that followed.
+    harness.store.redo()
+    expect(harness.scene(LEVEL).entities.map((entity) => entity.name)).toEqual(['Knight', 'Slime', 'Tile 2'])
+    expect(harness.store.redo()).toBe(false)
+  })
+
+  it('writes every edit to disk as it lands', async () => {
+    const run = harness.store.beginRun({ label: 'Paint' })
+    paint(run, 'c000000000000001', 'Tile')
+    paint(run, 'c000000000000002', 'Tile 2')
+    run.end()
+    await harness.store.flushSaves()
+    const last = harness.writes.at(-1)
+    expect(last?.path).toBe(LEVEL)
+    expect(asScene(last?.document).entities).toHaveLength(4)
+  })
+})
