@@ -932,10 +932,36 @@ body {
   box-shadow: inset 0 0 0 1px var(--shell-accent);
 }
 
+/*
+ * The picture box: one fixed square on every tile, whatever is in it — a folder
+ * glyph, a blank page, or the art itself.
+ *
+ * Fixed size is not tidiness. The gesture on this view is a *double*-click, and
+ * a box that grew when a picture arrived would move every tile below it between
+ * the two presses — the second one lands on whatever slid into the spot, no
+ * `dblclick` is ever dispatched, and the folder simply does not open (UG13).
+ * Its size arrives as a custom property from `thumbnail.ts`, so the number the
+ * pictures are scaled against and the number they are drawn inside are one
+ * number.
+ */
 .asset-tile__icon {
+  display: flex;
   flex: none;
+  align-items: center;
+  justify-content: center;
+  width: var(--asset-tile-box, 48px);
+  height: var(--asset-tile-box, 48px);
   color: var(--shell-text-dim);
   line-height: 0;
+}
+
+/*
+ * Never smoothed. This kernel is for pixel art, and the drawn size is a whole
+ * number of screen pixels per image pixel (U17), stated inline — so there is
+ * nothing here for the browser to interpolate between.
+ */
+.asset-tile__picture {
+  image-rendering: pixelated;
 }
 
 .asset-tile__button[data-kind='directory'] .asset-tile__icon {

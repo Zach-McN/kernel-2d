@@ -153,9 +153,28 @@ function fileFor(projectRelative: string): string {
   return path.join(editorTestProjectPath(), projectRelative.replaceAll('/', path.sep))
 }
 
-/** A point in the browser that is not on a file or a folder. */
+/**
+ * A point in the browser that is not on a file or a folder.
+ *
+ * Found by measuring the tiles rather than by aiming near the bottom of the
+ * panel: how far down the listing reaches depends on how tall a tile is, and a
+ * tile grew by half its height the day pictures were drawn on them. A press
+ * aimed at a guess landed on `project.json` and opened the wrong menu, which is
+ * the right behaviour for that press and a broken test — so the spot is
+ * *derived* now, and the expectation below is what says out loud that this
+ * gesture needs somewhere to be made.
+ */
 async function emptySpot(page: Page): Promise<{ x: number; y: number }> {
-  const box = await page.getByTestId('assets-panel').locator('.assets__body').boundingBox()
-  expect(box).not.toBeNull()
-  return { x: (box?.x ?? 0) + 24, y: (box?.y ?? 0) + (box?.height ?? 0) - 16 }
+  const body = await page.getByTestId('assets-panel').locator('.assets__body').boundingBox()
+  const listing = await page.getByTestId('assets-grid').boundingBox()
+  expect(body).not.toBeNull()
+  expect(listing).not.toBeNull()
+
+  const below = (listing?.y ?? 0) + (listing?.height ?? 0) + 12
+  const bottom = (body?.y ?? 0) + (body?.height ?? 0)
+  expect(below, 'the folder listing fills the panel, so there is no background to press on').toBeLessThan(
+    bottom - 8,
+  )
+
+  return { x: (body?.x ?? 0) + 24, y: below }
 }

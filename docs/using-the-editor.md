@@ -211,7 +211,7 @@ your mind at any time:
   icons. This is how the panel opens. **Click a tile to select it, double-click a
   folder to go into it.** The line above the tiles is the trail back out: it reads
   `my-game › assets › textures`, and every step in it is a button that takes you
-  there.
+  there. **Picture files show the picture** — see below.
 - **Folder view** — the whole project as a tree, with folders that open and shut.
 - **Split view** — the tree on the left, the tiles on the right. Click a folder in
   the tree and the tiles jump straight into it; walk into a folder on the right and
@@ -229,8 +229,30 @@ in the icon and split views.
 
 Whichever you pick lasts until you reload — along with the folder you are in, the
 way back and forward, and where you put the split — and moving the panel to a
-different corner of the window loses none of it. Every tile currently wears a plain
-folder or blank-page symbol: **pictures of your actual art come later**.
+different corner of the window loses none of it.
+
+### Pictures on the tiles
+
+In the icon view, **a picture file's tile shows the picture** — so a folder of
+sprites is something you pick from by looking rather than by reading names. Four
+things worth knowing about it:
+
+- **A sprite sheet shows its first frame**, cut exactly the way the game will cut
+  it, using the frame size in that file's import settings. A strip of six run
+  frames shows one knight, not six squashed together. Change the frame size in
+  the Inspector and the tile follows within a second.
+- **Pixel art stays crisp**, and is enlarged by whole steps only — a 16-pixel
+  sprite is shown at three times its size, a 24-pixel one at twice. Filling the
+  tile exactly is given up rather than draw some rows of a sprite two pixels tall
+  and some three, which makes good art look badly drawn. Anything bigger than the
+  tile is shrunk to fit.
+- **Pictures are read as you scroll to them**, not all at once, so a folder of two
+  hundred sprites opens as fast as an empty one. A picture once read stays for as
+  long as the window is open, and nothing is ever written into your project
+  folder to keep it — reloading the page reads them again.
+- **A file that cannot be read as a picture keeps the blank page**, and hovering
+  it says why. So do sounds, fonts, levels, prefabs and folders: they have no
+  picture, and nothing pretends otherwise.
 
 **Everything you can do to a file is behind a right-click**, so the panel itself
 is the folder and one line of reminder at the bottom. Nothing under the listing
@@ -1065,8 +1087,12 @@ the editor takes the change.
   resets when the page reloads. Which of the three Assets views you chose, the
   folder you were in, the way back and forward, and where you put the split all
   reset with it.
-- **Pictures of your assets on the tiles.** The icon view draws a folder or a
-  blank page, never a thumbnail of the art itself.
+- **Pictures of anything but pictures.** Tiles show the art in a picture file;
+  a sound has no waveform on it, a font no sample, and a level or prefab no
+  preview of what is in it. There is also no way to see a frame of a sheet other
+  than the first, and an animated GIF does not move.
+- **A choice of tile size.** The tiles are one size and the pictures on them are
+  one size.
 - **Sort, search or filter the icon view.** Folders first and then files,
   alphabetically, the same order the tree uses, and everything in the folder is
   shown.

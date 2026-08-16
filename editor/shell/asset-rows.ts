@@ -23,25 +23,39 @@ export interface AssetRow {
   node: TreeNode
   /** True when this file has a `.meta` beside it, folded into this row. */
   hasSettings: boolean
+  /**
+   * When those folded-in settings were last written, or null when there are
+   * none.
+   *
+   * Here rather than fetched, because it is what lets anything derived from a
+   * file's settings know it is stale without asking: re-slice a sheet in the
+   * Inspector and this number moves, and the tile's picture (`thumbnail.ts`)
+   * changes with it. The row already knows the `.meta` exists; carrying its
+   * timestamp as well costs nothing and saves a round trip per file.
+   */
+  settingsMtimeMs: number | null
   /** True when this row *is* a `.meta` whose file is gone. */
   isOrphanedSettings: boolean
 }
 
 export function assetRowsFor(children: readonly TreeNode[]): AssetRow[] {
-  const present = new Set(children.map((child) => child.path))
+  const byPath = new Map(children.map((child) => [child.path, child]))
   const rows: AssetRow[] = []
 
   for (const node of children) {
     if (node.kind === 'file' && isMetaFileName(node.name)) {
       const annotated = annotatedPathFor(node.path)
-      if (annotated !== null && present.has(annotated)) continue
-      rows.push({ node, hasSettings: false, isOrphanedSettings: true })
+      if (annotated !== null && byPath.has(annotated)) continue
+      rows.push({ node, hasSettings: false, settingsMtimeMs: null, isOrphanedSettings: true })
       continue
     }
 
+    const settings = node.kind === 'file' ? byPath.get(`${node.path}.meta`) : undefined
+
     rows.push({
       node,
-      hasSettings: node.kind === 'file' && present.has(`${node.path}.meta`),
+      hasSettings: settings !== undefined,
+      settingsMtimeMs: settings?.kind === 'file' ? settings.mtimeMs : null,
       isOrphanedSettings: false,
     })
   }

@@ -17,6 +17,7 @@ import { SceneAssetsProvider } from './scene-assets'
 import { ScenePrefabsProvider } from './scene-prefabs'
 import { SceneViewProvider } from './scene-view-context'
 import { SelectionProvider } from './selection'
+import { ThumbnailProvider } from './thumbnails'
 import { useSidecarStatus, type SidecarConnection } from './useSidecarStatus'
 import { useSelectionFocus } from './useSelectionFocus'
 import { useUndoShortcuts } from './useUndoShortcuts'
@@ -78,23 +79,25 @@ export function App(): ReactElement {
           <EntityPopoverProvider>
             <PlacingProvider>
               <AssetBrowsingProvider>
-                <AssetMetaProvider>
-                  <OpenSceneProvider>
-                    <ScenePrefabsProvider>
-                      <SceneAssetsProvider>
-                        <ViewportProvider>
-                          <SceneViewProvider>
-                            <PlayModeProvider>
-                              <LayoutProvider>
-                                <Shell connection={connection} />
-                              </LayoutProvider>
-                            </PlayModeProvider>
-                          </SceneViewProvider>
-                        </ViewportProvider>
-                      </SceneAssetsProvider>
-                    </ScenePrefabsProvider>
-                  </OpenSceneProvider>
-                </AssetMetaProvider>
+                <ThumbnailProvider>
+                  <AssetMetaProvider>
+                    <OpenSceneProvider>
+                      <ScenePrefabsProvider>
+                        <SceneAssetsProvider>
+                          <ViewportProvider>
+                            <SceneViewProvider>
+                              <PlayModeProvider>
+                                <LayoutProvider>
+                                  <Shell connection={connection} />
+                                </LayoutProvider>
+                              </PlayModeProvider>
+                            </SceneViewProvider>
+                          </ViewportProvider>
+                        </SceneAssetsProvider>
+                      </ScenePrefabsProvider>
+                    </OpenSceneProvider>
+                  </AssetMetaProvider>
+                </ThumbnailProvider>
               </AssetBrowsingProvider>
             </PlacingProvider>
           </EntityPopoverProvider>
