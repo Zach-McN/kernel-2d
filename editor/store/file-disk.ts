@@ -1,5 +1,5 @@
 import { FileChangeSchema, type FileChange } from '../../sidecar/file-change-schema'
-import { refusal } from './refusal'
+import { askService } from './service'
 
 /**
  * Moving one file, and deleting one file, through the editor service.
@@ -18,7 +18,7 @@ import { refusal } from './refusal'
  * above this layer, because it is a change to *documents* and this file's whole
  * subject is one file on disk. The service's refusals arrive as a sentence meant
  * for a human, so they are carried through unchanged rather than replaced with a
- * status code.
+ * status code (`service.ts`).
  */
 export function moveFileOnDisk(from: string, to: string): Promise<FileChange> {
   return send(
@@ -34,13 +34,6 @@ export function deleteFileOnDisk(path: string): Promise<FileChange> {
   )
 }
 
-async function send(url: string, fallback: string): Promise<FileChange> {
-  const response = await fetch(url, { method: 'POST', cache: 'no-store' })
-
-  if (!response.ok) throw new Error(await refusal(response, fallback))
-
-  // Validated rather than trusted, the same as every other answer this editor
-  // reads: a service speaking a shape this editor does not know should be
-  // treated as a failed operation, not as a successful one.
-  return FileChangeSchema.parse(await response.json())
+function send(url: string, fallback: string): Promise<FileChange> {
+  return askService(url, { method: 'POST' }, FileChangeSchema, fallback)
 }

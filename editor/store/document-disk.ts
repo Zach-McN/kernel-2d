@@ -1,5 +1,5 @@
 import { DocumentViewSchema, type EditorDocument } from '../../sidecar/document-view-schema'
-import { refusal } from './refusal'
+import { askService, jsonBody } from './service'
 
 /**
  * Reading one document, with no side effect anywhere.
@@ -66,7 +66,7 @@ export async function readDocumentFromDisk(path: string): Promise<ReadDocument> 
  * later.
  *
  * The service's refusals arrive as a sentence meant for a human, so they are
- * carried through unchanged rather than replaced with a status code.
+ * carried through unchanged rather than replaced with a status code (`service.ts`).
  */
 export async function writeDocumentToDisk(path: string, document: EditorDocument): Promise<void> {
   await send('PUT', path, document, 'The editor service would not save this document.')
@@ -95,17 +95,10 @@ async function send(
   document: EditorDocument,
   fallback: string,
 ): Promise<void> {
-  const response = await fetch(`/api/document?path=${encodeURIComponent(path)}`, {
-    method,
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(document),
-    cache: 'no-store',
-  })
-
-  if (!response.ok) throw new Error(await refusal(response, fallback))
-
-  // Validated rather than trusted, the same as every other answer this editor
-  // reads: a service speaking a shape this editor does not know should be
-  // treated as a failed write, not as a successful one.
-  DocumentViewSchema.parse(await response.json())
+  await askService(
+    `/api/document?path=${encodeURIComponent(path)}`,
+    jsonBody(method, document),
+    DocumentViewSchema,
+    fallback,
+  )
 }

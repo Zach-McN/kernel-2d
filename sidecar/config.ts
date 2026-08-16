@@ -79,33 +79,54 @@ export function resolveConfig(
     return { ok: false, message: `Port must be a whole number between 0 and 65535, not "${raw}".` }
   }
 
-  const absolute = path.resolve(cwd, project)
-
-  let realPath: string
-  try {
-    realPath = fs.realpathSync(absolute)
-  } catch {
-    return { ok: false, message: `Project folder not found: ${toPosixPath(absolute)}` }
-  }
-
-  if (!fs.statSync(realPath).isDirectory()) {
-    return { ok: false, message: `Not a folder: ${toPosixPath(realPath)}` }
-  }
+  const folder = resolveProjectFolder(project, cwd)
+  if (!folder.ok) return folder
 
   return {
     ok: true,
     config: {
-      projectPath: realPath,
-      displayPath: toPosixPath(realPath),
-      projectName: path.basename(realPath),
+      projectPath: folder.projectPath,
+      displayPath: toPosixPath(folder.projectPath),
+      projectName: path.basename(folder.projectPath),
       host: SIDECAR_HOST,
       port,
     },
   }
 }
 
+export type ProjectFolderResult = { ok: true; projectPath: string } | { ok: false; message: string }
+
+/**
+ * The one way a command turns "the folder the human named" into the folder the
+ * kernel works in: absolute, real (symlinks resolved), and known to be a folder —
+ * or one sentence saying which of those it was not.
+ *
+ * Every command that takes a project folder — the editor, the export, the
+ * launcher, the sample project — goes through this, so the sentence a human sees
+ * for a mistyped path is the same sentence whichever command they typed it into.
+ * The real path matters because the service compares paths against it for the
+ * rest of its life (`editor-kernel` D29): a folder reached through a link has to
+ * be pinned to where it really is before anything is compared to it.
+ */
+export function resolveProjectFolder(given: string, cwd: string): ProjectFolderResult {
+  const absolute = path.resolve(cwd, given)
+
+  let projectPath: string
+  try {
+    projectPath = fs.realpathSync(absolute)
+  } catch {
+    return { ok: false, message: `Project folder not found: ${toPosixPath(absolute)}` }
+  }
+
+  if (!fs.statSync(projectPath).isDirectory()) {
+    return { ok: false, message: `Not a folder: ${toPosixPath(projectPath)}` }
+  }
+
+  return { ok: true, projectPath }
+}
+
 /** The first value that is present and not just whitespace. */
-function firstFilled(...values: readonly (string | undefined)[]): string | undefined {
+export function firstFilled(...values: readonly (string | undefined)[]): string | undefined {
   for (const value of values) {
     if (value !== undefined && value.trim() !== '') return value
   }

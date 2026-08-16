@@ -1,7 +1,4 @@
-import fs from 'node:fs'
-import path from 'node:path'
-
-import { PROJECT_ENV_VAR } from '../sidecar/config.js'
+import { PROJECT_ENV_VAR, resolveProjectFolder } from '../sidecar/config.js'
 import { toPosixPath } from '../sidecar/paths.js'
 import { writeSampleProject } from './sample/write.js'
 
@@ -21,18 +18,12 @@ if (target === undefined || target.trim() === '') {
   process.exit(1)
 }
 
-let projectPath: string
-try {
-  projectPath = fs.realpathSync(path.resolve(process.cwd(), target))
-} catch {
-  console.error(`Project folder not found: ${toPosixPath(path.resolve(process.cwd(), target))}`)
+const folder = resolveProjectFolder(target, process.cwd())
+if (!folder.ok) {
+  console.error(folder.message)
   process.exit(1)
 }
-
-if (!fs.statSync(projectPath).isDirectory()) {
-  console.error(`Not a folder: ${toPosixPath(projectPath)}`)
-  process.exit(1)
-}
+const { projectPath } = folder
 
 const report = writeSampleProject(projectPath)
 

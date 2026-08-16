@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { PROJECT_ENV_VAR } from '../../sidecar/config.js'
+import { PROJECT_ENV_VAR, firstFilled, resolveProjectFolder } from '../../sidecar/config.js'
 import { toPosixPath } from '../../sidecar/paths.js'
 
 /**
@@ -80,18 +80,9 @@ export function resolveExportConfig(
   const project = firstFilled(projectArg, env[PROJECT_ENV_VAR])
   if (project === undefined) return { ok: false, message: `No project folder given.\n${USAGE}` }
 
-  const absolute = path.resolve(cwd, project)
-
-  let projectPath: string
-  try {
-    projectPath = fs.realpathSync(absolute)
-  } catch {
-    return { ok: false, message: `Project folder not found: ${toPosixPath(absolute)}` }
-  }
-
-  if (!fs.statSync(projectPath).isDirectory()) {
-    return { ok: false, message: `Not a folder: ${toPosixPath(projectPath)}` }
-  }
+  const folder = resolveProjectFolder(project, cwd)
+  if (!folder.ok) return folder
+  const { projectPath } = folder
 
   const generatedAt = dateArg ?? today
   if (!/^\d{4}-\d{2}-\d{2}$/.test(generatedAt)) {
@@ -191,11 +182,4 @@ function namedOption(token: string, next: string | undefined, name: string): Nam
     return { value, consumed: 0, missing: value === '' }
   }
   return null
-}
-
-function firstFilled(...values: readonly (string | undefined)[]): string | undefined {
-  for (const value of values) {
-    if (value !== undefined && value.trim() !== '') return value
-  }
-  return undefined
 }
