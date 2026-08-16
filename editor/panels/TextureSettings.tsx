@@ -8,10 +8,16 @@ import { NumberField } from './NumberField'
 /**
  * The three things you can tune about a texture, as controls.
  *
- * Written by hand rather than generated from the schema. Generating an
- * inspector from Zod is a real thing to want and a different piece of work; the
- * useful version of it is written after several inspectors exist to generalise
- * from, not before the first one does.
+ * Written by hand rather than generated from the schema, and still right to be.
+ * Generated fields now exist — `./ComponentFields.tsx` draws them for the
+ * components a *game* describes — and they are deliberately not this. The
+ * difference is who owns the shape: a texture's import settings are the
+ * kernel's, so there are three of them, they are the same three in every
+ * project, and each has a sentence worth writing by hand about what it does to
+ * the pixels. A game's components are open-ended and unknown here, which is the
+ * only reason generating anything is worth its indirection. Generating *these*
+ * would spend a description file to arrive back at the same three controls with
+ * worse prose.
  *
  * Every control goes through the transaction API and nothing else, so undo
  * covers all of them without any of them knowing that undo exists

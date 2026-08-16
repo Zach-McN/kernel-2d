@@ -3,6 +3,10 @@ import path from 'node:path'
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
+import {
+  ComponentDescriptionSchema,
+  type ComponentDescription,
+} from '../../runtime/formats/component-schema.js'
 import { AssetMetaSchema } from '../../runtime/formats/meta-schema.js'
 import { PrefabSchema, resolveEntity, type Prefab } from '../../runtime/formats/prefab-schema.js'
 import { SceneSchema, prefabRefOf, spriteOf, type Scene } from '../../runtime/formats/scene-schema.js'
@@ -39,6 +43,7 @@ describe('filling a project folder with sample content', () => {
       'data/waves.json',
       'prefabs/enemy-slime.json',
       'scenes/level-01.json',
+      'components/patrol.json',
       'project.json',
     ]) {
       expect(fs.existsSync(project.file(expected)), expected).toBe(true)
@@ -295,6 +300,48 @@ describe('the sample scenes', () => {
         expect(entity.transform.y, `${scenePath}: ${entity.name} y`).toBeLessThan(400)
       }
     }
+  })
+
+  /**
+   * The sample's `patrol` is the one thing in this folder that has to agree with
+   * itself in three places: the level carries the component, `src/systems/`
+   * reads three keys off it, and `components/patrol.json` tells the editor which
+   * fields to draw. Nothing enforces that correspondence — the kernel has never
+   * heard of `patrol` and cannot — so it is asserted here, where a sample that
+   * drifted would otherwise ship controls that write fields nothing reads.
+   */
+  describe('the sample’s own component description', () => {
+    const description = (): ComponentDescription =>
+      ComponentDescriptionSchema.parse(
+        JSON.parse(fs.readFileSync(project.file('components/patrol.json'), 'utf8')),
+      )
+
+    it('describes the component the level actually carries', () => {
+      const slime = sceneAt('scenes/level-01.json').entities.find((entity) => entity.name === 'Slime')
+
+      expect(description().type).toBe('patrol')
+      expect(slime?.components['patrol']).toBeDefined()
+    })
+
+    it('names exactly the keys the sample’s own system reads', () => {
+      const system = fs.readFileSync(project.file('src/systems/patrol.ts'), 'utf8')
+
+      for (const field of description().fields) {
+        expect(system, `${field.key} is read by the system`).toContain(field.key)
+      }
+      // And the other way round: the three the system narrows are all described,
+      // or the human has a field they cannot set.
+      expect(description().fields.map((field) => field.key).sort()).toEqual([
+        'fromX',
+        'toX',
+        'unitsPerSecond',
+      ])
+    })
+
+    it('is marked as generated, inside itself, like every other JSON here', () => {
+      expect(description().generatedBy).not.toBe(undefined)
+      expect(fs.existsSync(project.file('components/patrol.json.meta'))).toBe(false)
+    })
   })
 
   it('produces the same scene bytes every time', () => {

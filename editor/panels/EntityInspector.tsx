@@ -16,12 +16,14 @@ import {
 import { toPinnedOffset, toScenePoint } from '../../runtime/scene/coordinates'
 import type { ProjectTree } from '../../sidecar/tree-schema'
 import { basename } from '../shell/asset-kinds'
+import { useComponentTypes } from '../shell/component-types'
 import { useSceneView } from '../shell/scene-view-context'
 import { describeProblem, type SceneAssets } from '../shell/scene-assets'
 import { describePrefabProblem, instancesOf, useResolvedScene, type PrefabProblem } from '../shell/scene-prefabs'
 import { useSelection } from '../shell/selection'
 import { usePlacePrefab } from '../shell/usePlacePrefab'
 import { editDocument, sealEdits } from '../store/open-documents'
+import { ComponentFields } from './ComponentFields'
 import { Field, Note, Row, Section } from './fields'
 import { NumberField } from './NumberField'
 import { PlaceByClicking } from './PlaceByClicking'
@@ -129,7 +131,12 @@ export function EntityInspector({
   const own = spriteOf(entity)
   const drawn = spriteOf(resolved)
   const source = prefabRefOf(entity)
-  const unknown = unknownComponentTypesOf(entity)
+  // What is left after both registries: the four types this editor owns, and
+  // the ones this *game* has described for itself. A described type has fields
+  // above, so reporting it here as one with no controls would be the panel
+  // contradicting the section directly above it.
+  const described = useComponentTypes().byType
+  const unknown = unknownComponentTypesOf(entity).filter((type) => described[type] === undefined)
   const problem = drawn === null ? undefined : assets.problems[drawn.texture.path]
 
   // The entity's own turn rate, and the one it would actually turn at. Same
@@ -363,6 +370,11 @@ export function EntityInspector({
           textureProblem={problem === undefined ? null : describeProblem(problem)}
         />
       )}
+
+      {/* The game's own nouns, drawn from the game's own description of them —
+          after the picture, because what an entity *is* comes before what it
+          does, and before the note about the ones nobody has described. */}
+      <ComponentFields scenePath={scenePath} entity={entity} resolved={resolved} />
 
       {unknown.length > 0 && (
         <Section title="Other components">

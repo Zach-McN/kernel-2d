@@ -1,5 +1,6 @@
 import { useStore } from 'zustand'
 
+import { COMPONENT_FORMAT, type ComponentDescription } from '../../runtime/formats/component-schema'
 import { ASSET_META_FORMAT, type AssetMeta } from '../../runtime/formats/meta-schema'
 import { PREFAB_FORMAT, type Prefab } from '../../runtime/formats/prefab-schema'
 import { PROJECT_FORMAT, type Project } from '../../runtime/formats/project-schema'
@@ -38,7 +39,8 @@ function saveToDisk(path: string, document: Document): Promise<unknown> {
   if (
     document.format === SCENE_FORMAT ||
     document.format === PREFAB_FORMAT ||
-    document.format === PROJECT_FORMAT
+    document.format === PROJECT_FORMAT ||
+    document.format === COMPONENT_FORMAT
   ) {
     return writeDocumentToDisk(path, document)
   }
@@ -138,6 +140,14 @@ export function usePrefabDocument(path: string | null): Prefab | null {
   return useDocumentState((state) => {
     const document = path === null ? undefined : state.docs[path]
     return document !== undefined && document.format === PREFAB_FORMAT ? document : null
+  })
+}
+
+/** The component description at one path, or null. */
+export function useComponentDocument(path: string | null): ComponentDescription | null {
+  return useDocumentState((state) => {
+    const document = path === null ? undefined : state.docs[path]
+    return document !== undefined && document.format === COMPONENT_FORMAT ? document : null
   })
 }
 

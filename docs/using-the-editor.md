@@ -8,8 +8,8 @@ It is kept current by the definition of done in `CLAUDE.md`: a session that
 changes what you can do, or how you do it, changes this page in the same commit.
 If this page and the editor disagree, the editor is right and the page is a bug.
 
-Last true as of: **the grid is drawn while snapping is on, and an entity can be
-put on it from its right-click window** (2026-08-15).
+Last true as of: **your game's own components get Inspector fields from a
+description in `components/`** (2026-08-15).
 
 ---
 
@@ -393,7 +393,8 @@ A *system* is a rule handed everything in the running level and how much time ju
 passed. The sample's own one walks the slime along the ground and starts it over,
 and it reads a `patrol` component the engine has never heard of — which is the
 point worth knowing: **your levels can carry data of your own, and your code can
-read it.** Nothing has to be added to the editor for that to work.
+read it.** Nothing has to be added to the editor for that to work, and the next
+section is how you get fields for it.
 
 **Pressing Play re-reads your code.** Edit a system, press **Stop** and **Play**,
 and the new behaviour runs. The page does not reload, and the level you have open,
@@ -404,6 +405,44 @@ a button.
 
 An exported folder is built the same way from the same files, so what you see
 behind Play is what somebody you hand the folder gets.
+
+### Your game's own fields in the Inspector
+
+**A component your game invented gets fields in the Inspector as soon as your
+game describes it.** The description is a small JSON file in a `components/`
+folder at the top of your project — one file per component, beside `scenes/` and
+`prefabs/` — and it says what the component is called and what numbers it has.
+The sample has one, `components/patrol.json`, describing the slime's patrol.
+
+Select the Slime and there is now a **Patrol** section: Speed, From and To, in a
+row each, exactly like Position and Rotation above them. Type in them and the
+level changes; `Ctrl-Z` takes it back. They are the same kind of field as
+everything else in the panel, because that is all they are.
+
+- **Add and Remove.** An entity that has no patrol gets an **Add patrol** button,
+  which gives it one with the starting values the description names. An entity
+  that has one gets **Remove**, which takes it out of the level entirely. Both
+  are one press of `Ctrl-Z`.
+- **A prefab's is inherited.** If a placement has no patrol of its own but its
+  prefab has one, the section says so. Pressing Add gives that placement its own,
+  and it stops following the prefab — the same rule as Spin.
+- **The editor never rewrites what it cannot read.** If a level holds something a
+  field cannot show — a word where a number belongs, typed by hand — the field
+  shows the description's starting value and a line underneath says which one it
+  disagrees with. Nothing changes in the file until you type.
+- **Components nobody has described still work exactly as before.** They are
+  carried through untouched and named in *Other components*, as they always
+  were. Describing one is what gives it fields; not describing one costs nothing.
+
+**Select the description file itself** and the Inspector says what it read from
+it: the type, each field, and how many entities in the open level carry one. That
+is where to look when a field you expected is missing — a typo in the file shows
+up as a field the editor never mentions.
+
+Adding a field to a description means adding code that reads it, so the two are
+written together, by whoever is writing the game's code. The editor shows the
+description rather than letting you edit it: a field with nothing reading it
+would be a control that does nothing.
 
 ### Spin — the engine's own example
 
@@ -965,11 +1004,16 @@ the editor takes the change.
 - **Write or edit code from inside the editor.** Your game's systems are files in
   `src/`, edited in a text editor. The editor compiles them and re-reads them when
   you press Play; it does not show them to you or let you change them.
-- **See a system's data in the Inspector.** A component the engine does not know —
-  the sample's `patrol`, or the level a door opens — is named there but cannot be
-  edited. Setting one up means typing it into the level file, or a tool built for
-  it later. **This is how a door is authored**, so joining two levels together is
-  a job for the game's code and the file rather than for a panel.
+- **Fields for anything but numbers, and a door.** Your game's own components get
+  Inspector fields once you describe them in `components/` — but a description
+  can only say a field is a *number* so far. Text, a tick box, a list, and a
+  field that points at a file or a level are all still typed into the level file
+  by hand. **The last of those is how a door is authored**, so joining two levels
+  together is a job for the game's code and the file rather than for a panel.
+- **Write a component description in the editor.** The files in `components/` are
+  written in a text editor alongside the code that reads them, for the reason
+  above: a field with nothing reading it is a control that does nothing. The
+  editor shows what it understood from one; it does not offer to change it.
 - **Collision, gravity or physics.** Two sprites in the same place are two
   sprites in the same place.
 - **Choose or preview a sound effect.** A level's *music* is a file you pick in

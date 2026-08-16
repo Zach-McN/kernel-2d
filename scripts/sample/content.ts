@@ -1,4 +1,10 @@
 import {
+  COMPONENT_FORMAT,
+  COMPONENT_VERSION,
+  serializeComponentDescription,
+  type ComponentDescription,
+} from '../../runtime/formats/component-schema.js'
+import {
   defaultTextureImportSettings,
   type ImportSettings,
   type Slice,
@@ -207,6 +213,13 @@ export function sampleFiles(generatedAt: string): SampleFile[] {
       marking: 'inside',
     },
 
+    // --- the project's own vocabulary, which the editor draws fields from --
+    {
+      path: PATROL_COMPONENT,
+      contents: serializeComponentDescription(patrolDescription(generatedAt)),
+      marking: 'inside',
+    },
+
     // --- the project's own code, which is a real thing now ----------------
     { path: 'src/systems/patrol.ts', contents: patrolSource(generatedAt), marking: 'comment' },
     { path: 'src/systems/index.ts', contents: systemsSource(generatedAt), marking: 'comment' },
@@ -215,6 +228,69 @@ export function sampleFiles(generatedAt: string): SampleFile[] {
     { path: 'data/items.json', contents: note('Placeholder for the item database. No schema for it exists yet.'), marking: 'inside' },
     { path: 'data/waves.json', contents: note('Placeholder for the wave schedule. No schema for it exists yet.'), marking: 'inside' },
   ]
+}
+
+// --- the project's own vocabulary -------------------------------------------
+
+/**
+ * The sample describing its own `patrol` component, so the editor can draw
+ * fields for it.
+ *
+ * **This file is the whole of what makes a game's noun authorable**, and nothing
+ * about the level or the system beside it changes to earn that. The Slime has
+ * carried a `patrol` since the day this generator wrote one, and
+ * `src/systems/patrol.ts` has read the same three keys the same way; what was
+ * missing was any way to *set* them except typing into the level file. The
+ * kernel still has never heard of the word — it reads this, and draws what it
+ * says.
+ *
+ * The keys are the system's, exactly: `patrolOf` narrows `unitsPerSecond`,
+ * `fromX` and `toX`, and a description naming anything else would put controls on
+ * screen that write fields nothing reads. That correspondence is the one thing
+ * about this file a human has to keep true by hand, which is why it lives beside
+ * the system rather than inside the kernel.
+ *
+ * The defaults are what `Add patrol` writes: a real speed, so a fresh one moves
+ * as soon as its two ends are set, and both ends at zero because where an entity
+ * should walk is the whole of what the human is about to decide.
+ */
+function patrolDescription(generatedAt: string): ComponentDescription {
+  return {
+    format: COMPONENT_FORMAT,
+    version: COMPONENT_VERSION,
+    type: 'patrol',
+    title: 'Patrol',
+    note: 'Walks back and forth between two positions while the level is running.',
+    fields: [
+      {
+        kind: 'number',
+        key: 'unitsPerSecond',
+        label: 'Speed',
+        title: 'How fast it walks, in scene units a second',
+        default: 24,
+        min: 0,
+        step: 1,
+      },
+      {
+        kind: 'number',
+        key: 'fromX',
+        label: 'From',
+        title: 'The x it walks back to, in scene units',
+        default: 0,
+        step: 1,
+      },
+      {
+        kind: 'number',
+        key: 'toX',
+        label: 'To',
+        title: 'The x it walks out to, in scene units',
+        default: 0,
+        step: 1,
+      },
+    ],
+    generatedBy: GENERATED_BY,
+    generatedAt,
+  }
 }
 
 // --- the project's own code -------------------------------------------------
@@ -365,6 +441,7 @@ function projectSettings(generatedAt: string): Project {
 const LEVEL_ONE = 'scenes/level-01.json'
 const LEVEL_TWO = 'scenes/level-02.json'
 const SLIME_PREFAB = 'prefabs/enemy-slime.json'
+const PATROL_COMPONENT = 'components/patrol.json'
 
 const KNIGHT = 'assets/textures/characters/knight-idle.png'
 const RUN_STRIP = 'assets/textures/characters/knight-run-strip.png'

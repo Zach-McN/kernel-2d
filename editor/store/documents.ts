@@ -1,6 +1,7 @@
 import { applyPatches, enablePatches, freeze, produceWithPatches, type Draft, type Patch } from 'immer'
 import { createStore } from 'zustand/vanilla'
 
+import type { ComponentDescription } from '../../runtime/formats/component-schema'
 import type { AssetMeta } from '../../runtime/formats/meta-schema'
 import type { Prefab } from '../../runtime/formats/prefab-schema'
 import type { Project } from '../../runtime/formats/project-schema'
@@ -50,7 +51,7 @@ enablePatches()
  * to, and that is one small branch on `format` in `open-documents.ts` — the
  * `.meta` has an endpoint of its own; every real document goes out of the other.
  */
-export type Document = AssetMeta | Scene | Prefab | Project
+export type Document = AssetMeta | Scene | Prefab | Project | ComponentDescription
 
 export interface DocumentState {
   /** Keyed by the project-relative path of the file the settings belong to. */

@@ -5,6 +5,7 @@ import type { ReactElement } from 'react'
 import { StatusStrip } from './StatusStrip'
 import { AssetBrowsingProvider } from './asset-browsing'
 import { AssetMetaProvider } from './asset-meta-context'
+import { ComponentTypesProvider } from './component-types'
 import { EntityPopoverProvider } from './entity-popover'
 import { LayoutProvider, useLayout } from './layout-context'
 import { OpenSceneProvider } from './open-scene'
@@ -31,11 +32,15 @@ import { ViewportProvider } from './viewport-context'
  * is not merely inconvenient — a Phaser game rebuilt on a tab drag means a fresh
  * WebGL context each time.
  *
- * The order is the dependency order: the folder, then what is selected in it,
- * then that file's settings and the scene it may have opened, then what that
- * scene's instances inherit, then the textures all of that turns out to need,
- * then the two renderers, then play mode, then the layout handle that lets a
- * selection bring a tab forward.
+ * The order is the dependency order: the folder, then what this game's own
+ * components are, then what is selected in it, then that file's settings and the
+ * scene it may have opened, then what that scene's instances inherit, then the
+ * textures all of that turns out to need, then the two renderers, then play
+ * mode, then the layout handle that lets a selection bring a tab forward.
+ *
+ * The game's component vocabulary is second because it depends on the folder and
+ * on nothing else — it is a listing of `components/`, not a thing any selection
+ * or level names — and because the Inspector needs it whatever is selected.
  *
  * Play mode is below the scene renderer because starting a level needs the
  * picture the editing view is showing at that instant — that report is what the
@@ -68,31 +73,33 @@ export function App(): ReactElement {
 
   return (
     <ProjectProvider>
-      <SelectionProvider>
-        <EntityPopoverProvider>
-          <PlacingProvider>
-            <AssetBrowsingProvider>
-              <AssetMetaProvider>
-                <OpenSceneProvider>
-                  <ScenePrefabsProvider>
-                    <SceneAssetsProvider>
-                      <ViewportProvider>
-                        <SceneViewProvider>
-                          <PlayModeProvider>
-                            <LayoutProvider>
-                              <Shell connection={connection} />
-                            </LayoutProvider>
-                          </PlayModeProvider>
-                        </SceneViewProvider>
-                      </ViewportProvider>
-                    </SceneAssetsProvider>
-                  </ScenePrefabsProvider>
-                </OpenSceneProvider>
-              </AssetMetaProvider>
-            </AssetBrowsingProvider>
-          </PlacingProvider>
-        </EntityPopoverProvider>
-      </SelectionProvider>
+      <ComponentTypesProvider>
+        <SelectionProvider>
+          <EntityPopoverProvider>
+            <PlacingProvider>
+              <AssetBrowsingProvider>
+                <AssetMetaProvider>
+                  <OpenSceneProvider>
+                    <ScenePrefabsProvider>
+                      <SceneAssetsProvider>
+                        <ViewportProvider>
+                          <SceneViewProvider>
+                            <PlayModeProvider>
+                              <LayoutProvider>
+                                <Shell connection={connection} />
+                              </LayoutProvider>
+                            </PlayModeProvider>
+                          </SceneViewProvider>
+                        </ViewportProvider>
+                      </SceneAssetsProvider>
+                    </ScenePrefabsProvider>
+                  </OpenSceneProvider>
+                </AssetMetaProvider>
+              </AssetBrowsingProvider>
+            </PlacingProvider>
+          </EntityPopoverProvider>
+        </SelectionProvider>
+      </ComponentTypesProvider>
     </ProjectProvider>
   )
 }

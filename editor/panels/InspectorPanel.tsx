@@ -1,5 +1,6 @@
 import type { ReactElement, ReactNode } from 'react'
 
+import { COMPONENT_FORMAT } from '../../runtime/formats/component-schema'
 import {
   assetTypeForName,
   isMetaFileName,
@@ -22,11 +23,13 @@ import { useResolvedScene } from '../shell/scene-prefabs'
 import { useSelection } from '../shell/selection'
 import type { AssetMetaState } from '../shell/useAssetMeta'
 import {
+  useComponentDocument,
   useMetaDocument,
   usePrefabDocument,
   useProjectDocument,
   useSaveFailure,
 } from '../store/open-documents'
+import { ComponentInspector } from './ComponentInspector'
 import { EntityInspector } from './EntityInspector'
 import { Field, Note, Section } from './fields'
 import { PrefabInspector } from './PrefabInspector'
@@ -315,6 +318,7 @@ function DocumentBody({ path }: { path: string }): ReactElement {
   // are recognised wherever somebody keeps them.
   if (answer.view.document?.format === PREFAB_FORMAT) return <PrefabBody path={path} />
   if (answer.view.document?.format === PROJECT_FORMAT) return <ProjectBody path={path} />
+  if (answer.view.document?.format === COMPONENT_FORMAT) return <ComponentBody path={path} />
 
   const scene = open.state === 'open' && open.path === path ? open.scene : null
 
@@ -403,6 +407,42 @@ function ProjectBody({ path }: { path: string }): ReactElement {
         path={path}
         project={settings}
         tree={project.state === 'ready' ? project.tree : null}
+      />
+    </>
+  )
+}
+
+/**
+ * A description of one of this game's own components.
+ *
+ * Needed the moment the format was registered, and not because somebody wanted a
+ * panel: the fall-through below is the *scene* body, so a format with no case
+ * here would quietly describe a component description as a level.
+ */
+function ComponentBody({ path }: { path: string }): ReactElement {
+  const description = useComponentDocument(path)
+  const open = useOpenScene()
+  const saveFailure = useSaveFailure(path)
+
+  if (description === null) {
+    return (
+      <Section title="Document">
+        <Field label="Format" value="Component" testId="inspector-document-format" />
+        <Note>Reading it…</Note>
+      </Section>
+    )
+  }
+
+  return (
+    <>
+      <Section title="Document">
+        <Field label="Format" value="Component" testId="inspector-document-format" />
+        {saveFailure !== null && <SaveFailure reason={saveFailure} />}
+      </Section>
+      <ComponentInspector
+        path={path}
+        description={description}
+        scene={open.state === 'open' ? open.scene : null}
       />
     </>
   )

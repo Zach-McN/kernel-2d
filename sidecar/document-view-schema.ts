@@ -1,5 +1,6 @@
 import { z } from 'zod'
 
+import { COMPONENT_FORMAT, ComponentDescriptionSchema } from '../runtime/formats/component-schema.js'
 import { PREFAB_FORMAT, PrefabSchema } from '../runtime/formats/prefab-schema.js'
 import { PROJECT_FORMAT, ProjectSchema } from '../runtime/formats/project-schema.js'
 import { SCENE_FORMAT, SceneSchema } from '../runtime/formats/scene-schema.js'
@@ -44,6 +45,7 @@ export const DOCUMENT_SCHEMAS = {
   [SCENE_FORMAT]: SceneSchema,
   [PREFAB_FORMAT]: PrefabSchema,
   [PROJECT_FORMAT]: ProjectSchema,
+  [COMPONENT_FORMAT]: ComponentDescriptionSchema,
 } as const
 
 export type EditorDocument = z.infer<(typeof DOCUMENT_SCHEMAS)[keyof typeof DOCUMENT_SCHEMAS]>
