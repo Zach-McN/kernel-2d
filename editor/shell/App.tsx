@@ -9,7 +9,7 @@ import { ComponentTypesProvider } from './component-types'
 import { EntityPopoverProvider } from './entity-popover'
 import { LayoutProvider, useLayout } from './layout-context'
 import { OpenSceneProvider } from './open-scene'
-import { PANEL_COMPONENTS, layOutPanels } from './panels'
+import { PANEL_COMPONENTS } from './panels'
 import { PlacingProvider } from './placing'
 import { PlayModeProvider } from './play-mode'
 import { ProjectProvider } from './project-context'
@@ -131,9 +131,10 @@ function Shell({ connection }: { connection: SidecarConnection }): ReactElement 
            * the whole layout. Its colours are all redefined in `shell.css`.
            */
           theme={themeAbyssSpaced}
+          // Attaching restores the remembered arrangement, or lays out the
+          // default (`layout-context.tsx`).
           onReady={(event) => {
             layout.attach(event.api)
-            layOutPanels(event.api)
           }}
         />
       </main>

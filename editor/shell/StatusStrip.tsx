@@ -130,6 +130,28 @@ function WindowsMenu(): ReactElement {
               </button>
             )
           })}
+          {/* The way back when the arrangement has been dragged into a knot, and
+              the reason a remembered layout can never trap anybody: one press
+              is the default again, forgotten and all. */}
+          <button
+            type="button"
+            className="windows__item windows__item--reset"
+            role="menuitem"
+            data-testid="windows-reset-layout"
+            onClick={() => {
+              layout.reset()
+              setOpen(false)
+            }}
+          >
+            <span className="windows__tick" aria-hidden="true" />
+            <span className="windows__words">
+              <span className="windows__label">Reset layout</span>
+              <span className="windows__blurb">
+                Put every panel back where it started, and the Assets panel back to its icons at the top of the
+                project.
+              </span>
+            </span>
+          </button>
         </div>
       )}
     </div>

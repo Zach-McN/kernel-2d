@@ -223,6 +223,14 @@ body {
   cursor: default;
 }
 
+/* A hairline over the one item that is not a panel: it undoes the others. After
+   `.windows__item`, whose `border: 0` would otherwise win. */
+.windows__item--reset {
+  margin-top: 4px;
+  border-top: 1px solid var(--shell-line);
+  padding-top: 8px;
+}
+
 .windows__item:hover {
   background: rgba(255, 255, 255, 0.05);
 }

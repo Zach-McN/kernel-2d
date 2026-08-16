@@ -1,4 +1,17 @@
-import { createContext, useCallback, useContext, useMemo, useState, type ReactElement, type ReactNode } from 'react'
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactElement,
+  type ReactNode,
+} from 'react'
+
+import { findNode } from './asset-kinds'
+import { readLayout, writeLayout } from './layout-store'
+import { useProject } from './project-context'
 
 import { movedPath } from './references'
 
@@ -81,6 +94,9 @@ export interface AssetBrowsing {
   /** Open every folder on the way down to this path, but not the path itself. */
   revealParents: (path: string) => void
 
+  /** Reset layout: the icon view, at the top of the project. */
+  resetBrowsing: () => void
+
   /**
    * Something was renamed or moved: carry the browsing state with it.
    *
@@ -113,6 +129,15 @@ export function AssetBrowsingProvider({ children }: { children: ReactNode }): Re
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set())
 
   const folder = trail.folders[trail.at] ?? ''
+
+  const project = useProject()
+  const projectPath = project.state === 'ready' ? project.tree.projectPath : null
+  const tree = project.state === 'ready' ? project.tree : null
+  // Which project's remembered view and folder are on screen — restored once
+  // per project, and written back whenever either changes after that. The
+  // view and the folder only: the split, the open tree folders and the trail
+  // are not remembered (`layout-store.ts`).
+  const [restoredFor, setRestoredFor] = useState<string | null>(null)
 
   const revealParents = useCallback((path: string) => {
     // Every folder on the way, so something reached inside a shut folder is not
@@ -185,6 +210,33 @@ export function AssetBrowsingProvider({ children }: { children: ReactNode }): Re
     setSplit(Math.min(SPLIT_WIDEST, Math.max(SPLIT_NARROWEST, fraction)))
   }, [])
 
+  // The project is known: put back what this browser remembered for it. The
+  // folder is only entered if it is still there — a folder deleted since is
+  // the top of the project, not an empty grid claiming to be somewhere.
+  useEffect(() => {
+    if (projectPath === null || tree === null || restoredFor === projectPath) return
+    // State rather than a ref, so the writer below only starts once the
+    // restored values have been rendered — never over them.
+    setRestoredFor(projectPath)
+    const remembered = readLayout(projectPath)?.assets
+    if (remembered === undefined) return
+    setView(remembered.view)
+    const there = remembered.folder === '' || findNode(tree, remembered.folder)?.kind === 'directory'
+    if (there) openFolder(remembered.folder)
+  }, [projectPath, tree, openFolder, restoredFor])
+
+  // Written after the restore, and only for the project it was restored for —
+  // so a reload cannot write the defaults over what it was about to read.
+  useEffect(() => {
+    if (projectPath === null || restoredFor !== projectPath) return
+    writeLayout(projectPath, { assets: { view, folder } })
+  }, [projectPath, restoredFor, view, folder])
+
+  const resetBrowsing = useCallback(() => {
+    setView('icons')
+    setTrail({ folders: [''], at: 0 })
+  }, [])
+
   const pathMoved = useCallback((from: string, to: string) => {
     // Every folder on the trail, not only the one on screen: stepping back into
     // a folder under its old name would land on nothing.
@@ -211,6 +263,7 @@ export function AssetBrowsingProvider({ children }: { children: ReactNode }): Re
       toggleFolder,
       expandFolder,
       revealParents,
+      resetBrowsing,
       pathMoved,
     }),
     [
@@ -226,6 +279,7 @@ export function AssetBrowsingProvider({ children }: { children: ReactNode }): Re
       toggleFolder,
       expandFolder,
       revealParents,
+      resetBrowsing,
       pathMoved,
     ],
   )

@@ -8,8 +8,9 @@ It is kept current by the definition of done in `CLAUDE.md`: a session that
 changes what you can do, or how you do it, changes this page in the same commit.
 If this page and the editor disagree, the editor is right and the page is a bug.
 
-Last true as of: **a folder can be deleted from the Assets panel, with
-everything in it, after a sentence saying how much that is** (2026-08-15).
+Last true as of: **the panel arrangement, the Assets view and the folder you
+were in are remembered per project across reloads and restarts, with Reset
+layout in the Windows menu** (2026-08-16).
 
 ---
 
@@ -176,6 +177,19 @@ tick beside the ones on screen. Closing a panel by the ✕ on its tab is no long
 a dead end: pick it from *Windows* and it comes back, as a tab in the panel you
 are working in, ready to drag wherever you want it. Picking one that is already
 open brings its tab to the front instead.
+
+**The arrangement is remembered.** Drag the panels into whatever shape you like,
+close the ones you do not use, resize them — reload the page, or stop and start
+the editor, and it comes back the way you left it. So does the Assets panel's
+view (tree, icons or both) and the folder it was standing in. It is remembered
+*per project*, so two games each keep their own shape, and it lives in this
+browser — the same place a game keeps what it remembers between runs — never in
+the project folder, so nothing about it turns up in your files or in version
+control. Clearing the browser's site data forgets it. **Reset layout**, at the
+foot of the *Windows* menu, puts every panel back where it started and the
+Assets panel back to its icons at the top of the project. Not remembered, on
+purpose: which folders the tree had open, the back-and-forward trail, and where
+the split between tree and tiles sits.
 
 Dark, with one orange. **Orange always means "this is the one you are working on"**
 — the tab you are in, the row you have selected, the field you are typing in,
@@ -1163,10 +1177,6 @@ the editor takes the change.
   switch and goes with it, so laying a level out by eye means laying it out with
   nothing drawn. There are no rulers down the edges of the picture at all.
 - **Two levels open at once.**
-- **Saved panel layouts.** Drag the panels wherever you like; the arrangement
-  resets when the page reloads. Which of the three Assets views you chose, the
-  folder you were in, the way back and forward, and where you put the split all
-  reset with it.
 - **Pictures of anything but pictures.** Tiles show the art in a picture file;
   a sound has no waveform on it, a font no sample, and a level or prefab no
   preview of what is in it. There is also no way to see a frame of a sheet other
