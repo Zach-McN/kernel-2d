@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type MouseEvent, type ReactElement } from 'react'
 
 import { formatBytes } from '../../sidecar/bytes'
-import type { ProjectTree } from '../../sidecar/tree-schema'
+import type { ProjectTree, TreeNode } from '../../sidecar/tree-schema'
 import { showsGrid, showsTree, useAssetBrowsing } from '../shell/asset-browsing'
 import { basename, findNode, folderPathsIn, parentOf } from '../shell/asset-kinds'
 import { assetRowsFor, fileRangeBetween, visibleTreeRows, type AssetRow } from '../shell/asset-rows'
@@ -639,17 +639,15 @@ function MoveOrDelete({
         >
           {verb}
         </button>
-        {!isFolder && (
-          <button
-            type="button"
-            className="control control--action"
-            data-testid="move-file-delete"
-            disabled={busy}
-            onClick={onDelete}
-          >
-            {uses === null ? 'Delete' : 'Delete anyway'}
-          </button>
-        )}
+        <button
+          type="button"
+          className="control control--action"
+          data-testid="move-file-delete"
+          disabled={busy}
+          onClick={onDelete}
+        >
+          {uses !== null ? 'Delete anyway' : isFolder ? 'Delete folder' : 'Delete'}
+        </button>
       </div>
 
       <p className="assets__new-path" data-testid="move-file-destination">
@@ -666,13 +664,13 @@ function MoveOrDelete({
 
       {isFolder && (
         <p className="assets__new-path" data-testid="move-file-folder-note">
-          A folder can be renamed or moved here. Deleting one is still a job for the folder itself.
+          A folder can be renamed or moved here, or deleted with everything in it.
         </p>
       )}
 
       {uses !== null && (
         <p className="assets__move-uses" data-testid="move-file-uses">
-          {describeUses(uses, basename(path))}
+          {isFolder ? describeFolderUses(uses, basename(path), filesUnder(node)) : describeUses(uses, basename(path))}
         </p>
       )}
 
@@ -804,6 +802,39 @@ function describeManyUses(total: number, uses: { used: string[]; unreadable: str
 export interface ClickKeys {
   ctrl: boolean
   shift: boolean
+}
+
+/**
+ * What deleting a folder is about to cost: how many files are inside it, and
+ * how many of them something still points at. Sidecars count as part of their
+ * file, the way the panel lists them; a stranded one counts on its own.
+ */
+function describeFolderUses(report: UseReport, name: string, files: number): string {
+  const inside = files === 1 ? 'holds 1 file' : `holds ${files} files`
+  const incomplete =
+    report.unreadable.length === 0
+      ? ''
+      : ` ${report.unreadable.join(', ')} could not be read, so there may be more.`
+  const again = `Press Delete again to remove the folder and everything in it.`
+
+  if (report.files.length === 0) {
+    return `${name} ${inside}. Nothing else in the project uses any of them. ${again}${incomplete}`
+  }
+
+  const places = report.count === 1 ? 'once' : `${report.count} times`
+  return (
+    `${name} ${inside}, and they are still used ${places} in ${report.files.join(', ')}. ` +
+    `Deleting the folder leaves those pointing at nothing. ${again}${incomplete}`
+  )
+}
+
+/** How many files a folder holds, at any depth, counted the way the panel lists them. */
+function filesUnder(node: TreeNode): number {
+  if (node.kind !== 'directory') return 0
+  return assetRowsFor(node.children).reduce(
+    (total, row) => total + (row.node.kind === 'file' ? 1 : filesUnder(row.node)),
+    0,
+  )
 }
 
 interface AssetNodeProps {

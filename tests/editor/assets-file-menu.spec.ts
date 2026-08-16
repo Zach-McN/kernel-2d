@@ -1,7 +1,11 @@
+import fs from 'node:fs'
+import path from 'node:path'
+
 import { expect, test } from '@playwright/test'
 
 import { restoreProjectAfterEach } from './restore-project.js'
 import { assetRow, openFileMenu, selectAsset } from './select-asset.js'
+import { editorTestProjectPath } from './test-project.js'
 
 /**
  * The menu a right-click on a file or folder opens: rename, move, delete, and
@@ -128,13 +132,58 @@ test('selecting another file closes it', async ({ page }) => {
 
 // --- a folder gets a different menu ----------------------------------------
 
-test('a folder is offered rename and move, and no delete', async ({ page }) => {
+test('a folder is offered rename, move, and delete', async ({ page }) => {
   await openFileMenu(page, UI_FOLDER)
 
   await expect(page.getByTestId('move-file-name')).toBeVisible()
   await expect(page.getByTestId('move-file-folder')).toBeVisible()
-  await expect(page.getByTestId('move-file-delete')).toHaveCount(0)
+  await expect(page.getByTestId('move-file-delete')).toHaveText('Delete folder')
   await expect(page.getByTestId('move-file-folder-note')).toContainText('renamed or moved')
+})
+
+/**
+ * Deleting a folder: the first press says how many files are inside and what
+ * still uses them; the second removes the folder and everything in it, and the
+ * panel learns of it from the folder itself. On a folder the test made, because
+ * a PNG this suite deletes stays deleted for the run (W14).
+ */
+test('Delete folder says how many files are inside, then removes the folder and everything in it', async ({
+  page,
+}) => {
+  const root = editorTestProjectPath()
+  const spare = path.join(root, 'assets', 'textures', 'spare')
+  fs.mkdirSync(spare)
+  for (const name of ['a.png', 'b.png', 'c.png']) {
+    fs.copyFileSync(path.join(root, 'assets', 'textures', 'ui', 'icon-heart.png'), path.join(spare, name))
+  }
+  const SPARE = 'assets/textures/spare'
+  try {
+    await selectAsset(page, HEART)
+    await expect(assetRow(page, SPARE)).toBeVisible({ timeout: 3_000 })
+    // The sidecars arrive a beat after the files; wait so the count is settled.
+    await expect.poll(() => fs.existsSync(path.join(spare, 'c.png.meta')), { timeout: 3_000 }).toBe(true)
+    await openFileMenu(page, SPARE)
+
+    await page.getByTestId('move-file-delete').click()
+    await expect(page.getByTestId('move-file-uses')).toContainText('holds 3 files')
+    await expect(page.getByTestId('move-file-uses')).toContainText('Nothing else in the project uses')
+    await expect(page.getByTestId('move-file-delete')).toHaveText('Delete anyway')
+    expect(fs.existsSync(spare)).toBe(true)
+
+    await page.getByTestId('assets-panel').screenshot({ path: test.info().outputPath('delete-folder.png') })
+    await page.getByTestId('move-file-delete').click()
+
+    await expect.poll(() => fs.existsSync(spare)).toBe(false)
+    await expect(assetRow(page, SPARE)).toHaveCount(0, { timeout: 3_000 })
+    await expect(page.getByTestId('assets-file-menu')).toHaveCount(0)
+    // Nothing is selected any more.
+    await expect(page.getByTestId('inspector-note')).toContainText('Select a file or folder')
+    // Ctrl-Z does not bring a folder back: files are not on the undo stack.
+    await page.keyboard.press('ControlOrMeta+z')
+    expect(fs.existsSync(spare)).toBe(false)
+  } finally {
+    fs.rmSync(spare, { recursive: true, force: true })
+  }
 })
 
 // --- making one here --------------------------------------------------------

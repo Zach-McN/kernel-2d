@@ -8,8 +8,8 @@ It is kept current by the definition of done in `CLAUDE.md`: a session that
 changes what you can do, or how you do it, changes this page in the same commit.
 If this page and the editor disagree, the editor is right and the page is a bug.
 
-Last true as of: **several files can be selected in the Assets panel and
-deleted together** (2026-08-15).
+Last true as of: **a folder can be deleted from the Assets panel, with
+everything in it, after a sentence saying how much that is** (2026-08-15).
 
 ---
 
@@ -289,8 +289,7 @@ a line showing exactly where it is about to end up. Type a new name and press
 way, and the button says which one it will be.
 
 `Esc` closes the menu, and so does pressing anywhere else or selecting another
-file. A folder gets the same menu without **Delete** — deleting one, with
-everything inside it, is still a job for Explorer.
+file. A folder gets the same menu, with **Delete folder** in place of Delete.
 
 **Everything that pointed at it follows.** Every level and prefab that drew that
 picture keeps drawing it, every level that placed that prefab keeps placing it,
@@ -332,6 +331,15 @@ something:
 - a level, prefab or settings file it cannot read, which would mean it could not
   follow that file's references — nothing is moved at all until you fix it;
 - `project.json`, which is the name an export looks for.
+
+**Delete folder** works the same way, one level up: the first press says how
+many files the folder holds and how many of them something in the project still
+uses ("spare holds 3 files. Nothing else in the project uses any of them"), and
+the second press removes the folder and everything inside it. Settings files are
+counted as part of their picture, not separately. It refuses the project folder
+itself, and it refuses a folder that is really a link to somewhere else — the
+editor never looks through links, so it will not delete through one either.
+The panel updates when the folder is actually gone, not before.
 
 **Ctrl-Z does not cover any of this**, deliberately. It reverses changes *inside*
 files; it has never made or unmade one.
@@ -1129,8 +1137,6 @@ the editor takes the change.
   input map, no window size.
 - **A desktop or double-clickable build.** Web only, and served.
 - **A small export.** Nothing is minified, packed or turned into an atlas.
-- **Delete a folder.** It can be renamed and moved from the editor; getting rid of
-  one, with everything inside it, is still a job for Explorer.
 - **Rename or delete `project.json`.** It is the name an export looks for, and
   nothing in the editor will make another one.
 - **Take a rename back with Ctrl-Z.** Rename it back instead; the references

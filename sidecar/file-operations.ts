@@ -233,13 +233,28 @@ export async function moveFile(
 }
 
 /**
- * Deletes one file the editor names, and the `.meta` beside it.
+ * Deletes one file the editor names and the `.meta` beside it — or one folder
+ * the editor names and everything under it.
  *
- * One file, never a folder. "Delete this file" is a sentence that fits in the
- * privilege above and that a human can hold in their head; "delete this folder
- * and everything under it" is a blast radius, and the question the editor asks
- * before deleting — what still uses this? — stops having a short answer when the
- * answer is about a hundred files.
+ * The folder half was refused for two days, and the reason it was refused is
+ * worth keeping beside the reason it is not any more. "Delete this folder and
+ * everything under it" is a blast radius, and the question the editor asks
+ * before deleting — what still uses this? — seemed to stop having a short
+ * answer at a hundred files. It has one now: the editor reads the project first
+ * and says how many files are inside and how many of them something still
+ * points at, and a human who has read that sentence and pressed again has
+ * asked for exactly this. What made the widening safe is the guards, not the
+ * count: a **link is refused** (looked at with `lstat`, because `stat` follows
+ * a junction and calls it a folder — and this service does not look through
+ * links, anywhere), and the **project folder itself is refused**. Both stay
+ * inside the privilege's one sentence: the editor names a path and one thing
+ * happens to it.
+ *
+ * Every path under the folder is held for the length of the request before the
+ * removal starts, so the rule that writes fresh settings when a sidecar is
+ * deleted out from under its file cannot fire mid-removal — the same guard the
+ * single-file case has, over many. What is *not* done is anything to the
+ * panel: the watcher's own events for the removal are what refresh it.
  */
 export async function deleteFile(projectPath: string, requestedPath: string): Promise<FileChange> {
   const resolved = resolveInsideProject(projectPath, requestedPath)
@@ -249,14 +264,20 @@ export async function deleteFile(projectPath: string, requestedPath: string): Pr
 
   let target
   try {
-    target = await fs.stat(resolved.absolute)
+    // `lstat`, not `stat`: a junction is a folder to `stat` and a link to
+    // `lstat`, and the difference is the whole of the refusal below.
+    target = await fs.lstat(resolved.absolute)
   } catch {
     throw new BadPathError(`There is nothing at ${shownPath} to delete.`)
   }
 
-  if (target.isDirectory()) {
-    throw new BadPathError(`${shownPath} is a folder, and this editor deletes one file at a time.`)
+  if (target.isSymbolicLink()) {
+    throw new BadPathError(
+      `${shownPath} is a link to somewhere else, and this editor does not look through links. Remove it in Explorer if it should go.`,
+    )
   }
+
+  if (target.isDirectory()) return deleteFolder(projectPath, resolved.absolute, shownPath)
 
   // Deleting a sidecar whose file is still there is how a human says "start
   // these settings over", and this service answers that by writing fresh ones
@@ -295,6 +316,47 @@ export async function deleteFile(projectPath: string, requestedPath: string): Pr
     isDirectory: false,
     settings: hasSettings ? relativePosixPath(projectPath, settings) : null,
   }
+}
+
+/**
+ * The folder half of `deleteFile`. The root is refused; everything under the
+ * folder is held, then the folder is removed in one call.
+ */
+async function deleteFolder(projectPath: string, absolute: string, shownPath: string): Promise<FileChange> {
+  if (path.resolve(absolute) === path.resolve(projectPath)) {
+    throw new BadPathError('The project folder itself cannot be deleted from inside the editor.')
+  }
+
+  const release = hold([absolute, ...(await everythingUnder(absolute))])
+  try {
+    await fs.rm(absolute, { recursive: true, force: false })
+  } finally {
+    release()
+  }
+
+  return {
+    format: FILE_CHANGE_FORMAT,
+    version: FILE_CHANGE_VERSION,
+    kind: 'deleted',
+    path: shownPath,
+    to: null,
+    isDirectory: true,
+    settings: null,
+  }
+}
+
+/** Every file and folder under a folder, absolute, at any depth. Links are listed but never entered. */
+async function everythingUnder(folder: string): Promise<string[]> {
+  const found: string[] = []
+  const walk = async (dir: string): Promise<void> => {
+    for (const entry of await fs.readdir(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name)
+      found.push(full)
+      if (entry.isDirectory() && !entry.isSymbolicLink()) await walk(full)
+    }
+  }
+  await walk(folder)
+  return found
 }
 
 /** Whether `candidate` is the folder `parent` itself or anything under it. */

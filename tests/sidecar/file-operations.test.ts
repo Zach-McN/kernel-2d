@@ -210,13 +210,32 @@ describe('a move it refuses, leaving both ends exactly as they were', () => {
 })
 
 describe('a delete it refuses', () => {
-  it('refuses a folder, whatever is in it', async () => {
-    await withServer(async ({ remove, refusal, exists }) => {
-      const response = await remove('assets/textures')
+  it('refuses the project folder itself, however it is spelled', async () => {
+    await withServer(async ({ remove, exists }) => {
+      for (const spelling of ['', '.', './', '/']) {
+        const response = await remove(spelling)
+        expect(response.status, spelling).toBe(400)
+      }
+      expect(exists('assets/textures/knight.png')).toBe(true)
+      expect(exists('scenes/level-01.json')).toBe(true)
+    })
+  })
+
+  /**
+   * Links are opaque to this service everywhere (`editor-kernel` D29): a
+   * junction is a folder to `stat` and a link to `lstat`, and deleting through
+   * it would reach whatever it points at.
+   */
+  it('refuses a link, and leaves what it points at exactly as it was', async () => {
+    await withServer(async ({ project, remove, refusal, exists }) => {
+      await fs.symlink(project.file('assets/textures'), project.file('assets/linked'), 'junction')
+
+      const response = await remove('assets/linked')
 
       expect(response.status).toBe(400)
-      expect(await refusal(response)).toContain('one file at a time')
+      expect(await refusal(response)).toContain('link')
       expect(exists('assets/textures/knight.png')).toBe(true)
+      expect(exists('assets/linked')).toBe(true)
     })
   })
 
@@ -337,6 +356,50 @@ describe('moving a file, which is the whole point of the feature', () => {
         isDirectory: false,
         settings: 'assets/textures/knight.png.meta',
       })
+    })
+  })
+})
+
+describe('deleting a folder', () => {
+  it('removes the folder and everything under it, sidecars and subfolders included', async () => {
+    await withServer(async ({ remove, exists }) => {
+      expect(exists('assets/textures/knight.png.meta')).toBe(true)
+
+      const response = await remove('assets')
+      expect(response.status).toBe(200)
+      const change = await changeFrom(response)
+      expect(change).toMatchObject({ kind: 'deleted', path: 'assets', isDirectory: true, settings: null })
+
+      expect(exists('assets')).toBe(false)
+      expect(exists('assets/textures/knight.png')).toBe(false)
+      expect(exists('assets/textures/knight.png.meta')).toBe(false)
+      expect(exists('assets/audio/jump.wav')).toBe(false)
+      // Its neighbour is untouched.
+      expect(exists('scenes/level-01.json')).toBe(true)
+    })
+  })
+
+  /**
+   * The rule that writes fresh settings when a sidecar is deleted out from
+   * under its file must not fire mid-removal — every path under the folder is
+   * held first. Observable as: nothing is left behind, and nothing reappears.
+   */
+  it('leaves nothing behind once the folder is gone, and nothing comes back', async () => {
+    await withServer(async ({ remove, exists }) => {
+      const response = await remove('assets/textures')
+      expect(response.status).toBe(200)
+      expect(exists('assets/textures')).toBe(false)
+      await new Promise((resolve) => setTimeout(resolve, 600))
+      expect(exists('assets/textures')).toBe(false)
+      expect(exists('assets/textures/knight.png.meta')).toBe(false)
+    })
+  })
+
+  it('refuses a folder that is not there', async () => {
+    await withServer(async ({ remove, refusal }) => {
+      const response = await remove('assets/nowhere')
+      expect(response.status).toBe(400)
+      expect(await refusal(response)).toContain('nothing at')
     })
   })
 })

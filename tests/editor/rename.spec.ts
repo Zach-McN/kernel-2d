@@ -289,10 +289,10 @@ test('the project settings cannot be renamed out from under an export', async ({
   expect(fs.existsSync(fileIn(PROJECT_FILE))).toBe(true)
 })
 
-test('a folder offers no way to delete it, and says so', async ({ page }) => {
+test('a folder offers Delete folder, and says the folder can be renamed, moved or deleted', async ({ page }) => {
   await openFileMenu(page, UI_FOLDER)
 
-  await expect(remove(page)).toHaveCount(0)
+  await expect(remove(page)).toHaveText('Delete folder')
   await expect(page.getByTestId('move-file-folder-note')).toContainText('renamed or moved')
 })
 
