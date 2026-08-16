@@ -1,6 +1,13 @@
+import { describedReferencesOf, type ComponentDescription } from '../../runtime/formats/component-schema'
 import { PREFAB_FORMAT } from '../../runtime/formats/prefab-schema'
 import { PROJECT_FORMAT } from '../../runtime/formats/project-schema'
-import { COMPONENT_REFERENCE_FIELDS, SCENE_FORMAT, assetRefsOf } from '../../runtime/formats/scene-schema'
+import {
+  COMPONENT_REFERENCE_FIELDS,
+  SCENE_FORMAT,
+  assetRefsOf,
+  isKnownComponentType,
+  type ComponentHolder,
+} from '../../runtime/formats/scene-schema'
 import type { EditorDocument } from '../../sidecar/document-view-schema'
 import type { ProjectTree, TreeNode } from '../../sidecar/tree-schema'
 import { couldBeDocument } from './asset-kinds'
@@ -14,12 +21,17 @@ import { couldBeDocument } from './asset-kinds'
  * is why they are separate functions over the same rule rather than one function
  * that both reports and rewrites.
  *
- * **Where a reference lives is not decided here.** It is
- * `COMPONENT_REFERENCE_FIELDS` in the scene format, beside the registry that says
- * what a component is, so a genre layer whose component points at a file gets
- * this for free (`text-formats` T12's registry, one use further on). What this
- * file owns is the *document* level: a scene's entities, a prefab's own
- * components, and the one field in the project settings that names a level.
+ * **Where a reference lives is not decided here.** For the components the kernel
+ * owns it is `COMPONENT_REFERENCE_FIELDS` in the scene format, beside the
+ * registry that says what a component is, so a genre layer whose component
+ * points at a file gets this for free (`text-formats` T12's registry, one use
+ * further on). For the components a *game* describes it is the description
+ * itself, asked through `describedReferencesOf` — the same fact stated by the
+ * other format. So the callers hand in the project's descriptions, and a
+ * described `asset` or `scene` field is counted and rewritten exactly as a
+ * sprite's texture is. What this file owns is the *document* level: a scene's
+ * entities, a prefab's own components, and the one field in the project
+ * settings that names a level.
  *
  * Three things that are easy to get wrong and are settled here once.
  *
@@ -76,6 +88,9 @@ export function documentPathsIn(tree: ProjectTree): string[] {
   return found
 }
 
+/** The game's own component descriptions, by type — what says where a described reference is. */
+export type Described = Readonly<Record<string, ComponentDescription>>
+
 /**
  * How many times this document points at that file, or at anything under it.
  *
@@ -83,26 +98,62 @@ export function documentPathsIn(tree: ProjectTree): string[] {
  * times" are both worth saying before something is deleted, and the second
  * cannot be recovered from the first.
  */
-export function usesOf(document: EditorDocument, target: string): number {
+export function usesOf(document: EditorDocument, target: string, described: Described = {}): number {
   if (document.format === PROJECT_FORMAT) {
     return document.startupScene !== null && pointsAt(document.startupScene, target) ? 1 : 0
   }
 
-  if (document.format === PREFAB_FORMAT) return countIn(assetRefsOf(document), target)
+  if (document.format === PREFAB_FORMAT) return usesIn(document, target, described)
 
   if (document.format === SCENE_FORMAT) {
     // The level's own music, plus every reference its entities carry.
     const music = document.music !== undefined && pointsAt(document.music.path, target) ? 1 : 0
-    return (
-      music + document.entities.reduce((total, entity) => total + countIn(assetRefsOf(entity), target), 0)
-    )
+    return music + document.entities.reduce((total, entity) => total + usesIn(entity, target, described), 0)
   }
 
   return 0
 }
 
+/** The kernel's own references on one component map, plus the described ones. */
+function usesIn(holder: ComponentHolder, target: string, described: Described): number {
+  return countIn(assetRefsOf(holder), target) + countIn(describedPathsOf(holder, described), target)
+}
+
 function countIn(refs: readonly { path: string }[], target: string): number {
   return refs.filter((ref) => pointsAt(ref.path, target)).length
+}
+
+/**
+ * Every path a described component on this map holds: an asset field's `path`,
+ * a scene field's string. Read raw off the map, exactly as `assetRefsOf` reads
+ * the kernel's, and anything at a described field that is not the shape the
+ * description promised is skipped — this answers "what does this point at", and
+ * a value the panel would show as wrong points at nothing.
+ */
+function describedPathsOf(holder: ComponentHolder, described: Described): { path: string }[] {
+  const found: { path: string }[] = []
+  for (const [type, description] of Object.entries(described)) {
+    // A description of a type the kernel owns changes nothing here: those
+    // references are already `COMPONENT_REFERENCE_FIELDS`' business.
+    if (isKnownComponentType(type)) continue
+    const component = holder.components[type]
+    if (component === null || typeof component !== 'object') continue
+    const held = component as Record<string, unknown>
+
+    for (const reference of describedReferencesOf(description)) {
+      const path = pathAt(held[reference.key], reference.kind)
+      if (path !== null) found.push({ path })
+    }
+  }
+  return found
+}
+
+/** The path a described reference holds, or null when it holds nothing usable. */
+function pathAt(value: unknown, kind: 'asset' | 'scene'): string | null {
+  if (kind === 'scene') return typeof value === 'string' && value.length > 0 ? value : null
+  if (value === null || typeof value !== 'object') return null
+  const path = (value as Record<string, unknown>)['path']
+  return typeof path === 'string' && path.length > 0 ? path : null
 }
 
 /**
@@ -115,7 +166,12 @@ function countIn(refs: readonly { path: string }[], target: string): number {
  * store has frozen. Nothing is rebuilt field by field, so a key a human added and
  * a component this kernel has never heard of both survive (`text-formats` T9).
  */
-export function rewriteReferences(document: EditorDocument, from: string, to: string): EditorDocument | null {
+export function rewriteReferences(
+  document: EditorDocument,
+  from: string,
+  to: string,
+  described: Described = {},
+): EditorDocument | null {
   const copy = JSON.parse(JSON.stringify(document)) as EditorDocument
 
   if (copy.format === PROJECT_FORMAT) {
@@ -126,7 +182,7 @@ export function rewriteReferences(document: EditorDocument, from: string, to: st
     return copy
   }
 
-  if (copy.format === PREFAB_FORMAT) return rewriteHolder(copy.components, from, to) ? copy : null
+  if (copy.format === PREFAB_FORMAT) return rewriteHolder(copy.components, from, to, described) ? copy : null
 
   if (copy.format === SCENE_FORMAT) {
     let changed = false
@@ -139,7 +195,7 @@ export function rewriteReferences(document: EditorDocument, from: string, to: st
       }
     }
     for (const entity of copy.entities) {
-      if (rewriteHolder(entity.components, from, to)) changed = true
+      if (rewriteHolder(entity.components, from, to, described)) changed = true
     }
     return changed ? copy : null
   }
@@ -148,7 +204,12 @@ export function rewriteReferences(document: EditorDocument, from: string, to: st
 }
 
 /** Rewrites every reference on one component map in place. True if any moved. */
-function rewriteHolder(components: Record<string, unknown>, from: string, to: string): boolean {
+function rewriteHolder(
+  components: Record<string, unknown>,
+  from: string,
+  to: string,
+  described: Described,
+): boolean {
   let changed = false
 
   for (const [type, field] of Object.entries(COMPONENT_REFERENCE_FIELDS)) {
@@ -157,19 +218,45 @@ function rewriteHolder(components: Record<string, unknown>, from: string, to: st
     const component = components[type]
     if (component === null || typeof component !== 'object') continue
 
-    const reference = (component as Record<string, unknown>)[field]
-    if (reference === null || typeof reference !== 'object') continue
+    if (rewriteAssetRef((component as Record<string, unknown>)[field], from, to)) changed = true
+  }
 
-    const held = reference as Record<string, unknown>
-    if (typeof held['path'] !== 'string') continue
+  for (const [type, description] of Object.entries(described)) {
+    if (isKnownComponentType(type)) continue
 
-    const moved = movedPath(held['path'], from, to)
-    if (moved === null) continue
+    const component = components[type]
+    if (component === null || typeof component !== 'object') continue
+    const held = component as Record<string, unknown>
 
-    // The path is the address and the id is the witness. Only the address moved.
-    held['path'] = moved
-    changed = true
+    for (const reference of describedReferencesOf(description)) {
+      if (reference.kind === 'asset') {
+        if (rewriteAssetRef(held[reference.key], from, to)) changed = true
+        continue
+      }
+      // A scene is its path alone (`text-formats` T15/T20): the whole value moves.
+      const scene = held[reference.key]
+      if (typeof scene !== 'string') continue
+      const moved = movedPath(scene, from, to)
+      if (moved === null) continue
+      held[reference.key] = moved
+      changed = true
+    }
   }
 
   return changed
+}
+
+/** Rewrites one `{ id, path }` in place if it points at what moved. True if it did. */
+function rewriteAssetRef(reference: unknown, from: string, to: string): boolean {
+  if (reference === null || typeof reference !== 'object') return false
+
+  const held = reference as Record<string, unknown>
+  if (typeof held['path'] !== 'string') return false
+
+  const moved = movedPath(held['path'], from, to)
+  if (moved === null) return false
+
+  // The path is the address and the id is the witness. Only the address moved.
+  held['path'] = moved
+  return true
 }

@@ -518,3 +518,44 @@ describe('every scene an entity names', () => {
     expect(sceneRefsOf(defaultEntity('abc123', 'Empty'))).toEqual([])
   })
 })
+
+/**
+ * The value shapes a *described* component's fields write (`component-schema.ts`),
+ * carried by a level the runtime reads: a text, a tick, a choice, a file as the
+ * `{ id, path }` pair, a level as its path, and `null` for a file or a level not
+ * chosen yet. The level format never learns what a door is; this asserts it does
+ * not have to — every shape survives the round trip byte-for-byte, and the two
+ * walks the runtime and the export rely on see the described `texture` and
+ * `scene` the same as any other.
+ */
+describe('a level carrying every kind of described value', () => {
+  const door: Entity = {
+    ...defaultEntity('d00r0001', 'Door'),
+    components: {
+      door: {
+        scene: 'scenes/level-02.json',
+        locked: false,
+        sign: 'Exit',
+        side: 'right',
+        texture: { id: 'door-id', path: 'assets/textures/door.png' },
+        sound: null,
+        delay: 0.5,
+      },
+      hatch: { scene: null, texture: null },
+    },
+  }
+
+  it('is carried through a round trip exactly, nulls included', () => {
+    const scene: Scene = { ...defaultScene(), entities: [door] }
+    expect(SceneSchema.parse(JSON.parse(serializeScene(scene)))).toEqual(scene)
+  })
+
+  it('is seen by the texture and scene walks, and a null is simply not there', () => {
+    expect(textureRefsOf(door)).toEqual([{ id: 'door-id', path: 'assets/textures/door.png' }])
+    expect(sceneRefsOf(door)).toEqual(['scenes/level-02.json'])
+  })
+
+  it('is not one of the kernel’s own components, and is not reported broken', () => {
+    expect(unknownComponentTypesOf(door)).toEqual(['door', 'hatch'])
+  })
+})

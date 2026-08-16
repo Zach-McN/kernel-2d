@@ -8,8 +8,8 @@ It is kept current by the definition of done in `CLAUDE.md`: a session that
 changes what you can do, or how you do it, changes this page in the same commit.
 If this page and the editor disagree, the editor is right and the page is a bug.
 
-Last true as of: **your game's own components get Inspector fields from a
-description in `components/`** (2026-08-15).
+Last true as of: **your game's own components get fields of every kind — text,
+a tick box, a list, a file, a level — not only numbers** (2026-08-15).
 
 ---
 
@@ -433,7 +433,7 @@ behind Play is what somebody you hand the folder gets.
 **A component your game invented gets fields in the Inspector as soon as your
 game describes it.** The description is a small JSON file in a `components/`
 folder at the top of your project — one file per component, beside `scenes/` and
-`prefabs/` — and it says what the component is called and what numbers it has.
+`prefabs/` — and it says what the component is called and what fields it has.
 The sample has one, `components/patrol.json`, describing the slime's patrol.
 
 Select the Slime and there is now a **Patrol** section: Speed, From and To, in a
@@ -441,25 +441,67 @@ row each, exactly like Position and Rotation above them. Type in them and the
 level changes; `Ctrl-Z` takes it back. They are the same kind of field as
 everything else in the panel, because that is all they are.
 
+**A field can be any of six kinds**, and each one looks like the control you
+would expect:
+
+- **A number** — a box with arrows, with whatever smallest, largest and step the
+  description gives it. Exactly the Position field.
+- **A line of text** — a box to type in. A name, a sign over a door.
+- **A tick box** — on or off.
+- **A choice** — a drop-down over a fixed list the description names, shown by
+  the words the description gives each entry (a tower's role: single, splash,
+  slow, long).
+- **A file** — a drop-down over the files in your project, optionally only the
+  pictures or only the sounds, with **Nothing** at the top to clear it. It is
+  the same reference a sprite's texture is, so **renaming or moving the file in
+  the Assets panel follows it into every level that picked it**, and deleting
+  the file warns you first that something still uses it.
+- **A level** — a drop-down over the levels in your project, with **Nothing** at
+  the top. **This is how a door is authored from a panel**: describe a door with
+  a level field, add one to an entity, and pick where it goes. Picking a file
+  that turns out not to be a level (a prefab, the settings) is refused with a
+  sentence, and the level is left as it was.
+
+Typing into a number or a text box is one press of `Ctrl-Z` for the whole run
+of keystrokes; a tick, a pick from a list, a chosen file or level is one press
+each. Everything is on disk within the second, like every other field.
+
+Two naming rules the description has to follow, and the editor refuses the file
+by name if it does not: **a level field must be called `scene`, and a picture
+field must be called `texture`.** Those are the two words the rest of the editor
+already reads — an export ships every level a `scene` names, and a level loads
+every picture a `texture` names — and neither can learn another word from a
+description. A sound field, or a file field open to any file, can be called
+anything.
+
 - **Add and Remove.** An entity that has no patrol gets an **Add patrol** button,
-  which gives it one with the starting values the description names. An entity
-  that has one gets **Remove**, which takes it out of the level entirely. Both
-  are one press of `Ctrl-Z`.
+  which gives it one with the starting values the description names — a file or
+  a level starts as Nothing. An entity that has one gets **Remove**, which takes
+  it out of the level entirely. Both are one press of `Ctrl-Z`.
 - **A prefab's is inherited.** If a placement has no patrol of its own but its
   prefab has one, the section says so. Pressing Add gives that placement its own,
   and it stops following the prefab — the same rule as Spin.
 - **The editor never rewrites what it cannot read.** If a level holds something a
-  field cannot show — a word where a number belongs, typed by hand — the field
-  shows the description's starting value and a line underneath says which one it
-  disagrees with. Nothing changes in the file until you type.
+  field cannot show — a word where a number belongs, a side that is not on the
+  list, typed by hand — that field shows exactly what the file has, with nothing
+  to type into, and a line underneath says which fields disagree and why. The
+  fields beside it still work, and using them leaves the odd value exactly as it
+  was. **Remove** and then **Add** starts that component again from the
+  description's values.
+- **A field of a kind this editor does not know is shown, not lost.** A
+  description written for a newer editor, or with a typo in a field's kind,
+  still opens: that one field is shown as the file has it with a line saying the
+  editor cannot edit it, and every other field works. Add leaves that field out,
+  since the editor cannot say what one starts as.
 - **Components nobody has described still work exactly as before.** They are
   carried through untouched and named in *Other components*, as they always
   were. Describing one is what gives it fields; not describing one costs nothing.
 
 **Select the description file itself** and the Inspector says what it read from
-it: the type, each field, and how many entities in the open level carry one. That
-is where to look when a field you expected is missing — a typo in the file shows
-up as a field the editor never mentions.
+it: the type, each field with its kind and what it starts as (a choice lists its
+entries), and how many entities in the open level carry one. That is where to
+look when a field you expected is missing or will not edit — a typo in a field's
+kind shows up there as *a kind this editor does not know*.
 
 Adding a field to a description means adding code that reads it, so the two are
 written together, by whoever is writing the game's code. The editor shows the
@@ -1026,12 +1068,6 @@ the editor takes the change.
 - **Write or edit code from inside the editor.** Your game's systems are files in
   `src/`, edited in a text editor. The editor compiles them and re-reads them when
   you press Play; it does not show them to you or let you change them.
-- **Fields for anything but numbers, and a door.** Your game's own components get
-  Inspector fields once you describe them in `components/` — but a description
-  can only say a field is a *number* so far. Text, a tick box, a list, and a
-  field that points at a file or a level are all still typed into the level file
-  by hand. **The last of those is how a door is authored**, so joining two levels
-  together is a job for the game's code and the file rather than for a panel.
 - **Write a component description in the editor.** The files in `components/` are
   written in a text editor alongside the code that reads them, for the reason
   above: a field with nothing reading it is a control that does nothing. The

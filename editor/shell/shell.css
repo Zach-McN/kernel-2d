@@ -1143,6 +1143,20 @@ body {
   flex: 1;
 }
 
+/*
+ * A tick box for a described yes-or-no. The browser's own box, sized to the
+ * line and coloured with the accent, rather than a styled button: a tick is
+ * the one control whose state everybody reads without a label.
+ */
+.control--tick {
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  margin: 1px 0;
+  accent-color: var(--shell-accent);
+  cursor: pointer;
+}
+
 .control--number {
   width: 0;
   flex: 1;

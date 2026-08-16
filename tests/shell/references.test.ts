@@ -4,6 +4,7 @@ import { PREFAB_FORMAT, PREFAB_VERSION, type Prefab } from '../../runtime/format
 import { PROJECT_FORMAT, PROJECT_VERSION, type Project } from '../../runtime/formats/project-schema'
 import { SCENE_FORMAT, SCENE_VERSION, SceneSchema, type Scene } from '../../runtime/formats/scene-schema'
 import { movedPath, rewriteReferences, usesOf } from '../../editor/shell/references'
+import { DOOR_DESCRIPTION } from '../fixtures/door-description'
 
 /**
  * The arithmetic a rename rests on: which references are about the file that
@@ -212,5 +213,75 @@ describe('rewriting a reference after a move', () => {
     rewriteReferences(scene, knight.path, 'assets/art/hero.png')
 
     expect(scene.entities[0]?.components['sprite']).toEqual({ texture: knight })
+  })
+})
+
+/**
+ * A reference held by a component the *game* described — a door's level, the
+ * picture and sound its description says it has. Where those are is a fact the
+ * description states (`describedReferencesOf`), and it is handed in rather than
+ * known here: without a description saying so, the same key in the same
+ * component is just data, and is left exactly as it is.
+ */
+describe('references held by a described component', () => {
+  const doorPicture = { id: 'door-id', path: 'assets/textures/door.png' }
+  const chime = { id: 'chime-id', path: 'assets/audio/chime.wav' }
+  const described = { [DOOR_DESCRIPTION.type]: DOOR_DESCRIPTION }
+  const door = { scene: 'scenes/level-02.json', texture: doorPicture, sound: chime, locked: false }
+
+  it('counts a described file, a described level, and a folder over either', () => {
+    const level = sceneWith({ door }, { door: { scene: 'scenes/level-02.json', texture: null, sound: null } })
+    expect(usesOf(level, 'assets/textures/door.png', described)).toBe(1)
+    expect(usesOf(level, 'assets/audio/chime.wav', described)).toBe(1)
+    expect(usesOf(level, 'scenes/level-02.json', described)).toBe(2)
+    expect(usesOf(level, 'scenes', described)).toBe(2)
+    expect(usesOf(level, 'assets', described)).toBe(2)
+  })
+
+  it('counts nothing without the description that says the key is a reference', () => {
+    const level = sceneWith({ door })
+    expect(usesOf(level, 'assets/textures/door.png')).toBe(0)
+    expect(usesOf(level, 'scenes/level-02.json')).toBe(0)
+  })
+
+  it('rewrites the file’s path and never its id, and the level’s path whole', () => {
+    const level = sceneWith({ door })
+
+    const picture = rewriteReferences(level, 'assets/textures/door.png', 'assets/art/gate.png', described) as Scene
+    expect(picture.entities[0]?.components['door']).toEqual({
+      ...door,
+      texture: { id: 'door-id', path: 'assets/art/gate.png' },
+    })
+
+    const moved = rewriteReferences(level, 'scenes/level-02.json', 'levels/second.json', described) as Scene
+    expect(moved.entities[0]?.components['door']).toEqual({ ...door, scene: 'levels/second.json' })
+
+    const folder = rewriteReferences(level, 'assets', 'stuff', described) as Scene
+    expect(folder.entities[0]?.components['door']).toEqual({
+      ...door,
+      texture: { id: 'door-id', path: 'stuff/textures/door.png' },
+      sound: { id: 'chime-id', path: 'stuff/audio/chime.wav' },
+    })
+  })
+
+  it('leaves the level alone without the description, and when nothing it describes moved', () => {
+    const level = sceneWith({ door })
+    expect(rewriteReferences(level, 'assets/textures/door.png', 'assets/art/gate.png')).toBeNull()
+    expect(rewriteReferences(level, 'assets/textures/knight.png', 'x.png', described)).toBeNull()
+  })
+
+  it('follows a described reference on a prefab as well as on an entity', () => {
+    const gate: Prefab = { ...prefab, components: { ...prefab.components, door } }
+    expect(usesOf(gate, 'scenes/level-02.json', described)).toBe(1)
+    const rewritten = rewriteReferences(gate, 'scenes/level-02.json', 'scenes/two.json', described) as Prefab
+    expect(rewritten.components['door']).toEqual({ ...door, scene: 'scenes/two.json' })
+    // And the sprite's texture, which is the kernel's, still counts alongside.
+    expect(usesOf(gate, 'assets', described)).toBe(3)
+  })
+
+  it('skips a described field holding something that is not a reference, rather than choking on it', () => {
+    const level = sceneWith({ door: { scene: 7, texture: 'assets/textures/door.png', sound: { id: 'x' } } })
+    expect(usesOf(level, 'assets/textures/door.png', described)).toBe(0)
+    expect(rewriteReferences(level, 'assets/textures/door.png', 'y.png', described)).toBeNull()
   })
 })

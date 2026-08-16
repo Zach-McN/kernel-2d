@@ -2,33 +2,43 @@ import type { ReactElement } from 'react'
 
 import {
   defaultValueFor,
+  isKnownField,
+  heldBy,
   readField,
   type ComponentDescription,
   type ComponentField,
+  type FieldValue,
+  type KnownComponentField,
 } from '../../runtime/formats/component-schema'
 import { SCENE_FORMAT, type Entity } from '../../runtime/formats/scene-schema'
+import type { ProjectTree } from '../../sidecar/tree-schema'
 import { useComponentTypes } from '../shell/component-types'
-import { editDocument } from '../store/open-documents'
-import { Note, Row, Section } from './fields'
+import { useProject } from '../shell/project-context'
+import { editDocument, sealEdits } from '../store/open-documents'
+import { AssetRefPicker } from './AssetRefPicker'
+import { Field, Note, Row, Section } from './fields'
+import { LevelPicker } from './LevelPicker'
 import { NumberField } from './NumberField'
 
 /**
  * Fields for the components this *game* invented, drawn from the game's own
  * description of them (`runtime/formats/component-schema.ts`).
  *
- * **Nothing here knows what a patrol is.** It knows how to show a number, how to
- * put one back, and how to read a file describing which numbers there are. That
- * is the whole of the feature: a game adds a noun by adding a file beside its
- * levels, and the editor grows fields for it without a line of kernel code
+ * **Nothing here knows what a patrol or a door is.** It knows how to show a
+ * number, a line of text, a tick box, a list, a file and a level, how to put
+ * each one back, and how to read a file describing which of those there are.
+ * That is the whole of the feature: a game adds a noun by adding a file beside
+ * its levels, and the editor grows fields for it without a line of kernel code
  * mentioning it. The alternative — a hand-written panel per component, the way
  * `spin` and `screen` are written next door — closes the hole for one word and
  * leaves every future word needing a session.
  *
  * **It writes through the same door as every other control**: the transaction
- * API, with a merge key per field, so a run of keystrokes is one press of Ctrl-Z
- * and nothing here knows undo exists (`editor-kernel` D7).
+ * API, with a merge key per typed field, so a run of keystrokes is one press of
+ * Ctrl-Z and nothing here knows undo exists (`editor-kernel` D7). A pick from a
+ * list, a tick and a chosen file are one step each.
  *
- * Two things it does differently from the hand-written controls, both on
+ * Three things it does differently from the hand-written controls, all on
  * purpose:
  *
  *   - **Add and Remove are buttons.** `spin` deletes itself when its rate is
@@ -40,6 +50,12 @@ import { NumberField } from './NumberField'
  *     whole component object because the kernel owns that shape. A description is
  *     a *view* of a component rather than its schema, so a key the description
  *     does not mention is a key some system reads, and spreading is what keeps it.
+ *   - **What it cannot read, it shows and leaves alone.** A value of the wrong
+ *     kind — a word where a number belongs, a side not on the list — is shown
+ *     exactly as the file has it, with no control, and a line saying why. So is
+ *     a field of a kind this editor has never heard of. The panel neither lies
+ *     about the file nor "fixes" it (`editor-ui` U10); Remove and Add are the
+ *     way back to a value it can draw.
  */
 
 export function ComponentFields({
@@ -54,6 +70,8 @@ export function ComponentFields({
   resolved: Entity
 }): ReactElement | null {
   const types = useComponentTypes()
+  const project = useProject()
+  const tree: ProjectTree | null = project.state === 'ready' ? project.tree : null
 
   // In type order rather than in folder order, so the panel does not reshuffle
   // itself when somebody renames a description file.
@@ -69,6 +87,7 @@ export function ComponentFields({
           entity={entity}
           resolved={resolved}
           description={description}
+          tree={tree}
         />
       ))}
     </>
@@ -85,11 +104,13 @@ function DescribedComponent({
   entity,
   resolved,
   description,
+  tree,
 }: {
   scenePath: string
   entity: Entity
   resolved: Entity
   description: ComponentDescription
+  tree: ProjectTree | null
 }): ReactElement {
   const type = description.type
   const carried = entity.components[type]
@@ -108,8 +129,15 @@ function DescribedComponent({
     })
   }
 
-  const write = (field: ComponentField, value: number): void => {
-    edit(description.title, `${scenePath}#${entity.id}#${type}.${field.key}`, (target) => {
+  /**
+   * One field's value into the level. Typed fields (a number, a line of text)
+   * merge, so a run of keystrokes is one undo step; everything else is a single
+   * gesture and a single step.
+   */
+  const write = (field: KnownComponentField, value: FieldValue): void => {
+    const typed = field.kind === 'number' || field.kind === 'text'
+    const merge = typed ? `${scenePath}#${entity.id}#${type}.${field.key}` : undefined
+    edit(description.title, merge, (target) => {
       const standing = target.components[type]
       // Spread rather than replace: the description names the fields it knows,
       // and a key it does not name is one this game's own system may read.
@@ -119,37 +147,36 @@ function DescribedComponent({
   }
 
   const mismatched = description.fields
+    .filter((field): field is KnownComponentField => isKnownField(field))
     .filter((field) => readField(carried, field).wrongKind)
-    .map((field) => field.label)
 
   return (
     <Section title={description.title}>
       {has &&
         description.fields.map((field) => (
-          <Row key={field.key} label={field.label}>
-            <NumberField
-              testId={`entity-component-${type}-${field.key}`}
-              title={field.title ?? `${field.label}, on this entity's ${type}`}
-              value={readField(carried, field).value}
-              {...(field.min === undefined ? {} : { min: field.min })}
-              {...(field.step === undefined ? {} : { step: field.step })}
-              onCommit={(value) => write(field, value)}
-            />
-          </Row>
+          <DescribedField
+            key={field.key}
+            type={type}
+            field={field}
+            carried={carried}
+            tree={tree}
+            onWrite={write}
+          />
         ))}
 
       {has && description.fields.length === 0 && (
         <Note>This one is carried or not carried; there is nothing to set on it.</Note>
       )}
 
-      {/* Said rather than hidden. The field shows the description's default when
-          the file holds something it cannot draw, and a default shown as though
-          it were the file's own number is the panel saying something untrue
-          (`editor-ui` U10). */}
+      {/* Said rather than hidden. A field the file disagrees with is shown as the
+          file has it and left alone, and the line underneath says why there is no
+          control (`editor-ui` U10). */}
       {mismatched.length > 0 && (
         <Note data-testid={`entity-component-${type}-mismatch`}>
-          {mismatched.join(' and ')} in this level {mismatched.length === 1 ? 'is' : 'are'} not a number, so
-          the default is shown. Typing here replaces what the file has.
+          {mismatched.length === 1
+            ? `${mismatched[0]?.label ?? ''} in this level is not a ${KIND_WORDS[mismatched[0]?.kind ?? 'number']}, so it is shown as the file has it and left alone.`
+            : `${mismatched.map((field) => field.label).join(' and ')} in this level are not what these fields can show (${mismatched.map((field) => `a ${KIND_WORDS[field.kind]}`).join(', ')}), so they are shown as the file has them and left alone.`}{' '}
+          Remove and then Add starts again from the description&apos;s values.
         </Note>
       )}
 
@@ -198,4 +225,154 @@ function DescribedComponent({
       </div>
     </Section>
   )
+}
+
+/** What each kind is called in a sentence about a value that is not one. */
+const KIND_WORDS: Record<KnownComponentField['kind'], string> = {
+  number: 'number',
+  text: 'line of text',
+  toggle: 'yes or no',
+  choice: 'choice on the list',
+  asset: 'file',
+  scene: 'level',
+}
+
+/**
+ * One field, as whichever control its kind calls for — or as a value the human
+ * reads and cannot change, when the file holds something the control cannot
+ * show or the kind is one this editor does not know.
+ */
+function DescribedField({
+  type,
+  field,
+  carried,
+  tree,
+  onWrite,
+}: {
+  type: string
+  field: ComponentField
+  carried: unknown
+  tree: ProjectTree | null
+  onWrite: (field: KnownComponentField, value: FieldValue) => void
+}): ReactElement {
+  const testId = `entity-component-${type}-${field.key}`
+  const title = field.title ?? `${field.label}, on this entity's ${type}`
+
+  if (!isKnownField(field)) {
+    return (
+      <>
+        <Field label={field.label} value={shown(heldBy(carried, field.key))} testId={testId} />
+        <Note data-testid={`${testId}-uneditable`}>
+          {field.label} is a {field.kind} field, which this editor cannot edit. It is kept exactly as it is in
+          the file.
+        </Note>
+      </>
+    )
+  }
+
+  const read = readField(carried, field)
+  if (read.wrongKind) {
+    // As the file has it, and nothing to type into: the note under the section
+    // says why.
+    return <Field label={field.label} value={shown(read.held)} testId={testId} />
+  }
+
+  switch (field.kind) {
+    case 'number':
+      return (
+        <Row label={field.label}>
+          <NumberField
+            testId={testId}
+            title={title}
+            value={readField(carried, field).value}
+            {...(field.min === undefined ? {} : { min: field.min })}
+            {...(field.max === undefined ? {} : { max: field.max })}
+            {...(field.step === undefined ? {} : { step: field.step })}
+            onCommit={(value) => onWrite(field, value)}
+          />
+        </Row>
+      )
+
+    case 'text':
+      return (
+        <Row label={field.label}>
+          <input
+            type="text"
+            className="control control--text"
+            data-testid={testId}
+            title={title}
+            value={readField(carried, field).value}
+            onBlur={sealEdits}
+            onChange={(event) => onWrite(field, event.target.value)}
+          />
+        </Row>
+      )
+
+    case 'toggle':
+      return (
+        <Row label={field.label}>
+          <input
+            type="checkbox"
+            className="control control--tick"
+            data-testid={testId}
+            title={title}
+            checked={readField(carried, field).value}
+            onChange={(event) => onWrite(field, event.target.checked)}
+          />
+        </Row>
+      )
+
+    case 'choice':
+      return (
+        <Row label={field.label}>
+          <select
+            className="control control--choice"
+            data-testid={testId}
+            title={title}
+            value={readField(carried, field).value}
+            onChange={(event) => onWrite(field, event.target.value)}
+          >
+            {field.options.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </Row>
+      )
+
+    case 'asset':
+      return (
+        <AssetRefPicker
+          label={field.label}
+          title={title}
+          value={readField(carried, field).value}
+          tree={tree}
+          of={field.of}
+          testId={testId}
+          nothing="Nothing — no file chosen"
+          onPick={(reference) => onWrite(field, reference)}
+        />
+      )
+
+    case 'scene':
+      return (
+        <LevelPicker
+          label={field.label}
+          title={title}
+          value={readField(carried, field).value}
+          tree={tree}
+          testId={testId}
+          nothing="Nothing — no level chosen"
+          onPick={(path) => onWrite(field, path)}
+        />
+      )
+  }
+}
+
+/** A value the panel can only show, as text. A file's reference reads as its path. */
+function shown(value: unknown): string {
+  if (value === undefined) return '—'
+  if (typeof value === 'string') return value
+  return JSON.stringify(value)
 }

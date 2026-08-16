@@ -7,9 +7,10 @@ import { readDocumentFromDisk, writeDocumentToDisk } from '../store/document-dis
 import { deleteFileOnDisk, moveFileOnDisk } from '../store/file-disk'
 import { adoptFromDisk, beginRead, currentSaveFailures, flushSaves } from '../store/open-documents'
 import { useAssetBrowsing } from './asset-browsing'
+import { useComponentTypes } from './component-types'
 import { useProject } from './project-context'
 import { usePlacing } from './placing'
-import { documentPathsIn, movedPath, pointsAt, rewriteReferences, usesOf } from './references'
+import { documentPathsIn, movedPath, pointsAt, rewriteReferences, usesOf, type Described } from './references'
 import { useSceneCameraMoved } from './scene-view-context'
 import { useSelection } from './selection'
 
@@ -117,6 +118,10 @@ export function useFileMoves(): FileMoves {
   const placing = usePlacing()
   const cameraMoved = useSceneCameraMoved()
   const { pathMoved } = useAssetBrowsing()
+  // The game's own descriptions say where a described component's references
+  // are, so a rename can follow a door's level or a picture a game's component
+  // picked, the same as it follows a sprite's texture (`./references.ts`).
+  const described = useComponentTypes().byType
 
   const tree = project.state === 'ready' ? project.tree : null
 
@@ -124,8 +129,8 @@ export function useFileMoves(): FileMoves {
   const { stamping, startStamping, stopStamping } = placing
 
   const findUses = useCallback(
-    async (target: string): Promise<UseReport> => plan(tree, target),
-    [tree],
+    async (target: string): Promise<UseReport> => plan(tree, target, described),
+    [tree, described],
   )
 
   const move = useCallback(
@@ -137,7 +142,7 @@ export function useFileMoves(): FileMoves {
       const settled = await settle()
       if (settled !== null) return settled
 
-      const found = await plan(tree, from)
+      const found = await plan(tree, from, described)
       if (found.unreadable.length > 0) {
         return {
           ok: false,
@@ -151,7 +156,7 @@ export function useFileMoves(): FileMoves {
         return { ok: false, problem: messageOf(error) }
       }
 
-      const failed = await rewriteAll(found.files, from, to)
+      const failed = await rewriteAll(found.files, from, to, described)
 
       // Follow it with whatever was looking at it. Not part of the document and
       // never undoable (`editor-ui` U8) — this is where the human's eye is, not
@@ -184,6 +189,7 @@ export function useFileMoves(): FileMoves {
     },
     [
       tree,
+      described,
       selectedFilePath,
       openScene,
       selectFile,
@@ -245,7 +251,7 @@ async function settle(): Promise<Outcome | null> {
 }
 
 /** Reads every document in the project and reports which of them point at a path. */
-async function plan(tree: ProjectTree | null, target: string): Promise<UseReport> {
+async function plan(tree: ProjectTree | null, target: string, described: Described): Promise<UseReport> {
   if (tree === null) return { files: [], count: 0, unreadable: [] }
 
   const found: Planned[] = []
@@ -265,7 +271,7 @@ async function plan(tree: ProjectTree | null, target: string): Promise<UseReport
       continue
     }
 
-    const uses = usesOf(read.document, target)
+    const uses = usesOf(read.document, target, described)
     if (uses > 0) found.push({ path, uses })
   }
 
@@ -286,7 +292,12 @@ async function plan(tree: ProjectTree | null, target: string): Promise<UseReport
  * file has moved, and putting the other rewrites back would break the documents
  * that are currently correct.
  */
-async function rewriteAll(paths: readonly string[], from: string, to: string): Promise<string[]> {
+async function rewriteAll(
+  paths: readonly string[],
+  from: string,
+  to: string,
+  described: Described,
+): Promise<string[]> {
   const failed: string[] = []
 
   for (const planned of paths) {
@@ -304,7 +315,7 @@ async function rewriteAll(paths: readonly string[], from: string, to: string): P
         continue
       }
 
-      const rewritten: EditorDocument | null = rewriteReferences(read.document, from, to)
+      const rewritten: EditorDocument | null = rewriteReferences(read.document, from, to, described)
       // It stopped referring to the file between the plan and now. Writing an
       // identical document would churn a file nobody changed.
       if (rewritten === null) continue

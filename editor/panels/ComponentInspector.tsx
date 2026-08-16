@@ -1,6 +1,6 @@
 import type { ReactElement } from 'react'
 
-import type { ComponentDescription } from '../../runtime/formats/component-schema'
+import { isKnownField, type ComponentDescription, type ComponentField } from '../../runtime/formats/component-schema'
 import type { Scene } from '../../runtime/formats/scene-schema'
 import { useComponentTypes } from '../shell/component-types'
 import { Field, Note, Row, Section } from './fields'
@@ -67,7 +67,7 @@ export function ComponentInspector({
           description.fields.map((field) => (
             <Row key={field.key} label={field.label}>
               <span className="inspector__value" data-testid={`component-field-${field.key}`}>
-                {field.key} — {field.kind}, {String(field.default)} by default
+                {field.key} — {describeField(field)}
               </span>
             </Row>
           ))
@@ -85,6 +85,30 @@ export function ComponentInspector({
       </Section>
     </>
   )
+}
+
+/**
+ * One field's kind and what it starts as, in a phrase. A kind this editor does
+ * not know says so — which is how a typo in `kind`, or a description written
+ * for a newer editor, is found from here rather than from a field that never
+ * appears.
+ */
+function describeField(field: ComponentField): string {
+  if (!isKnownField(field)) return `${field.kind}, a kind this editor does not know, so it is shown but cannot be edited`
+  switch (field.kind) {
+    case 'number':
+      return `number, ${field.default} by default`
+    case 'text':
+      return `text, ${field.default === '' ? 'empty' : `“${field.default}”`} by default`
+    case 'toggle':
+      return `yes or no, ${field.default ? 'yes' : 'no'} by default`
+    case 'choice':
+      return `one of ${field.options.map((option) => option.label).join(' / ')}, ${field.options.find((option) => option.value === field.default)?.label ?? field.default} by default`
+    case 'asset':
+      return `a ${field.of ?? 'file'} in the project, nothing by default`
+    case 'scene':
+      return 'a level in the project, nothing by default'
+  }
 }
 
 function capitalize(sentence: string): string {

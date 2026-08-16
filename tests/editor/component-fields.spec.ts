@@ -3,8 +3,10 @@ import path from 'node:path'
 
 import { expect, test, type Page } from '@playwright/test'
 
+import { serializeComponentDescription } from '../../runtime/formats/component-schema.js'
+import { DOOR_DESCRIPTION, DOOR_DESCRIPTION_PATH } from '../fixtures/door-description.js'
 import { restoreProjectAfterEach } from './restore-project.js'
-import { selectAsset } from './select-asset.js'
+import { openFileMenu, selectAsset } from './select-asset.js'
 import { editorTestProjectPath } from './test-project.js'
 
 /**
@@ -69,8 +71,12 @@ function patrolInFile(name: string): Record<string, unknown> | null {
   return typeof carried === 'object' && carried !== null ? (carried as Record<string, unknown>) : null
 }
 
-/** Typing a number into a generated field, the way the spin field is driven. */
+/** Typing into a generated field, the way the spin field is driven. */
 async function type(page: Page, testId: string, value: string): Promise<void> {
+  await typeInto(page, testId, value)
+}
+
+async function typeInto(page: Page, testId: string, value: string): Promise<void> {
   const field = page.getByTestId(testId)
   await field.click()
   await field.press('ControlOrMeta+a')
@@ -168,7 +174,9 @@ test('Remove takes the component out of the level, and Ctrl-Z brings it back', a
 
 // --- acceptance: the panel never says something untrue ----------------------
 
-test('a value the field cannot show is said out loud rather than shown as a default', async ({ page }) => {
+test('a value the field cannot show is shown as the file has it, with no control, and left alone', async ({
+  page,
+}) => {
   const level = JSON.parse(fs.readFileSync(levelFile(), 'utf8')) as {
     entities: Array<{ name: string; components: Record<string, Record<string, unknown>> }>
   }
@@ -178,9 +186,13 @@ test('a value the field cannot show is said out loud rather than shown as a defa
 
   await selectEntity(page, 'Slime')
 
-  await expect(page.getByTestId('entity-component-patrol-unitsPerSecond')).toHaveValue('24')
+  // The file's own word, read-only — not the description's default in a box
+  // that would write over it.
+  await expect(page.getByTestId('entity-component-patrol-unitsPerSecond')).toHaveText('fast')
   await expect(page.getByTestId('entity-component-patrol-mismatch')).toContainText('Speed')
-  // Shown, and not yet written over: a level is only changed by somebody typing.
+  // The neighbours are still controls, and using one leaves the odd value alone.
+  await type(page, 'entity-component-patrol-fromX', '150')
+  await expect.poll(() => patrolInFile('Slime')?.['fromX']).toBe(150)
   expect(patrolInFile('Slime')?.['unitsPerSecond']).toBe('fast')
 })
 
@@ -228,4 +240,224 @@ test('a picture of the generated fields', async ({ page }, testInfo) => {
   await page.getByTestId('entity-component-patrol-remove').scrollIntoViewIfNeeded()
   await expect(page.getByTestId('entity-component-patrol-unitsPerSecond')).toBeVisible()
   await page.getByTestId('inspector-panel').screenshot({ path: testInfo.outputPath('component-fields.png') })
+})
+
+// =============================================================================
+// Every field kind, on a described door — text, tick, list, file, level, and a
+// kind this editor does not know. The description is the fixture in
+// `tests/fixtures/door-description.ts`, written into the test project's
+// `components/` for each test and taken away again after (the sample project
+// itself has no door, because it has no system reading one).
+// =============================================================================
+
+const DOOR = DOOR_DESCRIPTION.type
+const HEART = 'assets/textures/ui/icon-heart.png'
+const LEVEL_TWO = 'scenes/level-02.json'
+
+test.describe('every kind of described field', () => {
+  test.beforeEach(async ({ page }) => {
+    fs.writeFileSync(
+      path.join(editorTestProjectPath(), ...DOOR_DESCRIPTION_PATH.split('/')),
+      serializeComponentDescription(DOOR_DESCRIPTION),
+    )
+    await selectEntity(page, 'Knight')
+    // The description arrives through the folder listing, within the second.
+    await expect(page.getByTestId(`entity-component-${DOOR}-add`)).toBeVisible({ timeout: WITHIN_A_SECOND + 2_000 })
+  })
+
+  /** The door one named entity carries on disk, or null. */
+  function doorInFile(name: string): Record<string, unknown> | null {
+    const level = JSON.parse(fs.readFileSync(levelFile(), 'utf8')) as {
+      entities: Array<{ name: string; components: Record<string, unknown> }>
+    }
+    const carried = level.entities.find((one) => one.name === name)?.components[DOOR]
+    return typeof carried === 'object' && carried !== null ? (carried as Record<string, unknown>) : null
+  }
+
+  const control = (page: Page, key: string) => page.getByTestId(`entity-component-${DOOR}-${key}`)
+  const type = (page: Page, key: string, value: string) => typeInto(page, `entity-component-${DOOR}-${key}`, value)
+
+  test('Add writes every kind at its starting value, null for a file and a level', async ({ page }) => {
+    await control(page, 'add').click()
+
+    await expect.poll(() => doorInFile('Knight')).toEqual({
+      scene: null,
+      locked: false,
+      sign: '',
+      side: 'right',
+      texture: null,
+      sound: null,
+      delay: 0,
+    })
+    // And each control is there, showing that value.
+    await expect(control(page, 'scene')).toHaveValue('')
+    await expect(control(page, 'locked')).not.toBeChecked()
+    await expect(control(page, 'sign')).toHaveValue('')
+    await expect(control(page, 'side')).toHaveValue('right')
+    await expect(control(page, 'texture')).toHaveValue('')
+    await expect(control(page, 'delay')).toHaveValue('0')
+  })
+
+  test('a line of text reaches the level within a second, and one Ctrl-Z takes the whole run back', async ({
+    page,
+  }) => {
+    await control(page, 'add').click()
+    await expect(control(page, 'sign')).toBeVisible()
+
+    await type(page, 'sign', 'Exit')
+    await expect.poll(() => doorInFile('Knight')?.['sign'], { timeout: WITHIN_A_SECOND + 1_000 }).toBe('Exit')
+
+    await page.keyboard.press('ControlOrMeta+z')
+    await expect(control(page, 'sign')).toHaveValue('')
+    await expect.poll(() => doorInFile('Knight')?.['sign']).toBe('')
+  })
+
+  test('a tick box writes true and false, and Ctrl-Z unticks it', async ({ page }) => {
+    await control(page, 'add').click()
+    await control(page, 'locked').check()
+    await expect.poll(() => doorInFile('Knight')?.['locked']).toBe(true)
+
+    await page.keyboard.press('ControlOrMeta+z')
+    await expect(control(page, 'locked')).not.toBeChecked()
+    await expect.poll(() => doorInFile('Knight')?.['locked']).toBe(false)
+  })
+
+  test('a choice offers the described options by their labels and writes the value', async ({ page }) => {
+    await control(page, 'add').click()
+    await expect(control(page, 'side').locator('option')).toHaveText([
+      'Left edge',
+      'Right edge',
+      'Top edge',
+      'Bottom edge',
+    ])
+
+    await control(page, 'side').selectOption('top')
+    await expect.poll(() => doorInFile('Knight')?.['side']).toBe('top')
+
+    await page.keyboard.press('ControlOrMeta+z')
+    await expect(control(page, 'side')).toHaveValue('right')
+  })
+
+  test('a file field writes the id and the path together, and Nothing puts null back', async ({ page }) => {
+    await control(page, 'add').click()
+    // Only textures are offered for a field restricted to them.
+    await expect(control(page, 'texture').locator('option', { hasText: '.wav' })).toHaveCount(0)
+
+    await control(page, 'texture').selectOption(HEART)
+    const meta = JSON.parse(fs.readFileSync(path.join(editorTestProjectPath(), `${HEART}.meta`), 'utf8')) as {
+      id: string
+    }
+    await expect.poll(() => doorInFile('Knight')?.['texture']).toEqual({ id: meta.id, path: HEART })
+
+    await control(page, 'texture').selectOption('')
+    await expect.poll(() => doorInFile('Knight')?.['texture']).toBeNull()
+
+    await page.keyboard.press('ControlOrMeta+z')
+    await expect(control(page, 'texture')).toHaveValue(HEART)
+  })
+
+  test('a level field writes the level’s path, and refuses a file that is not a level', async ({ page }) => {
+    await control(page, 'add').click()
+
+    await control(page, 'scene').selectOption(LEVEL_TWO)
+    await expect.poll(() => doorInFile('Knight')?.['scene']).toBe(LEVEL_TWO)
+
+    // A prefab is a document, so it is on the list — and the pick reads it and
+    // says no, leaving the level as it was.
+    await control(page, 'scene').selectOption('prefabs/enemy-slime.json')
+    await expect(page.getByTestId(`entity-component-${DOOR}-scene-problem`)).toContainText('not a level')
+    expect(doorInFile('Knight')?.['scene']).toBe(LEVEL_TWO)
+
+    await page.keyboard.press('ControlOrMeta+z')
+    await expect(control(page, 'scene')).toHaveValue('')
+  })
+
+  test('what was chosen is still there after a reload', async ({ page }) => {
+    await control(page, 'add').click()
+    await type(page, 'sign', 'Exit')
+    await control(page, 'locked').check()
+    await control(page, 'side').selectOption('top')
+    await control(page, 'texture').selectOption(HEART)
+    await control(page, 'scene').selectOption(LEVEL_TWO)
+    await expect.poll(() => doorInFile('Knight')?.['scene']).toBe(LEVEL_TWO)
+    await expect.poll(() => doorInFile('Knight')?.['texture']).toEqual(expect.objectContaining({ path: HEART }))
+
+    await page.reload()
+    await expect(page.getByTestId('assets-panel')).toBeVisible()
+    await selectEntity(page, 'Knight')
+
+    await expect(control(page, 'sign')).toHaveValue('Exit')
+    await expect(control(page, 'locked')).toBeChecked()
+    await expect(control(page, 'side')).toHaveValue('top')
+    await expect(control(page, 'texture')).toHaveValue(HEART)
+    await expect(control(page, 'scene')).toHaveValue(LEVEL_TWO)
+  })
+
+  test('a field of a kind this editor does not know is shown and cannot be edited', async ({ page }) => {
+    await control(page, 'add').click()
+    // Nothing was written for it — the editor cannot say what a colour starts as.
+    await expect.poll(() => doorInFile('Knight')).not.toHaveProperty('tint')
+
+    await expect(page.getByTestId(`entity-component-${DOOR}-tint-uneditable`)).toContainText('cannot edit')
+    await expect(control(page, 'tint')).toHaveText('—')
+    // And the description's own panel says the same about the kind.
+    await selectAsset(page, DOOR_DESCRIPTION_PATH)
+    await expect(page.getByTestId('component-field-tint')).toContainText('does not know')
+    await expect(page.getByTestId('component-field-side')).toContainText('Left edge / Right edge')
+  })
+
+  test('a value of the wrong kind is shown as the file has it, not editable, and never rewritten', async ({
+    page,
+  }) => {
+    const level = JSON.parse(fs.readFileSync(levelFile(), 'utf8')) as {
+      entities: Array<{ name: string; components: Record<string, unknown> }>
+    }
+    const knight = level.entities.find((one) => one.name === 'Knight')
+    if (knight !== undefined) {
+      knight.components[DOOR] = {
+        scene: null,
+        locked: 'yes',
+        sign: 'Exit',
+        side: 'middle',
+        texture: null,
+        sound: null,
+        delay: 0,
+      }
+    }
+    fs.writeFileSync(levelFile(), `${JSON.stringify(level, null, 2)}\n`)
+
+    await selectEntity(page, 'Knight')
+    await expect(control(page, 'locked')).toHaveText('yes')
+    await expect(control(page, 'side')).toHaveText('middle')
+    await expect(page.getByTestId(`entity-component-${DOOR}-mismatch`)).toContainText('Locked and Side')
+    // The good fields beside them are still controls.
+    await expect(control(page, 'sign')).toHaveValue('Exit')
+
+    // Editing a neighbour writes the level and leaves the odd values exactly as they were.
+    await type(page, 'sign', 'Way out')
+    await expect.poll(() => doorInFile('Knight')?.['sign']).toBe('Way out')
+    expect(doorInFile('Knight')?.['locked']).toBe('yes')
+    expect(doorInFile('Knight')?.['side']).toBe('middle')
+  })
+
+  test('renaming a picked file follows it into the door, id untouched', async ({ page }) => {
+    await control(page, 'add').click()
+    await control(page, 'texture').selectOption(HEART)
+    await expect.poll(() => doorInFile('Knight')?.['texture']).toEqual(expect.objectContaining({ path: HEART }))
+    const before = doorInFile('Knight')?.['texture'] as { id: string; path: string }
+
+    await openFileMenu(page, HEART)
+    await page.getByTestId('move-file-name').fill('icon-life.png')
+    await page.getByTestId('move-file-apply').click()
+
+    const renamed = 'assets/textures/ui/icon-life.png'
+    await expect.poll(() => doorInFile('Knight')?.['texture']).toEqual({ id: before.id, path: renamed })
+  })
+
+  test('a picture of every kind of field', async ({ page }, testInfo) => {
+    await control(page, 'add').click()
+    await control(page, 'remove').scrollIntoViewIfNeeded()
+    await expect(control(page, 'scene')).toBeVisible()
+    await page.getByTestId('inspector-panel').screenshot({ path: testInfo.outputPath('component-fields-kinds.png') })
+  })
 })
