@@ -81,7 +81,21 @@ export function InspectorPanel(): ReactElement {
     return <Empty>Select a file or folder in the Assets panel to see what it holds.</Empty>
   }
 
-  return <FileInspector path={selection.selected.path} />
+  // Several files: say how many, and describe none of them. Any one file's
+  // settings shown here would be a panel claiming to be about a selection it
+  // is not, and the way to edit one is to select one.
+  const { paths } = selection.selected
+  const one = paths.length === 1 ? paths[0] : undefined
+  if (one === undefined) {
+    return (
+      <Empty>
+        <span data-testid="inspector-many-files" data-inspecting-count={paths.length}>
+          {paths.length} files selected — pick one to edit its settings.
+        </span>
+      </Empty>
+    )
+  }
+  return <FileInspector path={one} />
 }
 
 // --- an entity -------------------------------------------------------------

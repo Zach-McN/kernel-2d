@@ -4,11 +4,11 @@ import { formatBytes } from '../../sidecar/bytes'
 import type { ProjectTree } from '../../sidecar/tree-schema'
 import { showsGrid, showsTree, useAssetBrowsing } from '../shell/asset-browsing'
 import { basename, findNode, folderPathsIn, parentOf } from '../shell/asset-kinds'
-import { assetRowsFor, type AssetRow } from '../shell/asset-rows'
+import { assetRowsFor, fileRangeBetween, visibleTreeRows, type AssetRow } from '../shell/asset-rows'
 import { spotIn, type Room, type Spot } from '../shell/floating'
 import { useProject } from '../shell/project-context'
 import { pointsAt } from '../shell/references'
-import { useSelection } from '../shell/selection'
+import { useSelection, type Selection } from '../shell/selection'
 import { NOT_DRAGGABLE, useAssetDrag, type AssetDragProps } from '../shell/useAssetDrag'
 import { useFileMoves, type Outcome, type UseReport } from '../shell/useFileMoves'
 import { useFolderHistoryButtons } from '../shell/useFolderHistoryButtons'
@@ -72,6 +72,16 @@ import { SplitHandle } from './SplitHandle'
  *
  * The sentence stays because a gesture nobody is told about is a gesture nobody
  * uses, and there is nowhere else on screen that could name a right-click.
+ *
+ * **Several files select the way several entities do** (`selection.tsx`): a
+ * plain click replaces, Ctrl-click adds or takes away, Shift-click selects the
+ * rows between the last click and this one *as the clicked view shows them* —
+ * the tree's open rows or the grid's folder — and folders always select alone.
+ * What the plural buys is one verb: Delete, over all of them, with the sentence
+ * naming how many. Rename and Move stay one file at a time and say so; the
+ * Inspector says how many are selected rather than describing one of them; and
+ * a drag still carries the row it started on. Nothing else in the panel had to
+ * learn the plural, because `selectedFilePath` is null when several are.
  */
 export function AssetsPanel(): ReactElement {
   const project = useProject()
@@ -116,17 +126,58 @@ export function AssetsPanel(): ReactElement {
    * which is why a successful rename needs no closing code of its own.
    */
   const tree = project.state === 'ready' ? project.tree : null
-  const selectedPath = selection.selectedFilePath
+  const selectedFiles = selection.selectedFiles
   useEffect(() => {
     setMenu((was) => {
       if (was?.kind !== 'file') return was
-      if (was.path !== selectedPath) return null
+      if (!selectedFiles.includes(was.path)) return null
       return tree === null || findNode(tree, was.path) === null ? null : was
     })
-  }, [tree, selectedPath])
+  }, [tree, selectedFiles])
+
+  // The listing changed under a group: files that have gone leave it. A single
+  // selected file that has gone stays, so the Inspector can say so.
+  useEffect(() => {
+    if (tree === null) return
+    selection.dropMissingFiles((path) => findNode(tree, path) !== null)
+    // `selection` is a fresh object every render; what this reacts to is the tree.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tree])
 
   const reveal = (path: string): void => {
     browsing.revealParents(path)
+    selection.selectFile(path)
+  }
+
+  /**
+   * A click on a row or a tile, with whatever keys were held, in one of the two
+   * views. The range a Shift-click selects is measured over the rows *that view*
+   * shows, top to bottom — which is why the view is named rather than guessed.
+   */
+  const clickFile = (path: string, isFolder: boolean, keys: ClickKeys, view: 'tree' | 'grid'): void => {
+    if (tree === null) return
+    if (keys.shift && !isFolder && selection.selected.kind === 'file') {
+      // The grid stands in one folder and shows its rows; the tree shows its
+      // open rows. The same reading each view itself does.
+      const gridNode = browsing.folder === '' ? tree.tree : findNode(tree, browsing.folder)
+      const rows =
+        view === 'tree'
+          ? visibleTreeRows(tree.tree.children, browsing.expanded)
+          : gridNode !== null && gridNode.kind === 'directory'
+            ? assetRowsFor(gridNode.children)
+            : []
+      const range = fileRangeBetween(rows, selection.selected.anchor, path)
+      // An anchor that is not on screen in this view — the other pane, a closed
+      // folder — leaves nothing to measure from, so this is a plain click.
+      if (range.length > 0) {
+        selection.selectFileRange(range)
+        return
+      }
+    }
+    if (keys.ctrl) {
+      selection.toggleFile(path, isFolder)
+      return
+    }
     selection.selectFile(path)
   }
 
@@ -168,8 +219,10 @@ export function AssetsPanel(): ReactElement {
     }
 
     // Selected as well as asked about, so the row, the Inspector and this menu
-    // all describe one file — what the entity window's right-click does.
-    selection.selectFile(path)
+    // all describe one file — what the entity window's right-click does. A
+    // press on a file already in a group keeps the group: the menu is then
+    // about all of them.
+    if (!selection.selectedFiles.includes(path)) selection.selectFile(path)
     setMenu({ kind: 'file', path, at: spotFor(event, FILE_MENU_ROOM) })
   }
 
@@ -196,8 +249,10 @@ export function AssetsPanel(): ReactElement {
     showsGrid(browsing.view) ? browsing.folder : null,
   )
   // The file the file-menu is about, or null. Null is also how it closes when
-  // its file has gone: there is nothing to draw.
+  // its file has gone: there is nothing to draw. When several are selected the
+  // menu is about all of them, and the pressed one is where it sits.
   const subject = menu?.kind === 'file' ? findNode(shown, menu.path) : null
+  const subjects = subject === null ? [] : selectedFiles.length > 1 ? selectedFiles : [subject.path]
 
   return (
     <div
@@ -250,9 +305,11 @@ export function AssetsPanel(): ReactElement {
                   row={row}
                   depth={0}
                   expanded={browsing.expanded}
-                  selected={selection.selectedFilePath}
+                  selected={selectedFiles}
                   onToggle={browsing.toggleFolder}
-                  onSelect={selection.selectFile}
+                  onSelect={(path, isFolder, keys) => {
+                    clickFile(path, isFolder, keys, 'tree')
+                  }}
                   // Picking a folder in the tree is what sends the grid into it,
                   // which is the whole of what the split view is for. Harmless
                   // in the tree-only view, where no grid is listening.
@@ -272,7 +329,12 @@ export function AssetsPanel(): ReactElement {
 
         {showsGrid(browsing.view) && (
           <div className="assets__pane assets__pane--grid" data-testid="assets-icons">
-            <AssetGrid tree={shown} />
+            <AssetGrid
+              tree={shown}
+              onSelect={(path, isFolder, keys) => {
+                clickFile(path, isFolder, keys, 'grid')
+              }}
+            />
           </div>
         )}
       </div>
@@ -296,13 +358,14 @@ export function AssetsPanel(): ReactElement {
           role="menu"
           data-testid="assets-file-menu"
           data-file={subject.path}
+          data-file-count={subjects.length}
           style={menu.at}
           ref={dismissMenu.box}
           onKeyDown={dismissMenu.onKeyDown}
         >
           <header className="entity-popover__bar">
-            <span className="entity-popover__name" title={subject.path}>
-              {subject.name}
+            <span className="entity-popover__name" title={subjects.join('\n')} data-testid="assets-file-menu-name">
+              {subjects.length > 1 ? `${subjects.length} files` : subject.name}
             </span>
             <button
               type="button"
@@ -322,7 +385,11 @@ export function AssetsPanel(): ReactElement {
               control over rather than leaving somebody else's typed name,
               refusal or half-pressed Delete under it (`editor-ui` UG5, answered
               by remounting rather than by comparing). */}
-          <MoveOrDelete key={subject.path} path={subject.path} tree={shown} onMoved={reveal} />
+          {subjects.length > 1 ? (
+            <DeleteMany key={subjects.join('\n')} paths={subjects} selection={selection} />
+          ) : (
+            <MoveOrDelete key={subject.path} path={subject.path} tree={shown} onMoved={reveal} />
+          )}
 
           {/* The third thing a hand wants here, and it is the *other* menu: a
               press hands over to the make-a-file card at the same spot, which
@@ -642,13 +709,110 @@ function describeUses(report: UseReport, name: string): string {
   )
 }
 
+/**
+ * The one verb several files share: Delete, over all of them.
+ *
+ * Rename and Move are deliberately one file at a time here — moving a group is
+ * a different card (a destination and nothing else) and has not been asked for
+ * — so the row says so rather than offering a name field that could only mean
+ * one of them. Delete keeps U29's shape: the first press reads the project and
+ * says how many of the files something still points at, the second press does
+ * it, file by file, and names any that would not go. Nothing here is undoable,
+ * exactly as one file's delete is not.
+ */
+function DeleteMany({ paths, selection }: { paths: readonly string[]; selection: Selection }): ReactElement {
+  const { findUses, remove } = useFileMoves()
+  const [uses, setUses] = useState<{ used: string[]; unreadable: string[] } | null>(null)
+  const [problem, setProblem] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  const onDelete = (): void => {
+    if (busy) return
+    setBusy(true)
+    setProblem(null)
+
+    const step =
+      uses === null
+        ? Promise.all(paths.map((path) => findUses(path))).then((reports) => {
+            const used = paths.filter((_, at) => (reports[at]?.count ?? 0) > 0)
+            const unreadable = [...new Set(reports.flatMap((report) => report.unreadable))]
+            setUses({ used, unreadable })
+          })
+        : (async () => {
+            const failed: string[] = []
+            for (const path of paths) {
+              const outcome = await remove(path)
+              if (!outcome.ok) failed.push(`${basename(path)} — ${outcome.problem}`)
+            }
+            if (failed.length > 0) setProblem(`Some could not be deleted: ${failed.join('; ')}`)
+            else selection.selectNothing()
+            setUses(null)
+          })()
+
+    void step.finally(() => {
+      setBusy(false)
+    })
+  }
+
+  return (
+    <div className="assets__move" data-testid="move-file">
+      <p className="assets__new-path" data-testid="move-file-single-only">
+        Rename and Move work on one file at a time — select one to rename or move it.
+      </p>
+      <div className="assets__new-row">
+        <button
+          type="button"
+          className="control control--action"
+          data-testid="move-file-delete"
+          disabled={busy}
+          onClick={onDelete}
+        >
+          {uses === null ? `Delete ${paths.length} files` : `Delete all ${paths.length} anyway`}
+        </button>
+      </div>
+
+      {uses !== null && (
+        <p className="assets__move-uses" data-testid="move-file-uses">
+          {describeManyUses(paths.length, uses)}
+        </p>
+      )}
+
+      {problem !== null && (
+        <p className="assets__new-problem" data-testid="move-file-problem">
+          {problem}
+        </p>
+      )}
+    </div>
+  )
+}
+
+/** What deleting several is about to cost, said before it happens. */
+function describeManyUses(total: number, uses: { used: string[]; unreadable: string[] }): string {
+  const incomplete =
+    uses.unreadable.length === 0 ? '' : ` ${uses.unreadable.join(', ')} could not be read, so there may be more.`
+  if (uses.used.length === 0) {
+    return `Nothing else in the project uses these ${total} files. Press Delete again to remove all ${total}.${incomplete}`
+  }
+  const which = uses.used.map(basename).join(', ')
+  return (
+    `${uses.used.length} of the ${total} ${uses.used.length === 1 ? 'is' : 'are'} still used somewhere in the project (${which}). ` +
+    `Deleting them leaves those places pointing at nothing. Press Delete again to remove all ${total} anyway.${incomplete}`
+  )
+}
+
+/** Which keys a click held. */
+export interface ClickKeys {
+  ctrl: boolean
+  shift: boolean
+}
+
 interface AssetNodeProps {
   row: AssetRow
   depth: number
   expanded: ReadonlySet<string>
-  selected: string | null
+  selected: readonly string[]
   onToggle: (path: string) => void
-  onSelect: (path: string) => void
+  onSelect: (path: string, isFolder: boolean, keys: ClickKeys) => void
   onOpenFolder: (path: string) => void
   /** What makes a file draggable. Asked per row, and never for a folder. */
   dragProps: (path: string) => AssetDragProps
@@ -677,11 +841,11 @@ function AssetNode({
         {...(isFolder ? NOT_DRAGGABLE : dragProps(node.path))}
         data-asset-path={node.path}
         data-kind={node.kind}
-        data-selected={selected === node.path}
+        data-selected={selected.includes(node.path)}
         data-has-settings={row.hasSettings}
         data-orphaned-settings={row.isOrphanedSettings}
-        onClick={() => {
-          onSelect(node.path)
+        onClick={(event) => {
+          onSelect(node.path, isFolder, { ctrl: event.ctrlKey || event.metaKey, shift: event.shiftKey })
           if (!isFolder) return
           onToggle(node.path)
           onOpenFolder(node.path)

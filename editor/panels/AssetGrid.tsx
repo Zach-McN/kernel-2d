@@ -9,6 +9,7 @@ import { useSelection } from '../shell/selection'
 import { THUMBNAIL_BOX, thumbnailKeyFor, thumbnailStepFor } from '../shell/thumbnail'
 import { ThumbnailPicture, useThumbnail, useThumbnails } from '../shell/thumbnails'
 import { NOT_DRAGGABLE, useAssetDrag, type AssetDragProps } from '../shell/useAssetDrag'
+import type { ClickKeys } from './AssetsPanel'
 
 /**
  * One folder at a time, as tiles — the file-explorer way of looking at a project.
@@ -57,7 +58,14 @@ import { NOT_DRAGGABLE, useAssetDrag, type AssetDragProps } from '../shell/useAs
  * What is kept, and why none of it is written into the human's project folder,
  * is in `thumbnails.tsx`.
  */
-export function AssetGrid({ tree }: { tree: ProjectTree }): ReactElement {
+export function AssetGrid({
+  tree,
+  onSelect,
+}: {
+  tree: ProjectTree
+  /** A click on a tile, with its keys. What it means is the panel's decision, since a range is measured over this grid's rows. */
+  onSelect: (path: string, isFolder: boolean, keys: ClickKeys) => void
+}): ReactElement {
   const selection = useSelection()
   const { folder, openFolder, expandFolder } = useAssetBrowsing()
   const dragProps = useAssetDrag()
@@ -164,8 +172,8 @@ export function AssetGrid({ tree }: { tree: ProjectTree }): ReactElement {
           key={row.node.path}
           row={row}
           thumbKey={keys.get(row.node.path) ?? null}
-          selected={selection.selectedFilePath === row.node.path}
-          onSelect={selection.selectFile}
+          selected={selection.selectedFiles.includes(row.node.path)}
+          onSelect={onSelect}
           onEnter={(path) => {
             openFolder(path)
             expandFolder(path)
@@ -184,7 +192,7 @@ interface AssetTileProps {
   /** What identifies this tile's picture, or null when it cannot have one. */
   thumbKey: string | null
   selected: boolean
-  onSelect: (path: string) => void
+  onSelect: (path: string, isFolder: boolean, keys: ClickKeys) => void
   onEnter: (path: string) => void
   /** What makes this tile draggable — or the folder's refusal to be. */
   drag: AssetDragProps
@@ -221,8 +229,8 @@ function AssetTile({ row, thumbKey, selected, onSelect, onEnter, drag }: AssetTi
         // always available in full — and it is where a picture that could not be
         // read says so, quietly, rather than by wearing a broken-image badge.
         title={thumbnail.state === 'refused' ? `${node.name} — ${thumbnail.problem}` : node.name}
-        onClick={() => {
-          onSelect(node.path)
+        onClick={(event) => {
+          onSelect(node.path, isFolder, { ctrl: event.ctrlKey || event.metaKey, shift: event.shiftKey })
         }}
         onDoubleClick={() => {
           if (isFolder) onEnter(node.path)

@@ -62,3 +62,39 @@ export function assetRowsFor(children: readonly TreeNode[]): AssetRow[] {
 
   return rows
 }
+
+/**
+ * Every row on screen in the tree, top to bottom: a folder's children only
+ * when it is open. What a Shift-click's range is measured over — the same
+ * rows, in the same order, as the eye sees them, which is the whole reason it
+ * cannot be "every file in the project".
+ */
+export function visibleTreeRows(children: readonly TreeNode[], expanded: ReadonlySet<string>): AssetRow[] {
+  const rows: AssetRow[] = []
+  const walk = (nodes: readonly TreeNode[]): void => {
+    for (const row of assetRowsFor(nodes)) {
+      rows.push(row)
+      if (row.node.kind === 'directory' && expanded.has(row.node.path)) walk(row.node.children)
+    }
+  }
+  walk(children)
+  return rows
+}
+
+/**
+ * The files between two rows, inclusive, in the order given — the range a
+ * Shift-click selects. Folders on the way are left out (a folder is always
+ * selected alone), and either end that is a folder is a range of nothing.
+ * Empty when either end is not in the list.
+ */
+export function fileRangeBetween(rows: readonly AssetRow[], from: string, to: string): string[] {
+  const paths = rows.map((row) => row.node.path)
+  const a = paths.indexOf(from)
+  const b = paths.indexOf(to)
+  if (a < 0 || b < 0) return []
+  const [start, end] = a <= b ? [a, b] : [b, a]
+  return rows
+    .slice(start, end + 1)
+    .filter((row) => row.node.kind === 'file')
+    .map((row) => row.node.path)
+}

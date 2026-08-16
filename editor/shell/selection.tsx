@@ -51,8 +51,21 @@ import { createContext, useContext, useMemo, useState, type ReactElement, type R
 
 export type Selected =
   | { kind: 'none' }
-  /** A file or folder in the Assets panel. */
-  | { kind: 'file'; path: string }
+  /**
+   * Files in the Assets panel — one or many — or one folder.
+   *
+   * The same two invariants as the entity case, for the same reasons: **never
+   * empty**, and the list is in the order things were added. `anchor` is the
+   * last path that was plainly clicked or Ctrl-clicked — what a Shift-click
+   * measures its range from — and it need not still be in `paths`.
+   *
+   * **A folder is always alone.** The verbs that act on many are file verbs
+   * (delete, drag into a level), and a folder joining a group would be a group
+   * nothing could act on. So a folder replaces whatever was selected, and a
+   * range skips folders — this file, and the panel that builds the range, agree
+   * on that rather than each reader deciding what a mixed list means.
+   */
+  | { kind: 'file'; paths: readonly string[]; anchor: string }
   /**
    * Entities in a scene — one or many. The scene is named so this can never be
    * orphaned, and it is one scene rather than one per entity: a selection
@@ -68,7 +81,28 @@ export interface Selection {
   /** Which scene the Viewport and Outliner are showing, or null. */
   openScene: string | null
 
+  /** Replaces whatever was selected with this one file or folder. A plain click. */
   selectFile: (path: string) => void
+  /**
+   * Adds a file to the selection or takes it out — Ctrl-click. Taking the last
+   * one out lands on nothing selected. A folder cannot join: it replaces
+   * (`isFolder` says which this path is, because the selection cannot know).
+   */
+  toggleFile: (path: string, isFolder: boolean) => void
+  /**
+   * Replaces the selected files with these, keeping the anchor — Shift-click.
+   * The panel hands in the range in the order of the view that was clicked,
+   * files only, because which rows lie between two others is a fact about what
+   * is on screen and this layer cannot see the screen. An empty range selects
+   * nothing.
+   */
+  selectFileRange: (paths: readonly string[]) => void
+  /**
+   * The folder listing changed: files that are gone leave the selection. Only
+   * when several are selected — a single file that has gone stays selected so
+   * the Inspector can say it has gone, which is a sentence worth keeping.
+   */
+  dropMissingFiles: (exists: (path: string) => boolean) => void
   /** Replaces whatever was selected with this one entity. */
   selectEntity: (scene: string, entity: string) => void
   /**
@@ -97,13 +131,20 @@ export interface Selection {
   setOpenScene: (path: string | null) => void
 
   /**
-   * The selected file's path, or null when what is selected is not a file.
+   * The selected file's path when **exactly one** file or folder is selected,
+   * or null otherwise — including when several are.
    *
-   * A convenience for the panels that only ever ask about files — the Assets
-   * tree, the import settings — so the union stays in the places that need to
-   * tell the cases apart.
+   * Null for several on purpose. Every singular reader — the Inspector's file
+   * body, the Texture tab, the import settings, the level that opens when a
+   * scene is selected, the rename that follows the selection — asks this, and
+   * "the file being looked at" has no honest answer when three are; naming one
+   * of them would have the Texture tab show a picture nobody chose. So the
+   * plural readers ask `selectedFiles`, and this stays what it always was.
    */
   selectedFilePath: string | null
+
+  /** Every selected file, in the order they were added, or empty. */
+  selectedFiles: readonly string[]
 
   /**
    * Every selected entity, in the order they were added, or empty when what is
@@ -135,7 +176,38 @@ export function SelectionProvider({ children }: { children: ReactNode }): ReactE
     return {
       selected,
       openScene,
-      selectFile: (path) => setSelected({ kind: 'file', path }),
+      selectFile: (path) => setSelected({ kind: 'file', paths: [path], anchor: path }),
+
+      toggleFile: (path, isFolder) =>
+        setSelected((was) => {
+          // A folder is always alone, and a folder in the selection means it is
+          // the only thing there — so any Ctrl-click that involves one replaces.
+          if (isFolder || was.kind !== 'file') return { kind: 'file', paths: [path], anchor: path }
+          if (was.paths.includes(path)) {
+            const rest = was.paths.filter((one) => one !== path)
+            // The never-empty invariant. The anchor stays where it was: what a
+            // Shift-click measures from is the last thing *pointed at*, and
+            // taking a file out is pointing at it.
+            return rest.length === 0 ? { kind: 'none' } : { kind: 'file', paths: rest, anchor: path }
+          }
+          return { kind: 'file', paths: [...was.paths, path], anchor: path }
+        }),
+
+      selectFileRange: (paths) =>
+        setSelected((was) => {
+          if (paths.length === 0) return { kind: 'none' }
+          const anchor = was.kind === 'file' ? was.anchor : (paths[0] ?? '')
+          return { kind: 'file', paths: [...paths], anchor }
+        }),
+
+      dropMissingFiles: (exists) =>
+        setSelected((was) => {
+          if (was.kind !== 'file' || was.paths.length < 2) return was
+          const kept = was.paths.filter(exists)
+          if (kept.length === was.paths.length) return was
+          return kept.length === 0 ? { kind: 'none' } : { kind: 'file', paths: kept, anchor: was.anchor }
+        }),
+
       selectEntity: (scene, entity) => setSelected({ kind: 'entity', scene, entities: [entity] }),
 
       addToSelection: (scene, entity) =>
@@ -163,7 +235,8 @@ export function SelectionProvider({ children }: { children: ReactNode }): ReactE
 
       selectNothing: () => setSelected({ kind: 'none' }),
       setOpenScene,
-      selectedFilePath: selected.kind === 'file' ? selected.path : null,
+      selectedFilePath: selected.kind === 'file' && selected.paths.length === 1 ? (selected.paths[0] ?? null) : null,
+      selectedFiles: selected.kind === 'file' ? selected.paths : [],
       selectedEntities: entities,
       selectedEntity: entities.at(-1) ?? null,
     }

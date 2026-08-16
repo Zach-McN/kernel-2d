@@ -8,8 +8,8 @@ It is kept current by the definition of done in `CLAUDE.md`: a session that
 changes what you can do, or how you do it, changes this page in the same commit.
 If this page and the editor disagree, the editor is right and the page is a bug.
 
-Last true as of: **paint by dragging — with Place by clicking on, a held drag
-stamps one copy in every grid cell it crosses, as one Ctrl-Z** (2026-08-15).
+Last true as of: **several files can be selected in the Assets panel and
+deleted together** (2026-08-15).
 
 ---
 
@@ -309,6 +309,19 @@ what still uses the file: "knight.png is still used once, in
 scenes/level-01.json". The button then becomes **Delete anyway**. It never refuses, because deleting something in order
 to replace it is a normal thing to do; it just makes sure you knew. The settings
 file goes with it, so nothing is left stranded.
+
+**Several files at once.** `Ctrl`-click adds a file to the selection or takes it
+out; `Shift`-click selects every file between the last one you clicked and this
+one, in the order the view you clicked in shows them — the tree's open rows, or
+the tiles of the folder the icon view is standing in. A plain click goes back to
+one. A folder always selects on its own. While several are selected the
+Inspector says how many ("3 files selected — pick one to edit its settings"),
+dragging one of them into the level places that one, and right-clicking any of
+them opens the menu on the whole group: **Delete 3 files** names how many of them
+something still uses, then a second press removes them all. Rename and Move work
+on one file at a time, and the menu says so instead of offering a name field for
+three. If a file in the group disappears from the folder it leaves the group;
+files arriving elsewhere change nothing.
 
 It will refuse, in a sentence naming the file, whenever doing it would damage
 something:
@@ -1131,8 +1144,6 @@ the editor takes the change.
   work on the whole selection now; Duplicate, the `↑` `↓` arrows and `F` still act
   on the last one you clicked. There is also no editing six positions in one
   field — the Inspector describes one entity at a time.
-- **Select several files in the Assets panel.** The plural is only about entities,
-  in the Outliner and in the picture. A file is still selected one at a time.
 - **Shift-click a range in the Outliner.** Shift adds the one row you clicked, not
   every row between it and the last one — because Shift has to mean the same thing
   in the picture, where there is no order to take a range along.
