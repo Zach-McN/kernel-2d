@@ -6,6 +6,7 @@ import { isServiceHandling } from './file-operations.js'
 import { formatBanner, formatEvent, formatTimestamp } from './log.js'
 import { ensureMetaFor, ensureMetaForDeletedSidecar, sweepProjectMetas } from './meta-files.js'
 import { isMetaFileName } from '../runtime/formats/meta-schema.js'
+import { messageOf } from '../runtime/message-of.js'
 import { scanProject } from './scan.js'
 import { startServer } from './server.js'
 import { startWatcher, type FileEvent } from './watcher.js'
@@ -120,7 +121,7 @@ async function keepMetasInStep(projectPath: string, event: FileEvent): Promise<v
       await ensureMetaForDeletedSidecar(absolute)
     }
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error)
+    const message = messageOf(error)
     console.error(`${formatTimestamp(Date.now())} ! settings ${event.path}: ${message}`)
   }
 }

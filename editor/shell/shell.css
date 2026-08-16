@@ -1970,30 +1970,3 @@ body {
   line-height: 1.45;
   white-space: pre-wrap;
 }
-
-/* --- empty panels ------------------------------------------------------- */
-
-.panel-placeholder {
-  padding: 14px 16px;
-  max-width: 46ch;
-}
-
-.panel-placeholder__title {
-  margin: 0 0 6px;
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-}
-
-.panel-placeholder__blurb {
-  margin: 0 0 10px;
-  color: var(--shell-text-dim);
-  line-height: 1.5;
-}
-
-.panel-placeholder__note {
-  margin: 0;
-  color: var(--shell-text-dim);
-  opacity: 0.6;
-  font-style: italic;
-}

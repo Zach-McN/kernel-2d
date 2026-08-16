@@ -29,6 +29,7 @@ import {
   type SoundCue,
   type SoundState,
 } from '../../runtime'
+import { messageOf } from '../../runtime/message-of'
 import { fitStep, stepDown, stepUp } from './zoom'
 
 /**
@@ -550,8 +551,4 @@ export function useDrawScene(
   }, [complete, api])
 
   return key !== '' && view.state === 'ready' && view.shownKey === key
-}
-
-function messageOf(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
 }

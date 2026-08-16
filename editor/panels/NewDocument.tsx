@@ -2,6 +2,7 @@ import { useState, type ReactElement } from 'react'
 
 import { defaultPrefab, type Prefab } from '../../runtime/formats/prefab-schema'
 import { defaultScene, type Scene } from '../../runtime/formats/scene-schema'
+import { messageOf } from '../../runtime/message-of'
 import type { Room } from '../shell/floating'
 import { createDocumentOnDisk } from '../store/document-disk'
 import { mintId } from '../store/ids'
@@ -67,7 +68,7 @@ export function NewDocument({
         onCreated(path)
       })
       .catch((error: unknown) => {
-        setProblem(error instanceof Error ? error.message : String(error))
+        setProblem(messageOf(error))
       })
       .finally(() => {
         setBusy(false)

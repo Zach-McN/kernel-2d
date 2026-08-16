@@ -11,6 +11,7 @@ import {
 
 import { MetaViewSchema } from '../../sidecar/meta-view-schema'
 import type { Slice } from '../../runtime/formats/meta-schema'
+import { messageOf } from '../../runtime/message-of'
 import { THUMBNAIL_BOX, thumbnailPlan } from './thumbnail'
 
 /**
@@ -223,7 +224,7 @@ function createThumbnailStore(): ThumbnailStore {
 
 /** Whatever went wrong, said in one sentence a human can act on. */
 function refusal(error: unknown): Thumbnail {
-  const detail = error instanceof Error ? error.message : String(error)
+  const detail = messageOf(error)
   return { state: 'refused', problem: detail === '' ? 'It could not be read as a picture.' : detail }
 }
 

@@ -1,5 +1,6 @@
 import { PROJECT_FORMAT, ProjectSchema } from '../formats/project-schema'
 import { runLevel, type RunningLevel } from '../game/run-level'
+import { messageOf } from '../message-of'
 import { collectKeys } from './keyboard'
 import { storyStore } from './story-store'
 import type { System } from '../game/system'
@@ -482,8 +483,4 @@ function describe(
 function availableSize(host: HTMLElement): { width: number; height: number } {
   const box = host.getBoundingClientRect()
   return { width: Math.max(1, Math.round(box.width)), height: Math.max(1, Math.round(box.height)) }
-}
-
-function messageOf(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
 }

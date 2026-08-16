@@ -6,6 +6,7 @@ import type { AssetMeta } from '../../runtime/formats/meta-schema'
 import type { Prefab } from '../../runtime/formats/prefab-schema'
 import type { Project } from '../../runtime/formats/project-schema'
 import type { Scene } from '../../runtime/formats/scene-schema'
+import { messageOf } from '../../runtime/message-of'
 
 /**
  * The transaction API: the one door every change to a document goes through,
@@ -406,7 +407,7 @@ export function createDocumentStore(options: DocumentStoreOptions): DocumentStor
   }
 
   function recordFailure(path: string, error: unknown): void {
-    const detail = error instanceof Error ? error.message : String(error)
+    const detail = messageOf(error)
     store.setState((state) => ({
       saveFailures: { ...state.saveFailures, [path]: detail },
     }))

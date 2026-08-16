@@ -1,3 +1,4 @@
+import { messageOf } from '../runtime/message-of.js'
 import { toPosixPath } from '../sidecar/paths.js'
 import { resolveExportConfig } from './export/config.js'
 import { planExport } from './export/plan.js'
@@ -89,7 +90,3 @@ console.log('')
 console.log('  A browser will not let a page opened straight off the disk read the files beside it,')
 console.log('  so the folder has to be served. Any static web host serves it as it is.')
 console.log('')
-
-function messageOf(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
-}

@@ -10,6 +10,7 @@ import {
   type Entity,
   type Scene,
 } from '../formats/scene-schema.js'
+import { messageOf } from '../message-of.js'
 import type { SceneMusic, SceneRequest, SceneTexture } from './scene-request.js'
 
 /**
@@ -418,8 +419,4 @@ function byUsefulness(a: LoadProblem, b: LoadProblem): number {
 
 function nameOf(path: string): string {
   return path.split('/').at(-1) ?? path
-}
-
-function messageOf(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
 }

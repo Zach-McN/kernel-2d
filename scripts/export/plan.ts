@@ -4,6 +4,7 @@ import path from 'node:path'
 import { metaPathFor } from '../../runtime/formats/meta-schema.js'
 import { PROJECT_FORMAT, ProjectSchema } from '../../runtime/formats/project-schema.js'
 import { prefabRefOf, sceneRefsOf } from '../../runtime/formats/scene-schema.js'
+import { messageOf } from '../../runtime/message-of.js'
 import { describeLoadProblem, loadScene, type LoadProblem } from '../../runtime/scene/load-scene.js'
 import { isIgnoredName } from '../../sidecar/ignore.js'
 import { nodeProjectReader } from './project-reader.js'
@@ -279,8 +280,4 @@ function firstIssue(issues: readonly { message: string; path: readonly PropertyK
   if (issue === undefined) return 'it did not match the format'
   const where = issue.path.length === 0 ? '' : ` at ${issue.path.map(String).join('.')}`
   return `${issue.message}${where}`
-}
-
-function messageOf(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
 }

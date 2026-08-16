@@ -12,6 +12,7 @@ import {
 
 import { createTextureView, type ShownTexture, type TextureView } from '../../runtime'
 import type { TextureImportSettings } from '../../runtime/formats/meta-schema'
+import { messageOf } from '../../runtime/message-of'
 import { fitStep, stepDown, stepUp } from './zoom'
 
 /**
@@ -254,8 +255,4 @@ export function useShowInViewport(subject: ViewportSubject | null): void {
   useEffect(() => {
     setSubject(latest.current)
   }, [key, setSubject])
-}
-
-function messageOf(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
 }

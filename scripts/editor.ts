@@ -1,3 +1,4 @@
+import { messageOf } from '../runtime/message-of.js'
 import { resolveConfig } from '../sidecar/config.js'
 import { shouldOpenBrowser } from './editor-server.js'
 import { startEditor, type RunningEditor } from './editor/start.js'
@@ -28,7 +29,7 @@ let editor: RunningEditor
 try {
   editor = await startEditor(result.config, { open: shouldOpenBrowser(process.env) })
 } catch (error) {
-  console.error(error instanceof Error ? error.message : String(error))
+  console.error(messageOf(error))
   process.exit(1)
 }
 

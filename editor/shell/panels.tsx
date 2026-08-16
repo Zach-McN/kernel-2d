@@ -13,8 +13,7 @@ import { usePlayMode } from './play-mode'
  *
  * A panel is added here and nowhere else: this file produces both the set of
  * components dockview renders and the layout they start in, so there is no
- * second list to keep in step. Panels are empty placeholders until the session
- * that builds each one replaces its component.
+ * second list to keep in step.
  */
 
 export interface PanelDefinition {
@@ -22,10 +21,10 @@ export interface PanelDefinition {
   id: string
   /** What the tab says. */
   title: string
-  /** One line telling the human what will live here. */
+  /** One line telling the human what lives here — the Windows menu shows it beside the name. */
   blurb: string
-  /** The panel itself. Panels not built yet show their blurb instead. */
-  render?: FunctionComponent
+  /** The panel itself. */
+  render: FunctionComponent
 }
 
 const VIEWPORT: PanelDefinition = {
@@ -97,10 +96,10 @@ export function spawnPanel(api: DockviewApi, id: PanelId): void {
 }
 
 export const PANEL_COMPONENTS: Record<string, FunctionComponent<IDockviewPanelProps>> = Object.fromEntries(
-  Object.values(PANELS).map((panel) => {
-    const body = panel.render ?? ((): ReactElement => <PanelPlaceholder panel={panel} />)
-    return [panel.id, panel.id === VIEWPORT.id ? body : quietWhilePlaying(body)]
-  }),
+  Object.values(PANELS).map((panel) => [
+    panel.id,
+    panel.id === VIEWPORT.id ? panel.render : quietWhilePlaying(panel.render),
+  ]),
 )
 
 /**
@@ -181,14 +180,4 @@ export function layOutPanels(api: DockviewApi): void {
   })
 
   api.getPanel(PANELS.viewport.id)?.focus()
-}
-
-function PanelPlaceholder({ panel }: { panel: PanelDefinition }): ReactElement {
-  return (
-    <section className="panel-placeholder" data-panel={panel.id}>
-      <h2 className="panel-placeholder__title">{panel.title}</h2>
-      <p className="panel-placeholder__blurb">{panel.blurb}</p>
-      <p className="panel-placeholder__note">Empty for now.</p>
-    </section>
-  )
 }

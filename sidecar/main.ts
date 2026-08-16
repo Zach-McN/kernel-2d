@@ -1,3 +1,4 @@
+import { messageOf } from '../runtime/message-of.js'
 import { resolveConfig } from './config.js'
 import { startSidecar } from './start.js'
 
@@ -18,7 +19,7 @@ let sidecar
 try {
   sidecar = await startSidecar(result.config)
 } catch (error) {
-  console.error(error instanceof Error ? error.message : String(error))
+  console.error(messageOf(error))
   process.exit(1)
 }
 

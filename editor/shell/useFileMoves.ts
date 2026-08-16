@@ -1,5 +1,6 @@
 import { useCallback } from 'react'
 
+import { messageOf } from '../../runtime/message-of'
 import type { EditorDocument } from '../../sidecar/document-view-schema'
 import type { ProjectTree } from '../../sidecar/tree-schema'
 import { readDocumentFromDisk, writeDocumentToDisk } from '../store/document-disk'
@@ -327,8 +328,4 @@ async function rewriteAll(paths: readonly string[], from: string, to: string): P
 function noteFor(failed: readonly string[], to: string): string | null {
   if (failed.length === 0) return null
   return `${to} moved, but ${failed.join(', ')} could not be updated and still points at where it was.`
-}
-
-function messageOf(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
 }

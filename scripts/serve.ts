@@ -1,6 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 
+import { messageOf } from '../runtime/message-of.js'
 import { toPosixPath } from '../sidecar/paths.js'
 import { DEFAULT_SERVE_PORT, SERVE_SCRIPT, startStaticServer } from './serve-folder.js'
 
@@ -96,6 +97,6 @@ try {
   process.on('SIGINT', () => void shutdown())
   process.on('SIGTERM', () => void shutdown())
 } catch (error) {
-  console.error(error instanceof Error ? error.message : String(error))
+  console.error(messageOf(error))
   process.exit(1)
 }

@@ -2,6 +2,7 @@ import fs from 'node:fs/promises'
 import path from 'node:path'
 
 import type { ProjectReader } from '../../runtime/scene/load-scene.js'
+import { messageOf } from '../../runtime/message-of.js'
 
 /**
  * The runtime's `ProjectReader`, over a folder on this machine.
@@ -43,8 +44,4 @@ export function nodeProjectReader(projectPath: string): ProjectReader {
 
     assetVersion: () => 1,
   }
-}
-
-function messageOf(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
 }

@@ -4,6 +4,7 @@ import type { AddressInfo } from 'node:net'
 import path from 'node:path'
 import { pipeline } from 'node:stream/promises'
 
+import { messageOf } from '../runtime/message-of.js'
 import { NotFoundError, resolveAssetBytes } from './asset-files.js'
 import { createDocumentFor, readDocumentView, writeDocumentFor } from './document-files.js'
 import { toFileEventMessage } from './event-schema.js'
@@ -179,7 +180,7 @@ async function handleRequest(
     } catch (error) {
       sendJson(response, 500, {
         error: 'Could not read the project folder',
-        detail: error instanceof Error ? error.message : String(error),
+        detail: messageOf(error),
       })
     }
     return
@@ -198,7 +199,7 @@ async function handleRequest(
       }
       sendJson(response, 500, {
         error: 'Could not read the import settings for that file',
-        detail: error instanceof Error ? error.message : String(error),
+        detail: messageOf(error),
       })
     }
     return
@@ -215,7 +216,7 @@ async function handleRequest(
       }
       sendJson(response, 500, {
         error: 'Could not read the document at that path',
-        detail: error instanceof Error ? error.message : String(error),
+        detail: messageOf(error),
       })
     }
     return
@@ -267,7 +268,7 @@ async function handleAssetRead(
     }
     sendJson(response, 500, {
       error: 'Could not read that file',
-      detail: error instanceof Error ? error.message : String(error),
+      detail: messageOf(error),
     })
     return
   }
@@ -325,7 +326,7 @@ async function handleMetaWrite(
     }
     sendJson(response, 500, {
       error: 'Could not write the import settings for that file',
-      detail: error instanceof Error ? error.message : String(error),
+      detail: messageOf(error),
     })
   }
 }
@@ -371,7 +372,7 @@ async function handleDocumentWrite(
     }
     sendJson(response, 500, {
       error: intent === 'create' ? 'Could not make a document at that path' : 'Could not write the document at that path',
-      detail: error instanceof Error ? error.message : String(error),
+      detail: messageOf(error),
     })
   }
 }
@@ -410,7 +411,7 @@ async function handleFileOperation(
     }
     sendJson(response, 500, {
       error: intent === 'move' ? 'Could not move that file' : 'Could not delete that file',
-      detail: error instanceof Error ? error.message : String(error),
+      detail: messageOf(error),
     })
   }
 }
