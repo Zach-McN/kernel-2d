@@ -111,11 +111,16 @@ export const PrefabSchema: z.ZodType<Prefab> = z
  * **The transform is never touched.** Where an instance stands is its own, which
  * is decision 2 above.
  *
- * **What the entity carries itself wins, per component type.** The editor offers
- * no way to write such an override today, but a hand-edited file has to mean
- * something, and "the one written here beats the one it inherits" is the least
- * surprising thing it can mean. It is also the shape overrides will need when
- * they arrive, so nothing has to change format to get them.
+ * **What the entity carries itself wins, per component type.** Written first
+ * for hand-edited files, which have to mean something, and "the one written
+ * here beats the one it inherits" is the least surprising thing they can mean.
+ * The editor now writes such an override on purpose — Add, on a described
+ * component a placement inherits — and because the win is *whole*, that Add
+ * copies the inherited component whole rather than writing the description's
+ * defaults: a partial override would silently drop every key the description
+ * does not name. (Named no more precisely than that on purpose: this file
+ * ships inside the game, and the export refuses a bundle that so much as
+ * mentions an editor file.)
  *
  * The result is **for drawing and describing, never for writing back**: it
  * carries a copy of the prefab's components, and saving it would bake them into

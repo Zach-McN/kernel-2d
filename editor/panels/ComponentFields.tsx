@@ -193,8 +193,8 @@ function DescribedComponent({
 
       {inherited !== undefined && (
         <Note data-testid={`entity-component-${type}-inherited`}>
-          This one has a {type} because its prefab does. Adding one here gives this placement its own, and it
-          stops following the prefab.
+          This one has a {type} because its prefab does. Adding one here gives this placement its own copy of
+          it, and it stops following the prefab.
         </Note>
       )}
 
@@ -223,10 +223,24 @@ function DescribedComponent({
             type="button"
             className="control control--action"
             data-testid={`entity-component-${type}-add`}
-            title={`Give this entity a ${type}, with the values ${description.title} starts at.`}
+            title={
+              inherited === undefined
+                ? `Give this entity a ${type}, with the values ${description.title} starts at.`
+                : `Give this placement its own ${type} — a copy of the one its prefab gives it — so it can be tuned on its own.`
+            }
             onClick={() =>
               edit(`Add ${type}`, undefined, (target) => {
-                target.components[type] = defaultValueFor(description)
+                // **A placement that inherits one gets a copy of what it inherits,
+                // whole — not the description's defaults.** "Its own" has to mean
+                // the thing it already has, or pressing Add changes the entity:
+                // an enemy inheriting `{ speed, squashed: { texture } }` from its
+                // prefab would be written as `{ speed }` alone, and the level's
+                // own reading (an entity's component wins over its prefab's, per
+                // type, whole — `prefab-schema.ts`) then loses the squashed art
+                // the description never knew about. Copied deep, so the nested
+                // keys the description cannot see come along too.
+                target.components[type] =
+                  inherited === undefined ? defaultValueFor(description) : structuredClone(inherited)
               })
             }
           >

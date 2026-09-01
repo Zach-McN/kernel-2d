@@ -160,6 +160,45 @@ test('an entity without one is offered Add, which writes the described defaults'
   await expect(page.getByTestId('entity-component-patrol-unitsPerSecond')).toHaveValue('24')
 })
 
+/**
+ * The override the prefab format always allowed and the editor now writes: a
+ * placement's own component beats its prefab's, whole. So "give this placement
+ * its own" has to copy the whole thing — an enemy inheriting a speed *and* its
+ * squashed art would otherwise be written as the speed alone, and lose the art
+ * the description never knew about.
+ */
+test('Add on a placement inheriting one copies what the prefab gives it, keys the description never named included', async ({
+  page,
+}) => {
+  const prefabFile = path.join(editorTestProjectPath(), 'prefabs', 'enemy-slime.json')
+  const prefab = JSON.parse(fs.readFileSync(prefabFile, 'utf8')) as { components: Record<string, unknown> }
+  const inherited = { unitsPerSecond: 12, fromX: 96, toX: 176, squashed: { texture: { id: 'abc', path: 'a.png' } } }
+  prefab.components['patrol'] = inherited
+  fs.writeFileSync(prefabFile, `${JSON.stringify(prefab, null, 2)}\n`)
+
+  await selectAsset(page, 'scenes/level-02.json')
+  await page.getByTestId('outliner-panel').locator('[data-entity-id]').filter({ hasText: 'Tilted slime' }).first().click()
+  await expect(page.getByTestId('inspector-name')).toHaveText('Tilted slime')
+  await expect(page.getByTestId('entity-component-patrol-inherited')).toBeVisible({ timeout: WITHIN_A_SECOND + 2_000 })
+
+  await page.getByTestId('entity-component-patrol-add').click()
+
+  const levelTwo = path.join(editorTestProjectPath(), 'scenes', 'level-02.json')
+  const own = (): unknown => {
+    const level = JSON.parse(fs.readFileSync(levelTwo, 'utf8')) as {
+      entities: Array<{ name: string; components: Record<string, unknown> }>
+    }
+    return level.entities.find((one) => one.name === 'Tilted slime')?.components['patrol']
+  }
+  // The prefab's values, not the description's 24/0/0 — and the nested art too.
+  await expect.poll(own).toEqual(inherited)
+  await expect(page.getByTestId('entity-component-patrol-unitsPerSecond')).toHaveValue('12')
+  // And it is a copy: tuning it leaves the prefab exactly as it was.
+  await type(page, 'entity-component-patrol-unitsPerSecond', '30')
+  await expect.poll(() => (own() as { unitsPerSecond?: unknown })?.unitsPerSecond).toBe(30)
+  expect(JSON.parse(fs.readFileSync(prefabFile, 'utf8')).components.patrol).toEqual(inherited)
+})
+
 test('Remove takes the component out of the level, and Ctrl-Z brings it back', async ({ page }) => {
   await selectEntity(page, 'Slime')
 

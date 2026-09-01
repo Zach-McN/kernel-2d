@@ -514,8 +514,10 @@ anything.
   a level starts as Nothing. An entity that has one gets **Remove**, which takes
   it out of the level entirely. Both are one press of `Ctrl-Z`.
 - **A prefab's is inherited.** If a placement has no patrol of its own but its
-  prefab has one, the section says so. Pressing Add gives that placement its own,
-  and it stops following the prefab — the same rule as Spin.
+  prefab has one, the section says so. Pressing Add gives that placement its own
+  **copy** of the prefab's — every value it had, including ones the fields do not
+  show — and it stops following the prefab from then on. Change one number and
+  only that placement changes; Remove puts it back under the prefab's control.
 - **Some components are never offered.** A description can say it is not to be
   handed out by a button, and then the section appears only where the entity is
   already one — where it carries a patrol, or inherits one from its prefab.
