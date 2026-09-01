@@ -3,11 +3,13 @@ import { useEffect, useRef, type ReactElement } from 'react'
 import { SCENE_FORMAT, type Entity } from '../../runtime/formats/scene-schema'
 import type { Spot } from '../shell/floating'
 import { usePlacing } from '../shell/placing'
+import { useResolvedScene } from '../shell/scene-prefabs'
 import { useSceneView } from '../shell/scene-view-context'
 import { snapPoint } from '../shell/snap'
 import { useDeleteEntities } from '../shell/useDeleteEntities'
 import { useDuplicateEntity } from '../shell/useDuplicateEntity'
 import { editDocument, sealEdits } from '../store/open-documents'
+import { ComponentFields } from './ComponentFields'
 import { NumberField } from './NumberField'
 
 /**
@@ -33,6 +35,18 @@ import { NumberField } from './NumberField'
  * several). Snap to grid is the one thing here that is new, and it is the same
  * grid: the interval comes from the viewport bar, and the arithmetic is the one
  * a drag uses (`editor/shell/snap.ts`).
+ *
+ * **The game's own fields are here too, and they are the Inspector's component
+ * rendered a second time.** An enemy's speed is exactly the kind of number a
+ * hand wants while the cursor is on the sprite — more often than its rotation —
+ * and it would be the same number in the Inspector across the window. So
+ * `ComponentFields` is mounted here with the same scene, entity and resolved
+ * entity the Inspector gives it: the same merge keys, so a speed typed here and
+ * a speed typed there are one undo step; the same Add-and-Remove, so a
+ * placement detached from its prefab in this window is detached the same way;
+ * the same `addable` rule, so a cloud's window has no enemy section in it. A
+ * second, smaller renderer of the same descriptions would be the second
+ * implementation this window exists not to have.
  *
  * **Delete acts on the selection, and that is exactly this entity.** Opening the
  * window selects what it is about — both doors do — and the window closes the
@@ -84,6 +98,9 @@ export function EntityPopover({
   // window was opened. The Outliner's door can reach it because the setting
   // belongs to the window rather than to the panel (`editor/shell/placing.tsx`).
   const { snap } = usePlacing()
+  // The entity with its prefab's components filled in, for the described
+  // sections to say what is inherited — the same resolution the Inspector reads.
+  const resolved = useResolvedScene().entities.find((candidate) => candidate.id === entity.id) ?? entity
   const onGrid = snapPoint(entity.transform, snap)
   const alreadyOnGrid = onGrid.x === entity.transform.x && onGrid.y === entity.transform.y
 
@@ -207,6 +224,13 @@ export function EntityPopover({
             })
           }
         />
+      </div>
+
+      {/* Below Position and above the line, because these are fields: everything
+          above the line changes a value on this entity. Compacted by the
+          stylesheet to the window's width, but the markup is the Inspector's. */}
+      <div className="entity-popover__components" data-testid="popover-components">
+        <ComponentFields scenePath={scenePath} entity={entity} resolved={resolved} />
       </div>
 
       <div className="entity-popover__actions">

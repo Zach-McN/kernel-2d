@@ -1469,6 +1469,59 @@ body {
 }
 
 /*
+ * The game's own fields, drawn by the Inspector's component inside a window a
+ * third its width. Same markup, tighter numbers: the section title becomes a
+ * row heading, the label column narrows to the window's own label width, and
+ * the notes — which exist to be read once in the Inspector — are kept but small,
+ * because a window that reaches for a number cannot afford three lines of
+ * prose above it. An empty wrapper takes no room, so an entity with nothing
+ * described looks exactly as it did.
+ */
+.entity-popover__components:empty {
+  display: none;
+}
+
+.entity-popover__components {
+  padding: 0 6px;
+}
+
+.entity-popover__components .inspector__section {
+  margin: 0 0 4px;
+}
+
+.entity-popover__components .inspector__section-title {
+  margin: 2px 0 2px;
+  padding-bottom: 2px;
+}
+
+.entity-popover__components .inspector__field {
+  gap: 6px;
+  padding: 2px 0;
+}
+
+.entity-popover__components .inspector__label {
+  width: 52px;
+  font-family: var(--shell-mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.entity-popover__components .inspector__note {
+  margin: 2px 0 0;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.entity-popover__components .inspector__actions {
+  margin-top: 4px;
+  padding-left: 0;
+}
+
+/*
  * What happens when pressed: Snap to grid across the top, then Frame, Duplicate
  * and Delete sharing one row across the foot of the window.
  *

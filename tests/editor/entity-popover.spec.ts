@@ -176,6 +176,48 @@ test('renaming in it renames everywhere, and one rename is one press of Ctrl-Z',
   await expect(page.getByTestId('inspector-name')).toHaveText('Knight')
 })
 
+/**
+ * The game's own fields are in the window too, and they are the Inspector's
+ * component mounted a second time — so the assertion is the same one every
+ * other field here makes: type in the window, read it in the Inspector, and one
+ * Ctrl-Z takes it back in both.
+ */
+test('a described field is in the window, edits the same value as the Inspector, and is one undo step', async ({
+  page,
+}) => {
+  const spot = await entitySpot(page, 'Slime')
+  await page.mouse.click(spot.x, spot.y, { button: 'right' })
+  const popover = inViewport(page)
+  await expect(popover).toBeVisible()
+
+  // Scoped, because the same test id is now in two places on purpose.
+  const inWindow = popover.getByTestId('entity-component-patrol-unitsPerSecond')
+  const inInspector = page.getByTestId('inspector-panel').getByTestId('entity-component-patrol-unitsPerSecond')
+  await expect(popover).toContainText('Patrol')
+  await expect(inWindow).toHaveValue('24')
+
+  await inWindow.fill('48')
+  await inWindow.press('Tab')
+
+  await expect(inInspector).toHaveValue('48')
+
+  await page.keyboard.press('ControlOrMeta+z')
+  await expect(inInspector).toHaveValue('24')
+  await expect(inWindow).toHaveValue('24')
+})
+
+test('an entity with nothing described has no such section in its window', async ({ page }) => {
+  const spot = await entitySpot(page, 'Knight')
+  await page.mouse.click(spot.x, spot.y, { button: 'right' })
+  const popover = inViewport(page)
+  await expect(popover).toBeVisible()
+
+  // The Knight is offered a patrol, like the Inspector offers one; what it is
+  // not given is a section for anything nobody described.
+  await expect(popover.getByTestId('entity-component-patrol-add')).toBeVisible()
+  await expect(popover.getByTestId('popover-components').locator('.inspector__section')).toHaveCount(1)
+})
+
 test('Frame puts the camera on it', async ({ page }) => {
   const spot = await entitySpot(page, 'Knight')
   await page.mouse.click(spot.x, spot.y, { button: 'right' })

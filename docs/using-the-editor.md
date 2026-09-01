@@ -381,10 +381,12 @@ last row is drawn in front.
   or by dragging a row to where it should sit. A line shows where it will land;
   `Ctrl-Z` takes either kind of reorder back in one press. Right-click a row for
   the same small window a right-click on the sprite opens — rename, position,
-  Snap to grid, Frame, Duplicate, Delete.
+  your game's own fields, Snap to grid, Frame, Duplicate, Delete.
 - **Viewport** → click to select, drag to move, `G` to move without holding
   anything, `R` to turn, `S` to resize, `Shift-D` for a copy, right-click for a
-  small window with the entity's position.
+  small window with the entity's position and your game's own fields — an
+  enemy's speed, say — the same fields the Inspector shows, typed in either
+  place. One `Ctrl-Z` takes a change back whichever window it was typed in.
 - **Inspector** → name, position, rotation, scale, spin, and which texture it draws.
 
 #### Selecting more than one
@@ -730,7 +732,7 @@ you already had, held down. Taking things away is still select-and-`Delete`.
 | Click, or `Enter` | Put down whatever you are moving, turning or resizing |
 | `Esc` while grabbing, turning or resizing | Put it back exactly as it was |
 | `Shift-D` | A copy of the selected entity, in the same place, selected |
-| Right-click a sprite | A small window next to it: name, position, Snap to grid, Frame, Duplicate, Delete |
+| Right-click a sprite | A small window next to it: name, position, your game's own fields, Snap to grid, Frame, Duplicate, Delete |
 | Right-click empty space | Close that window |
 | `Esc`, or right-click | Stop placing by clicking |
 
