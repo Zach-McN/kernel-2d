@@ -3,7 +3,10 @@ import path from 'node:path'
 
 import { expect, test, type Page } from '@playwright/test'
 
-import { serializeComponentDescription } from '../../runtime/formats/component-schema.js'
+import {
+  serializeComponentDescription,
+  type ComponentDescription,
+} from '../../runtime/formats/component-schema.js'
 import { DOOR_DESCRIPTION, DOOR_DESCRIPTION_PATH } from '../fixtures/door-description.js'
 import { restoreProjectAfterEach } from './restore-project.js'
 import { openFileMenu, selectAsset } from './select-asset.js'
@@ -253,6 +256,130 @@ test('a picture of the generated fields', async ({ page }, testInfo) => {
 const DOOR = DOOR_DESCRIPTION.type
 const HEART = 'assets/textures/ui/icon-heart.png'
 const LEVEL_TWO = 'scenes/level-02.json'
+
+test.describe('a component that cannot be added by hand', () => {
+  /**
+   * `addable: false`, against the sample's own patrol.
+   *
+   * The problem it answers is not hypothetical: describing two components in the
+   * platformer put "Add walker" and "Add turtle" on all 249 entities of its
+   * level, clouds and coin counters included, every button offering to write a
+   * component no system would read. A description can say what a component
+   * holds and cannot say what it belongs on, because nothing in a level marks an
+   * entity as an enemy — being one *is* carrying the component the button
+   * offers.
+   *
+   * So the rule these tests pin is narrow on purpose: the section disappears
+   * only where the entity has no claim on it. Carrying one, or inheriting one
+   * from a prefab, still shows everything it ever showed — and a component that
+   * is in the file where it has no business is shown too, because hiding what a
+   * level really holds is the one thing the panel may never do.
+   */
+  function unaddablePatrol(): ComponentDescription {
+    const described = JSON.parse(fs.readFileSync(descriptionFile(), 'utf8')) as ComponentDescription
+    return { ...described, addable: false }
+  }
+
+  /**
+   * The rewritten description reaches the editor through the folder listing a
+   * moment later, so every test waits for it to have landed before doing
+   * anything. Without the wait it arrives *during* a test — and a re-render
+   * halfway through a run of keystrokes swallows the rest of them, which reads
+   * as a product bug and is not one.
+   */
+  test.beforeEach(async ({ page }) => {
+    fs.writeFileSync(descriptionFile(), serializeComponentDescription(unaddablePatrol()))
+    await selectEntity(page, 'Knight')
+    await expect(page.getByTestId('entity-component-patrol-add')).toHaveCount(0, {
+      timeout: WITHIN_A_SECOND + 2_000,
+    })
+  })
+
+  test('is not offered to an entity that is not one, section and all', async ({ page }) => {
+    await selectEntity(page, 'Knight')
+    expect(patrolInFile('Knight')).toBeNull()
+
+    await expect(page.getByTestId('entity-component-patrol-add')).toHaveCount(0)
+    // Not a disabled button and not a sentence about an absence: no section.
+    await expect(page.getByTestId('inspector-panel')).not.toContainText('Patrol')
+    // And it is not reported as a component with no controls either — the
+    // Knight simply has nothing to do with a patrol.
+    await expect(page.getByTestId('entity-unknown-components')).toHaveCount(0)
+  })
+
+  test('is still fully shown, and removable, on an entity that carries one', async ({ page }) => {
+    await selectEntity(page, 'Slime')
+
+    await expect(page.getByTestId('entity-component-patrol-unitsPerSecond')).toHaveValue('24')
+    await expect(page.getByTestId('entity-component-patrol-remove')).toBeVisible()
+
+    // Still writable: this key governs adding, not editing.
+    await type(page, 'entity-component-patrol-unitsPerSecond', '48')
+    await expect.poll(() => patrolInFile('Slime')?.['unitsPerSecond']).toBe(48)
+  })
+
+  test('is shown even where it has no business being, because the file has it', async ({ page }) => {
+    const level = JSON.parse(fs.readFileSync(levelFile(), 'utf8')) as {
+      entities: Array<{ name: string; components: Record<string, unknown> }>
+    }
+    const ground = level.entities.find((one) => one.name === 'Ground')
+    if (ground !== undefined) ground.components['patrol'] = { unitsPerSecond: 5, fromX: 0, toX: 9 }
+    fs.writeFileSync(levelFile(), `${JSON.stringify(level, null, 2)}\n`)
+
+    await selectEntity(page, 'Ground')
+
+    // A patrol on a strip of ground is a mistake, and the panel's job is to
+    // show it rather than to decide it is not there.
+    await expect(page.getByTestId('entity-component-patrol-unitsPerSecond')).toHaveValue('5')
+    await expect(page.getByTestId('entity-component-patrol-remove')).toBeVisible()
+  })
+
+  test('goes away for good once removed, and Ctrl-Z is the way back', async ({ page }) => {
+    await selectEntity(page, 'Slime')
+
+    await page.getByTestId('entity-component-patrol-remove').click()
+
+    await expect.poll(() => patrolInFile('Slime')).toBeNull()
+    // No Add to put it back with — the whole section has gone.
+    await expect(page.getByTestId('entity-component-patrol-add')).toHaveCount(0)
+    await expect(page.getByTestId('inspector-panel')).not.toContainText('Patrol')
+
+    await page.keyboard.press('ControlOrMeta+z')
+    await expect.poll(() => patrolInFile('Slime')?.['unitsPerSecond']).toBe(24)
+  })
+
+  test('is still offered to a placement inheriting one, which is how a single one is detached', async ({
+    page,
+  }) => {
+    const prefabFile = path.join(editorTestProjectPath(), 'prefabs', 'enemy-slime.json')
+    const prefab = JSON.parse(fs.readFileSync(prefabFile, 'utf8')) as {
+      components: Record<string, unknown>
+    }
+    prefab.components['patrol'] = { unitsPerSecond: 24, fromX: 96, toX: 176 }
+    fs.writeFileSync(prefabFile, `${JSON.stringify(prefab, null, 2)}\n`)
+
+    await selectAsset(page, 'scenes/level-02.json')
+    await page
+      .getByTestId('outliner-panel')
+      .locator('[data-entity-id]')
+      .filter({ hasText: 'Tilted slime' })
+      .first()
+      .click()
+    await expect(page.getByTestId('inspector-name')).toHaveText('Tilted slime')
+
+    // It plainly is one of these, so the offer to give it its own stands.
+    await expect(page.getByTestId('entity-component-patrol-inherited')).toBeVisible({
+      timeout: WITHIN_A_SECOND + 2_000,
+    })
+    await expect(page.getByTestId('entity-component-patrol-add')).toBeVisible()
+  })
+
+  test('says on the description itself that it is never offered', async ({ page }) => {
+    await selectAsset(page, DESCRIPTION)
+
+    await expect(page.getByTestId('component-note')).toContainText('never offered')
+  })
+})
 
 test.describe('every kind of described field', () => {
   test.beforeEach(async ({ page }) => {

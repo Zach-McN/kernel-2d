@@ -195,6 +195,34 @@ export interface ComponentDescription {
   note?: string | undefined
   /** In the order they should appear. May be empty — a marker component has no fields. */
   fields: ComponentField[]
+  /**
+   * Whether this component may be given to an entity that has nothing to do
+   * with it. Absent means yes, which is what every description written before
+   * this key existed meant.
+   *
+   * **The problem it solves is that a description says what a component holds
+   * and cannot say what it belongs on.** Nothing in a level marks an entity as
+   * an enemy for the editor to check against — being an enemy *is* carrying the
+   * `walker`, which is the very thing an Add button offers. So the first game
+   * to describe two components got "Add walker" and "Add turtle" on all 249
+   * entities in its level: on clouds, on bricks, on the coin counter. Every one
+   * of those buttons wrote a component no system would ever read.
+   *
+   * `false` says: only offer this where it is already the entity's business.
+   * An entity carrying one gets its fields and Remove as ever; an entity
+   * *inheriting* one from its prefab still gets Add, because that is how a
+   * single placement is given its own and detached from the prefab, and it is
+   * plainly already one of these. An entity with neither gets no section at all
+   * — not a disabled button, and not a sentence explaining an absence, because
+   * a walker section on a cloud is noise however it is worded.
+   *
+   * What it never does is hide something that is really in the file. A `walker`
+   * that ends up on a brick by some other route shows its fields and its Remove
+   * button like any other, on the standing rule that the panel never conceals
+   * what a level holds (`editor-ui` U10). This key governs what may be *added*,
+   * never what is shown of what exists.
+   */
+  addable?: boolean | undefined
   /** Present only on files an AI produced. Read, preserved, never invented. */
   generatedBy?: string | undefined
   /** `YYYY-MM-DD`, alongside `generatedBy`. */
@@ -320,6 +348,7 @@ export const ComponentDescriptionSchema: z.ZodType<ComponentDescription> = z
     title: z.string().min(1),
     note: z.string().min(1).optional(),
     fields: z.array(ComponentFieldSchema),
+    addable: z.boolean().optional(),
     generatedBy: z.string().min(1).optional(),
     generatedAt: z.string().min(1).optional(),
   })
@@ -339,6 +368,15 @@ export const ComponentDescriptionSchema: z.ZodType<ComponentDescription> = z
       seen.add(field.key)
     }
   })
+
+/**
+ * Whether this component may be added to an entity that is not already one,
+ * with the absent-means-yes default in one place rather than at each reader
+ * (`text-formats` T5). See `addable` above for what "already one" covers.
+ */
+export function isAddableByHand(description: ComponentDescription): boolean {
+  return description.addable !== false
+}
 
 /** What a fresh one looks like, defined once for every writer (`text-formats` T5). */
 export function defaultComponentDescription(type: string, title: string): ComponentDescription {

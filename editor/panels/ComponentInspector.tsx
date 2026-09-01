@@ -1,6 +1,11 @@
 import type { ReactElement } from 'react'
 
-import { isKnownField, type ComponentDescription, type ComponentField } from '../../runtime/formats/component-schema'
+import {
+  isAddableByHand,
+  isKnownField,
+  type ComponentDescription,
+  type ComponentField,
+} from '../../runtime/formats/component-schema'
 import type { Scene } from '../../runtime/formats/scene-schema'
 import { useComponentTypes } from '../shell/component-types'
 import { Field, Note, Row, Section } from './fields'
@@ -52,7 +57,11 @@ export function ComponentInspector({
         ) : (
           <Note data-testid="component-note">
             {inUse
-              ? `Entities can carry a ${description.type}, and the Inspector shows these fields for one that does.`
+              ? `Entities can carry a ${description.type}, and the Inspector shows these fields for one that does.${
+                  isAddableByHand(description)
+                    ? ''
+                    : ` It is never offered to an entity that is not already one, so a ${description.type} arrives from a prefab or from the file, never from a button.`
+                }`
               : 'This description is not in use.'}
           </Note>
         )}

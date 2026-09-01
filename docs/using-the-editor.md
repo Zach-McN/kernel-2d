@@ -516,6 +516,16 @@ anything.
 - **A prefab's is inherited.** If a placement has no patrol of its own but its
   prefab has one, the section says so. Pressing Add gives that placement its own,
   and it stops following the prefab — the same rule as Spin.
+- **Some components are never offered.** A description can say it is not to be
+  handed out by a button, and then the section appears only where the entity is
+  already one — where it carries a patrol, or inherits one from its prefab.
+  Everything else in the level shows no Patrol section at all, rather than a
+  button offering to make a cloud walk. Write `"addable": false` in the
+  description for that. Two things it does *not* change: an entity that
+  inherits one is still offered Add, since giving that one placement its own is
+  the point; and a component that really is in a level where it makes no sense
+  is still shown, with its fields and its Remove, because the panel never hides
+  what a file holds. Selecting the description says which way it is set.
 - **The editor never rewrites what it cannot read.** If a level holds something a
   field cannot show — a word where a number belongs, a side that is not on the
   list, typed by hand — that field shows exactly what the file has, with nothing

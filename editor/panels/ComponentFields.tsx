@@ -2,6 +2,7 @@ import type { ReactElement } from 'react'
 
 import {
   defaultValueFor,
+  isAddableByHand,
   isKnownField,
   heldBy,
   readField,
@@ -98,6 +99,12 @@ export function ComponentFields({
  * One described component's section, in whichever of its four states this entity
  * is in: carrying it, inheriting it from a prefab, carrying something the fields
  * cannot show, or not having it at all.
+ *
+ * The last of those is the one that can come to nothing. A description marked
+ * `addable: false` has no business on an entity that neither carries one nor
+ * inherits one, and draws no section there at all — see `addable` in
+ * `component-schema.ts` for why an entity's own components are the only thing
+ * this can be decided from.
  */
 function DescribedComponent({
   scenePath,
@@ -111,7 +118,7 @@ function DescribedComponent({
   resolved: Entity
   description: ComponentDescription
   tree: ProjectTree | null
-}): ReactElement {
+}): ReactElement | null {
   const type = description.type
   const carried = entity.components[type]
   const has = carried !== undefined
@@ -119,6 +126,10 @@ function DescribedComponent({
   // carries wins over its prefab per component type, whole, so an own component
   // means nothing is inherited (`runtime/formats/prefab-schema.ts`).
   const inherited = has ? undefined : resolved.components[type]
+
+  // Nothing to say about a component this entity is not and cannot be given.
+  // Checked before any of the reading below, so a hidden section costs nothing.
+  if (!has && inherited === undefined && !isAddableByHand(description)) return null
 
   const edit = (label: string, merge: string | undefined, recipe: (target: Entity) => void): void => {
     editDocument(scenePath, merge === undefined ? { label } : { label, merge }, (document) => {

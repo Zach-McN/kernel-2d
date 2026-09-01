@@ -6,6 +6,7 @@ import {
   defaultComponentDescription,
   defaultValueFor,
   describedReferencesOf,
+  isAddableByHand,
   isKnownField,
   readField,
   serializeComponentDescription,
@@ -303,6 +304,34 @@ describe('where a described component points at files and levels', () => {
  * every level carrying a patrol starts failing to parse on a typo in one file,
  * and this is the test that says so first.
  */
+describe('whether a component may be added by hand', () => {
+  it('is yes when the description says nothing, which is every description written before the key existed', () => {
+    expect(PATROL.addable).toBeUndefined()
+    expect(isAddableByHand(PATROL)).toBe(true)
+  })
+
+  it('is yes when it says so, and no only when it says no', () => {
+    expect(isAddableByHand({ ...PATROL, addable: true })).toBe(true)
+    expect(isAddableByHand({ ...PATROL, addable: false })).toBe(false)
+  })
+
+  it('survives a round trip in both states', () => {
+    for (const addable of [true, false]) {
+      const described: ComponentDescription = { ...PATROL, addable }
+      expect(ComponentDescriptionSchema.parse(JSON.parse(JSON.stringify(described)))).toEqual(described)
+    }
+  })
+
+  it('refuses a description that says something other than yes or no', () => {
+    expect(ComponentDescriptionSchema.safeParse({ ...PATROL, addable: 'never' }).success).toBe(false)
+    expect(ComponentDescriptionSchema.safeParse({ ...PATROL, addable: 0 }).success).toBe(false)
+  })
+
+  it('changes nothing about what Add writes when it does happen', () => {
+    expect(defaultValueFor({ ...PATROL, addable: false })).toEqual(defaultValueFor(PATROL))
+  })
+})
+
 describe('describing a component does not register it', () => {
   it('leaves the kernel’s own registry at the four types it owns', () => {
     expect(Object.keys(COMPONENT_SCHEMAS).sort()).toEqual(['prefab', 'screen', 'spin', 'sprite'])
