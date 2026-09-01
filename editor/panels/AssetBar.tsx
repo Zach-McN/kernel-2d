@@ -22,6 +22,15 @@ import { NewDocument } from './NewDocument'
  * reached for whenever there is a level to start. Neither belongs in the
  * other's menu.
  *
+ * **The search box sits between where-you-are and the buttons**, and it is on
+ * the bar in every view because a search is not a view: it is a question about
+ * the whole project, asked from wherever you happen to be standing, and it
+ * replaces the folder underneath with its answer for as long as it says
+ * anything (`../shell/asset-browsing.tsx`). It gives way sideways before the
+ * breadcrumb does — the crumb is read on every click, the box only while it is
+ * being typed in — and `Esc` clears it, or hands the keys back if it is already
+ * clear.
+ *
  * The bar is a fixed height whatever is in it (`editor-ui` UG8): the two views
  * put different things in the left half, and a strip that grew a row when the
  * breadcrumb appeared would shorten the folder underneath it at the moment the
@@ -34,7 +43,7 @@ export function AssetBar({
   projectName: string
   newDocument: NewDocumentDoor
 }): ReactElement {
-  const { view, setView, folder, openFolder } = useAssetBrowsing()
+  const { view, setView, folder, openFolder, search, setSearch } = useAssetBrowsing()
 
   return (
     <div className="assets__bar" data-testid="assets-bar">
@@ -43,6 +52,7 @@ export function AssetBar({
       ) : (
         <span className="assets__bar-filler" />
       )}
+      <SearchBox value={search} onChange={setSearch} />
       <NewDocumentButton door={newDocument} />
       <ViewSettings view={view} onPick={setView} />
     </div>
@@ -96,6 +106,41 @@ function NewDocumentButton({ door }: { door: NewDocumentDoor }): ReactElement {
         </div>
       )}
     </div>
+  )
+}
+
+/**
+ * The search box: type, and the folder view underneath becomes the list of
+ * everything in the project called that.
+ *
+ * A native search field, so Chromium draws the little clear cross itself and
+ * `Esc` empties it — and the handler does the same on `Esc` for every browser
+ * that does not, then blurs on a second press so the panel's keys work again.
+ * The press is stopped there: an `Esc` meant for this box must not go on to
+ * close a menu or drop a selection somewhere else.
+ */
+function SearchBox({ value, onChange }: { value: string; onChange: (query: string) => void }): ReactElement {
+  return (
+    <input
+      type="search"
+      className="control control--text assets__search"
+      data-testid="assets-search"
+      aria-label="Search the project for a file by name"
+      title="Find a file anywhere in the project by its name. Esc clears."
+      placeholder="Search"
+      autoComplete="off"
+      spellCheck={false}
+      value={value}
+      onChange={(event) => {
+        onChange(event.target.value)
+      }}
+      onKeyDown={(event) => {
+        if (event.key !== 'Escape') return
+        event.stopPropagation()
+        if (value !== '') onChange('')
+        else event.currentTarget.blur()
+      }}
+    />
   )
 }
 

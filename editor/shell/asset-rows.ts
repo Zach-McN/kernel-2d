@@ -98,3 +98,39 @@ export function fileRangeBetween(rows: readonly AssetRow[], from: string, to: st
     .filter((row) => row.node.kind === 'file')
     .map((row) => row.node.path)
 }
+
+/**
+ * Every row anywhere in the project whose *name* says every word of the query
+ * — what the Assets panel's search box lists.
+ *
+ * By name and not by path, deliberately: a search for `textures` that returned
+ * every file under `assets/textures/` would be a search that found everything
+ * and told you nothing, and the folder a match lives in is shown beside it
+ * anyway. Case does not matter, and every space-separated word has to be in the
+ * name, in any order, so `knight run` finds `knight-run-strip.png` and not the
+ * idle frame. Folders match too — a folder is a thing you look for.
+ *
+ * Walks the same rows the tree and the grid show, so a `.meta` is folded into
+ * its file here as everywhere else (searching `knight` finds the picture once,
+ * with its settings badge, and never the sidecar), and a stranded `.meta` is
+ * findable by its own name. Tree order — a folder's matches follow the folder —
+ * so the list reads the way the project does.
+ *
+ * An empty or blank query matches nothing: "no search" is the panel's ordinary
+ * view, not a list of every file in the project.
+ */
+export function searchRows(children: readonly TreeNode[], query: string): AssetRow[] {
+  const words = query.toLowerCase().split(/\s+/).filter((word) => word.length > 0)
+  if (words.length === 0) return []
+
+  const found: AssetRow[] = []
+  const walk = (nodes: readonly TreeNode[]): void => {
+    for (const row of assetRowsFor(nodes)) {
+      const name = row.node.name.toLowerCase()
+      if (words.every((word) => name.includes(word))) found.push(row)
+      if (row.node.kind === 'directory') walk(row.node.children)
+    }
+  }
+  walk(children)
+  return found
+}

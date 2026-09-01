@@ -94,7 +94,18 @@ export interface AssetBrowsing {
   /** Open every folder on the way down to this path, but not the path itself. */
   revealParents: (path: string) => void
 
-  /** Reset layout: the icon view, at the top of the project. */
+  /**
+   * What is typed in the search box. While it says anything, the panel lists
+   * every file in the project whose name matches instead of the folder view —
+   * whichever view is chosen, because a search is a question about the whole
+   * project and no one folder can answer it. Held here rather than in the
+   * panel for the reason everything else here is: dragging the panel to a new
+   * spot must not lose what was typed.
+   */
+  search: string
+  setSearch: (query: string) => void
+
+  /** Reset layout: the icon view, at the top of the project, with no search. */
   resetBrowsing: () => void
 
   /**
@@ -127,6 +138,9 @@ export function AssetBrowsingProvider({ children }: { children: ReactNode }): Re
   const [trail, setTrail] = useState<Trail>({ folders: [''], at: 0 })
   const [splitFraction, setSplit] = useState(SPLIT_DEFAULT)
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set())
+  // Not remembered per project (`layout-store.ts`): a search is what somebody
+  // is doing right now, not how they like to see the folder.
+  const [search, setSearch] = useState('')
 
   const folder = trail.folders[trail.at] ?? ''
 
@@ -235,6 +249,7 @@ export function AssetBrowsingProvider({ children }: { children: ReactNode }): Re
   const resetBrowsing = useCallback(() => {
     setView('icons')
     setTrail({ folders: [''], at: 0 })
+    setSearch('')
   }, [])
 
   const pathMoved = useCallback((from: string, to: string) => {
@@ -263,6 +278,8 @@ export function AssetBrowsingProvider({ children }: { children: ReactNode }): Re
       toggleFolder,
       expandFolder,
       revealParents,
+      search,
+      setSearch,
       resetBrowsing,
       pathMoved,
     }),
@@ -279,6 +296,7 @@ export function AssetBrowsingProvider({ children }: { children: ReactNode }): Re
       toggleFolder,
       expandFolder,
       revealParents,
+      search,
       resetBrowsing,
       pathMoved,
     ],

@@ -245,6 +245,36 @@ Whichever you pick lasts until you reload — along with the folder you are in, 
 way back and forward, and where you put the split — and moving the panel to a
 different corner of the window loses none of it.
 
+### Finding a file by name
+
+**Type in the search box on the bar** — between the trail and the `+` — and the
+folder underneath is replaced by one list of everything in the whole project
+called that, wherever it is, with the folder it lives in written beside each
+name. It works from any of the three views, because a search is a question about
+the whole project rather than about the folder you happen to be in. Clear the box
+and the view you were in comes back exactly as you left it; `Esc` clears it too,
+and a second `Esc` puts the keys back on the panel.
+
+What it finds, exactly:
+
+- **Names, not folders.** Searching `textures` finds the folder called
+  `textures`, not the two hundred pictures inside it — the folder a match is in
+  is already written beside it.
+- **Any case.** `KNIGHT` and `knight` are the same search.
+- **Every word.** `knight run` finds `knight-run-strip.png` and not the idle
+  frame; more words narrow the list, never widen it.
+- **Folders as well as files.** A folder is a thing you look for.
+- **A picture once**, with its `meta` badge — never its import settings as a
+  separate result. Import settings with no picture beside them can be found by
+  their own name, marked `orphaned`, the same as in the tree.
+
+A result is a row like any other: **click it to select it** and the Inspector
+answers about it; **drag it onto the level** to place it; **right-click it** for
+rename, move and delete; `Shift`-click for a range. **Double-click a folder result**
+to clear the search and walk into that folder. Nothing found is a sentence with
+your words in it, so a typo shows up as a typo. The search is not remembered
+across a reload, and moving the panel keeps it.
+
 ### Pictures on the tiles
 
 In the icon view, **a picture file's tile shows the picture** — so a folder of

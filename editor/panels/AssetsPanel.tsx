@@ -4,7 +4,7 @@ import { formatBytes } from '../../sidecar/bytes'
 import type { ProjectTree, TreeNode } from '../../sidecar/tree-schema'
 import { showsGrid, showsTree, useAssetBrowsing } from '../shell/asset-browsing'
 import { basename, findNode, folderPathsIn, parentOf } from '../shell/asset-kinds'
-import { assetRowsFor, fileRangeBetween, visibleTreeRows, type AssetRow } from '../shell/asset-rows'
+import { assetRowsFor, fileRangeBetween, searchRows, visibleTreeRows, type AssetRow } from '../shell/asset-rows'
 import { spotIn, type Room, type Spot } from '../shell/floating'
 import { useProject } from '../shell/project-context'
 import { pointsAt } from '../shell/references'
@@ -44,6 +44,16 @@ import { SplitHandle } from './SplitHandle'
  * says the whole path before anything is committed, from every door. "Make one
  * in *this* folder" needs no argument of its own for the same reason: the press
  * that opened the menu selected the folder.
+ *
+ * **A search replaces the folder, in every view.** While the box on the bar says
+ * anything, the body is one flat list of every file and folder in the project
+ * whose name matches, each with the folder it lives in beside it — not the tree
+ * with branches pruned, and not the grid narrowed to one folder, because a
+ * search is a question about the whole project and neither view can show the
+ * whole project at once. The rows are the tree's rows (`asset-rows.ts`), so
+ * everything a row can do — select, drag onto the level, right-click for the
+ * file menu, Shift-click a range — works on a result without a line of its own.
+ * Double-clicking a folder result clears the search and walks into it.
  *
  * **There are three ways to look at the same folder**, chosen behind the cog and
  * held above the layout in `asset-browsing.tsx`: the tree, the icon grid, and
@@ -100,9 +110,14 @@ export function AssetsPanel(): ReactElement {
     setBrowseSurface(element)
   }
 
+  // A search is on when the box says anything but spaces. Blank is the folder.
+  const query = browsing.search.trim()
+  const searching = query !== ''
+
   // The mouse's side buttons, over the browsing area only. Off in the tree-only
-  // view, where there is no folder to be inside of.
-  useFolderHistoryButtons({ surface: browseSurface, enabled: showsGrid(browsing.view) })
+  // view, where there is no folder to be inside of — and off under a search,
+  // where the trail is not what is on screen.
+  useFolderHistoryButtons({ surface: browseSurface, enabled: showsGrid(browsing.view) && !searching })
 
   // **One menu, three doors.** The `+`, a right-click on the background, and a
   // right-click on a file are three ways into two cards, and only ever one of
@@ -154,18 +169,21 @@ export function AssetsPanel(): ReactElement {
    * views. The range a Shift-click selects is measured over the rows *that view*
    * shows, top to bottom — which is why the view is named rather than guessed.
    */
-  const clickFile = (path: string, isFolder: boolean, keys: ClickKeys, view: 'tree' | 'grid'): void => {
+  const clickFile = (path: string, isFolder: boolean, keys: ClickKeys, view: 'tree' | 'grid' | 'search'): void => {
     if (tree === null) return
     if (keys.shift && !isFolder && selection.selected.kind === 'file') {
       // The grid stands in one folder and shows its rows; the tree shows its
-      // open rows. The same reading each view itself does.
+      // open rows; a search shows its matches. The same reading each view
+      // itself does.
       const gridNode = browsing.folder === '' ? tree.tree : findNode(tree, browsing.folder)
       const rows =
         view === 'tree'
           ? visibleTreeRows(tree.tree.children, browsing.expanded)
-          : gridNode !== null && gridNode.kind === 'directory'
-            ? assetRowsFor(gridNode.children)
-            : []
+          : view === 'search'
+            ? searchRows(tree.tree.children, query)
+            : gridNode !== null && gridNode.kind === 'directory'
+              ? assetRowsFor(gridNode.children)
+              : []
       const range = fileRangeBetween(rows, selection.selected.anchor, path)
       // An anchor that is not on screen in this view — the other pane, a closed
       // folder — leaves nothing to measure from, so this is a plain click.
@@ -262,6 +280,7 @@ export function AssetsPanel(): ReactElement {
       data-view={browsing.view}
       data-new-document={menu?.kind === 'bar' ? 'bar' : menu?.kind === 'browser' ? 'browser' : ''}
       data-file-menu={subject?.path ?? ''}
+      data-search={query}
       ref={panel}
     >
       {!project.live && (
@@ -286,7 +305,27 @@ export function AssetsPanel(): ReactElement {
       />
 
       <div className="assets__body" ref={adoptBody} onContextMenu={onBrowserContextMenu}>
-        {showsTree(browsing.view) && (
+        {searching && (
+          <SearchResults
+            tree={shown}
+            query={query}
+            selected={selectedFiles}
+            onSelect={(path, isFolder, keys) => {
+              clickFile(path, isFolder, keys, 'search')
+              // Opened to in the tree as well, so clearing the search finds the
+              // row where the eye left it rather than inside a shut folder.
+              browsing.revealParents(path)
+            }}
+            onOpenFolder={(path) => {
+              browsing.setSearch('')
+              browsing.openFolder(path)
+              browsing.expandFolder(path)
+            }}
+            dragProps={dragProps}
+          />
+        )}
+
+        {!searching && showsTree(browsing.view) && (
           <div
             className="assets__pane assets__pane--tree"
             data-testid="assets-list"
@@ -325,9 +364,9 @@ export function AssetsPanel(): ReactElement {
           </div>
         )}
 
-        {browsing.view === 'split' && <SplitHandle body={body} />}
+        {!searching && browsing.view === 'split' && <SplitHandle body={body} />}
 
-        {showsGrid(browsing.view) && (
+        {!searching && showsGrid(browsing.view) && (
           <div className="assets__pane assets__pane--grid" data-testid="assets-icons">
             <AssetGrid
               tree={shown}
@@ -420,7 +459,8 @@ export function AssetsPanel(): ReactElement {
           gesture nobody uses, and there is nowhere else on screen to say it. */}
       <p className="assets__hint" data-testid="assets-hint">
         Right-click a file to rename, move or delete it — or the empty space, or{' '}
-        <strong>+</strong> in the bar, to make a level or prefab.
+        <strong>+</strong> in the bar, to make a level or prefab. Type in the search box to find a
+        file anywhere in the project.
       </p>
     </div>
   )
@@ -802,6 +842,104 @@ function describeManyUses(total: number, uses: { used: string[]; unreadable: str
 export interface ClickKeys {
   ctrl: boolean
   shift: boolean
+}
+
+/**
+ * What the search box found: one flat list across the whole project, each row
+ * saying which folder it is in.
+ *
+ * The rows are the tree's rows wearing one extra span, and every attribute the
+ * tree's rows carry — the path, the kind, the badges, the drag — is here for
+ * the same reason it is there: the file menu, the drag onto the level and the
+ * range a Shift-click selects all read rows by those attributes and never ask
+ * which list they are in. Nothing found is a sentence with the words in it,
+ * so a typo is visible as a typo.
+ */
+function SearchResults({
+  tree,
+  query,
+  selected,
+  onSelect,
+  onOpenFolder,
+  dragProps,
+}: {
+  tree: ProjectTree
+  query: string
+  selected: readonly string[]
+  onSelect: (path: string, isFolder: boolean, keys: ClickKeys) => void
+  onOpenFolder: (path: string) => void
+  dragProps: (path: string) => AssetDragProps
+}): ReactElement {
+  const rows = searchRows(tree.tree.children, query)
+  const files = rows.filter((row) => row.node.kind === 'file').length
+  const folders = rows.length - files
+  const count = (n: number, one: string): string => `${n} ${n === 1 ? one : `${one}s`}`
+  const summary =
+    rows.length === 0
+      ? `Nothing in the project is called “${query}”.`
+      : `${[files > 0 ? count(files, 'file') : '', folders > 0 ? count(folders, 'folder') : '']
+          .filter((part) => part !== '')
+          .join(' and ')} called “${query}”, anywhere in the project.`
+
+  return (
+    <div className="assets__pane assets__pane--search" data-testid="assets-search-results">
+      <p className="assets__search-summary" data-testid="assets-search-summary">
+        {summary}
+      </p>
+      {rows.length > 0 && (
+        <ul className="assets__tree" role="list" aria-label="What matched the search">
+          {rows.map((row) => {
+            const { node } = row
+            const isFolder = node.kind === 'directory'
+            const where = parentOf(node.path)
+            return (
+              <li key={node.path} className="asset-row">
+                <button
+                  type="button"
+                  className="asset-row__button"
+                  {...(isFolder ? NOT_DRAGGABLE : dragProps(node.path))}
+                  data-asset-path={node.path}
+                  data-kind={node.kind}
+                  data-selected={selected.includes(node.path)}
+                  data-has-settings={row.hasSettings}
+                  data-orphaned-settings={row.isOrphanedSettings}
+                  title={isFolder ? `${node.path} — double-click to go there` : node.path}
+                  onClick={(event) => {
+                    onSelect(node.path, isFolder, { ctrl: event.ctrlKey || event.metaKey, shift: event.shiftKey })
+                  }}
+                  onDoubleClick={() => {
+                    if (isFolder) onOpenFolder(node.path)
+                  }}
+                >
+                  <span className="asset-row__chevron" aria-hidden="true">
+                    {isFolder ? '▸' : ''}
+                  </span>
+                  <span className="asset-row__name">{node.name}</span>
+                  <span className="asset-row__where" data-testid="assets-search-where">
+                    {where === '' ? 'top of the project' : where}
+                  </span>
+                  {row.hasSettings && (
+                    <span className="asset-row__badge" title="Has import settings beside it">
+                      meta
+                    </span>
+                  )}
+                  {row.isOrphanedSettings && (
+                    <span
+                      className="asset-row__badge asset-row__badge--orphan"
+                      title="Import settings with no file beside them"
+                    >
+                      orphaned
+                    </span>
+                  )}
+                  {!isFolder && <span className="asset-row__size">{formatBytes(node.size)}</span>}
+                </button>
+              </li>
+            )
+          })}
+        </ul>
+      )}
+    </div>
+  )
 }
 
 /**

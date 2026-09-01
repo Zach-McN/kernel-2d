@@ -685,6 +685,48 @@ body {
   flex: 1;
 }
 
+/*
+ * The search box: a real text control on a bar of icons, sized to give way
+ * sideways before the breadcrumb does. Its floor is a few characters — a panel
+ * dragged to a sliver keeps a box you can still type into, and the sentence it
+ * produces underneath says the rest.
+ */
+.assets__search {
+  flex: 0 1 150px;
+  min-width: 52px;
+  height: 22px;
+  padding: 0 6px;
+  font-family: var(--shell-sans);
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.assets__search::placeholder {
+  color: var(--shell-text-dim);
+}
+
+.assets__pane--search {
+  flex: 1 1 auto;
+}
+
+.assets__search-summary {
+  margin: 0;
+  padding: 4px 10px 6px;
+  color: var(--shell-text-dim);
+  font-size: 11px;
+}
+
+/* Where a search result lives, beside its name: read second, so dimmer and smaller. */
+.asset-row__where {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--shell-text-dim);
+  font-size: 11px;
+}
+
 .breadcrumb {
   display: flex;
   align-items: center;
