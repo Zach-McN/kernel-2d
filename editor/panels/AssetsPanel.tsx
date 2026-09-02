@@ -459,8 +459,7 @@ export function AssetsPanel(): ReactElement {
           gesture nobody uses, and there is nowhere else on screen to say it. */}
       <p className="assets__hint" data-testid="assets-hint">
         Right-click a file to rename, move or delete it — or the empty space, or{' '}
-        <strong>+</strong> in the bar, to make a level or prefab. Type in the search box to find a
-        file anywhere in the project.
+        <strong>+</strong> in the bar, to make a level or prefab.
       </p>
     </div>
   )
