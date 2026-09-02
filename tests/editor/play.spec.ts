@@ -258,27 +258,26 @@ test.describe('a level that is running', () => {
       await stop(page)
 
       // The same system, asked to move nothing.
+      const before = await viewport(page).getAttribute('data-game-code-version')
       fs.writeFileSync(systemFile, original.replace('entity.transform.x +=', 'entity.transform.x += 0 *'))
 
       /*
-       * Polled around a whole Play/Stop cycle rather than waited for with a
-       * sleep. What is being waited on is the dev server noticing the file and
-       * replacing the module — a duration nobody should hard-code — and each
-       * attempt is a real run of the level, so the first one that reports a single
-       * moving entity is the answer (V5).
+       * Waited for as a fact, not guessed at with runs. What is being waited on
+       * is the dev server noticing the file and hot-replacing the module — a
+       * duration nobody should hard-code, and on a loaded machine one that beat
+       * the poll of whole Play/Stop cycles this used to be (W26: "expected 1,
+       * received 2", which read as the feature being broken). The editor now
+       * announces the replacement, so this waits on that with a ceiling that is
+       * only about how slow a dev server can be, and then runs the level once.
        */
-      await expect
-        .poll(
-          async () => {
-            await play(page)
-            await stepsPast(page, 60)
-            const count = movedCount(await pictures(page))
-            await stop(page)
-            return count
-          },
-          { timeout: 20_000 },
-        )
-        .toBe(1)
+      await expect(viewport(page)).not.toHaveAttribute('data-game-code-version', before ?? '', {
+        timeout: 30_000,
+      })
+
+      await play(page)
+      await stepsPast(page, 60)
+      expect(movedCount(await pictures(page))).toBe(1)
+      await stop(page)
 
       // Nothing reloaded on the way: the level is still open and still the one
       // that was open, which is the half of this decision a human notices.

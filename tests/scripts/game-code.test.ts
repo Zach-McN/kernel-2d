@@ -108,6 +108,15 @@ describe('what both surfaces get', () => {
     expect(source).toContain('export function currentSystems()')
   })
 
+  it('counts its own evaluations, and says so on the window only where there is a dev server', () => {
+    const source = gameSystemsSource(null)
+    expect(source).toContain('export function gameCodeVersion()')
+    expect(source).toContain("current.version = (current.version || 0) + 1")
+    // Guarded like the accept: a built game has no `import.meta.hot`, and the
+    // whole line goes with it.
+    expect(source).toContain("if (import.meta.hot) window.dispatchEvent(new Event('kernel2d:game-code'))")
+  })
+
   it('has a path for a built game that never touches the hot-reload machinery', () => {
     const source = gameSystemsSource(WITH_SYSTEMS)
 

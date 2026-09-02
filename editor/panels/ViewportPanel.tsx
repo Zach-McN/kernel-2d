@@ -28,6 +28,7 @@ import { ANGLE_STEP, SCALE_STEP, SNAP_INTERVALS, freely, placeOn, scaleOn, turnO
 import { useSceneDropTarget, type SceneDropTarget } from '../shell/useSceneDropTarget'
 import { useSceneGestures, type Grab, type Scale, type ScenePlacement, type Turn } from '../shell/useSceneGestures'
 import { useEntityPopover, popoverSpot } from '../shell/entity-popover'
+import { useGameCodeVersion } from '../shell/game-code-version'
 import { useSelection } from '../shell/selection'
 import { useDeleteEntities } from '../shell/useDeleteEntities'
 import { useDuplicateEntity } from '../shell/useDuplicateEntity'
@@ -78,6 +79,9 @@ export function ViewportPanel(): ReactElement {
   const assets = useSceneAssets()
   const resolved = useResolvedScene()
   const mode = usePlayMode()
+  // Which version of the game's code the next Play will run, for the outside
+  // to read: it changes when the dev server hot-replaces an edited system.
+  const codeVersion = useGameCodeVersion()
   const host = useRef<HTMLDivElement>(null)
 
   const running = mode.play.state === 'running' ? mode.play : null
@@ -343,6 +347,10 @@ export function ViewportPanel(): ReactElement {
       data-scene-scale-axis={gestures.scaling?.axis ?? ''}
       data-play-state={mode.play.state}
       data-play-scene={mode.play.state === 'stopped' ? '' : mode.play.path}
+      // How many times the game's code has been loaded into this page. Moves
+      // when an edited system has been hot-replaced and the next Play will run
+      // it — the fact a test waits on, rather than a guess at the dev server.
+      data-game-code-version={String(codeVersion)}
       data-play-match={comparison?.kind ?? ''}
       data-play-differences={comparison?.kind === 'different' ? String(comparison.differences.length) : ''}
       data-play-problems={running === null ? '' : String(running.problems.length)}

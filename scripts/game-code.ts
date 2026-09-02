@@ -54,6 +54,19 @@ import { toPosixPath } from '../sidecar/paths.js'
  * scope, and the old closure would go on reading the old one. In a built export
  * there is no `import.meta.hot` at all, the branch is eliminated, and the getter
  * answers with the same static list `systems` holds.
+ *
+ * ## Why the module counts itself and says so
+ *
+ * `gameCodeVersion()` is how many times this module has been evaluated — one on
+ * load, one more per hot replacement — and each evaluation in the editor fires a
+ * `kernel2d:game-code` event on the window. A replacement is otherwise silent:
+ * nothing on screen changes until the next Play, and the only way to *know* the
+ * dev server had noticed an edit was to press Play and look. That is exactly the
+ * wait the browser suite used to guess at with a twenty-second poll of whole
+ * Play/Stop cycles, and lose on a loaded machine (`editor-verification` W26).
+ * With a version to read and an event to wait on, the editor can say the code
+ * has changed and a test can wait for the fact rather than for the clock. In a
+ * built game the version is 1 forever and no event is ever sent.
  */
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
@@ -112,13 +125,24 @@ function holder() {
 
 const current = holder()
 current.systems = gameSystems
+// Counts every evaluation of this module: 1 on load, one more per hot
+// replacement. Lives on the holder, so a getter taken before an edit reads
+// the count from after it — the same reason the systems do.
+current.version = (current.version || 0) + 1
 
 export const systems = gameSystems
 export function currentSystems() {
   return current.systems
 }
+export function gameCodeVersion() {
+  return current.version
+}
 
 if (import.meta.hot) import.meta.hot.accept()
+// Said out loud, so the editor can show that the code on screen is not the
+// code that last ran — and so a test can wait for the replacement itself
+// rather than guessing how long the dev server will take to notice a file.
+if (import.meta.hot) window.dispatchEvent(new Event('kernel2d:game-code'))
 `
 }
 

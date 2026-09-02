@@ -23,4 +23,12 @@ declare module 'virtual:game-systems' {
    * which is the whole of how an edit reaches the next Play without a reload.
    */
   export function currentSystems(): readonly System[]
+
+  /**
+   * How many times the game's code has been loaded into this page: 1 on load,
+   * one more each time the editor's dev server hot-replaces it after an edit.
+   * Always 1 in a built game. Each change in the editor is announced with a
+   * `kernel2d:game-code` event on the window, which is what a listener waits on.
+   */
+  export function gameCodeVersion(): number
 }
