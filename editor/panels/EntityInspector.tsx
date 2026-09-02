@@ -374,7 +374,7 @@ export function EntityInspector({
       {/* The game's own nouns, drawn from the game's own description of them —
           after the picture, because what an entity *is* comes before what it
           does, and before the note about the ones nobody has described. */}
-      <ComponentFields scenePath={scenePath} entity={entity} resolved={resolved} />
+      <ComponentFields target={{ kind: 'entity', scenePath, entity, resolved }} />
 
       {unknown.length > 0 && (
         <Section title="Other components">

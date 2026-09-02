@@ -11,6 +11,7 @@ import {
   type FieldValue,
   type KnownComponentField,
 } from '../../runtime/formats/component-schema'
+import { PREFAB_FORMAT, type Prefab } from '../../runtime/formats/prefab-schema'
 import { SCENE_FORMAT, type Entity } from '../../runtime/formats/scene-schema'
 import type { ProjectTree } from '../../sidecar/tree-schema'
 import { useComponentTypes } from '../shell/component-types'
@@ -39,6 +40,16 @@ import { NumberField } from './NumberField'
  * Ctrl-Z and nothing here knows undo exists (`editor-kernel` D7). A pick from a
  * list, a tick and a chosen file are one step each.
  *
+ * **It draws for two kinds of carrier, and the difference is one function.** An
+ * entity in a level and a prefab both hold a component map, and a described
+ * component means the same thing on either — so the same fields are drawn on
+ * both, and the only thing that changes is *where a write goes*: into the
+ * entity re-found by id inside the scene's transaction, or into the prefab
+ * document itself. A prefab's change reaches every instance that has not been
+ * given its own, which is exactly what editing a prefab means everywhere else
+ * in this editor (`PrefabInspector.tsx`). What a prefab does not have is
+ * inheritance: there is nothing above it.
+ *
  * Three things it does differently from the hand-written controls, all on
  * purpose:
  *
@@ -57,19 +68,32 @@ import { NumberField } from './NumberField'
  *     a field of a kind this editor has never heard of. The panel neither lies
  *     about the file nor "fixes" it (`editor-ui` U10); Remove and Add are the
  *     way back to a value it can draw.
+ *
+ * And one thing an inherited component gets that a hand-written section does
+ * not: **its values are shown, read-only, before Add is pressed.** A placed
+ * enemy inheriting its speed from a prefab used to show a sentence saying so
+ * and nothing else, so the only way to learn the speed was to press Add and
+ * detach it — a question answered by changing the file. Now the number is on
+ * screen as text; Add turns it into a box.
  */
 
-export function ComponentFields({
-  scenePath,
-  entity,
-  resolved,
-}: {
-  scenePath: string
-  /** The entity as the file has it — what every edit here targets (`editor-ui` U23). */
-  entity: Entity
-  /** The same entity with its prefab's components filled in. Read, never written. */
-  resolved: Entity
-}): ReactElement | null {
+/** What a described component is drawn on, and so where a write to it goes. */
+export type ComponentTarget =
+  | {
+      kind: 'entity'
+      scenePath: string
+      /** The entity as the file has it — what every edit here targets (`editor-ui` U23). */
+      entity: Entity
+      /** The same entity with its prefab's components filled in. Read, never written. */
+      resolved: Entity
+    }
+  | {
+      kind: 'prefab'
+      path: string
+      prefab: Prefab
+    }
+
+export function ComponentFields({ target }: { target: ComponentTarget }): ReactElement | null {
   const types = useComponentTypes()
   const project = useProject()
   const tree: ProjectTree | null = project.state === 'ready' ? project.tree : null
@@ -82,78 +106,90 @@ export function ComponentFields({
   return (
     <>
       {described.map((description) => (
-        <DescribedComponent
-          key={description.type}
-          scenePath={scenePath}
-          entity={entity}
-          resolved={resolved}
-          description={description}
-          tree={tree}
-        />
+        <DescribedComponent key={description.type} target={target} description={description} tree={tree} />
       ))}
     </>
   )
 }
 
+/** A component map, as either carrier holds one. */
+type Components = Record<string, unknown>
+
 /**
- * One described component's section, in whichever of its four states this entity
- * is in: carrying it, inheriting it from a prefab, carrying something the fields
- * cannot show, or not having it at all.
+ * One described component's section, in whichever of its four states the
+ * carrier is in: carrying it, inheriting it from a prefab, carrying something
+ * the fields cannot show, or not having it at all.
  *
  * The last of those is the one that can come to nothing. A description marked
  * `addable: false` has no business on an entity that neither carries one nor
  * inherits one, and draws no section there at all — see `addable` in
  * `component-schema.ts` for why an entity's own components are the only thing
- * this can be decided from.
+ * this can be decided from. A prefab is offered every described component
+ * regardless: a prefab is *how* an enemy comes to exist, so "give this prefab a
+ * walker" is the one place that offer is always the human's business.
  */
 function DescribedComponent({
-  scenePath,
-  entity,
-  resolved,
+  target,
   description,
   tree,
 }: {
-  scenePath: string
-  entity: Entity
-  resolved: Entity
+  target: ComponentTarget
   description: ComponentDescription
   tree: ProjectTree | null
 }): ReactElement | null {
   const type = description.type
-  const carried = entity.components[type]
+  const onPrefab = target.kind === 'prefab'
+  const carrier: Components = onPrefab ? target.prefab.components : target.entity.components
+  const carried = carrier[type]
   const has = carried !== undefined
   // Only worth asking about when the entity has none of its own: what an entity
   // carries wins over its prefab per component type, whole, so an own component
-  // means nothing is inherited (`runtime/formats/prefab-schema.ts`).
-  const inherited = has ? undefined : resolved.components[type]
+  // means nothing is inherited (`runtime/formats/prefab-schema.ts`). A prefab
+  // inherits from nothing.
+  const inherited = has || onPrefab ? undefined : target.resolved.components[type]
 
   // Nothing to say about a component this entity is not and cannot be given.
   // Checked before any of the reading below, so a hidden section costs nothing.
-  if (!has && inherited === undefined && !isAddableByHand(description)) return null
+  if (!onPrefab && !has && inherited === undefined && !isAddableByHand(description)) return null
 
-  const edit = (label: string, merge: string | undefined, recipe: (target: Entity) => void): void => {
-    editDocument(scenePath, merge === undefined ? { label } : { label, merge }, (document) => {
+  const prefix = onPrefab ? 'prefab-component' : 'entity-component'
+  const documentPath = onPrefab ? target.path : target.scenePath
+  const carrierWord = onPrefab ? 'prefab' : 'entity'
+
+  /**
+   * One edit to whichever document holds the carrier. The entity is re-found by
+   * id inside the transaction, never closed over (`editor-ui` U23); the prefab
+   * *is* the document.
+   */
+  const edit = (label: string, merge: string | undefined, recipe: (components: Components) => void): void => {
+    editDocument(documentPath, merge === undefined ? { label } : { label, merge }, (document) => {
+      if (target.kind === 'prefab') {
+        if (document.format !== PREFAB_FORMAT) return
+        recipe(document.components)
+        return
+      }
       if (document.format !== SCENE_FORMAT) return
-      // Re-found by id inside the transaction, never closed over (`editor-ui` U23).
-      const target = document.entities.find((candidate) => candidate.id === entity.id)
-      if (target !== undefined) recipe(target)
+      const found = document.entities.find((candidate) => candidate.id === target.entity.id)
+      if (found !== undefined) recipe(found.components)
     })
   }
 
   /**
-   * One field's value into the level. Typed fields (a number, a line of text)
+   * One field's value into the document. Typed fields (a number, a line of text)
    * merge, so a run of keystrokes is one undo step; everything else is a single
-   * gesture and a single step.
+   * gesture and a single step. The merge key names the carrier, so a speed typed
+   * on a prefab and the same speed typed on one of its instances are two edits.
    */
   const write = (field: KnownComponentField, value: FieldValue): void => {
     const typed = field.kind === 'number' || field.kind === 'text'
-    const merge = typed ? `${scenePath}#${entity.id}#${type}.${field.key}` : undefined
-    edit(description.title, merge, (target) => {
-      const standing = target.components[type]
+    const who = target.kind === 'prefab' ? target.path : `${target.scenePath}#${target.entity.id}`
+    const merge = typed ? `${who}#${type}.${field.key}` : undefined
+    edit(description.title, merge, (components) => {
+      const standing = components[type]
       // Spread rather than replace: the description names the fields it knows,
       // and a key it does not name is one this game's own system may read.
       const kept = typeof standing === 'object' && standing !== null ? standing : {}
-      target.components[type] = { ...kept, [field.key]: value }
+      components[type] = { ...kept, [field.key]: value }
     })
   }
 
@@ -167,10 +203,27 @@ function DescribedComponent({
         description.fields.map((field) => (
           <DescribedField
             key={field.key}
+            prefix={prefix}
             type={type}
             field={field}
             carried={carried}
             tree={tree}
+            onWrite={write}
+          />
+        ))}
+
+      {/* What the prefab gives this placement, as text: readable without
+          detaching it. The same renderer, told not to draw controls. */}
+      {inherited !== undefined &&
+        description.fields.map((field) => (
+          <DescribedField
+            key={field.key}
+            prefix={prefix}
+            type={type}
+            field={field}
+            carried={inherited}
+            tree={tree}
+            readOnly
             onWrite={write}
           />
         ))}
@@ -183,18 +236,24 @@ function DescribedComponent({
           file has it and left alone, and the line underneath says why there is no
           control (`editor-ui` U10). */}
       {mismatched.length > 0 && (
-        <Note data-testid={`entity-component-${type}-mismatch`}>
+        <Note data-testid={`${prefix}-${type}-mismatch`}>
           {mismatched.length === 1
-            ? `${mismatched[0]?.label ?? ''} in this level is not a ${KIND_WORDS[mismatched[0]?.kind ?? 'number']}, so it is shown as the file has it and left alone.`
-            : `${mismatched.map((field) => field.label).join(' and ')} in this level are not what these fields can show (${mismatched.map((field) => `a ${KIND_WORDS[field.kind]}`).join(', ')}), so they are shown as the file has them and left alone.`}{' '}
+            ? `${mismatched[0]?.label ?? ''} in this file is not a ${KIND_WORDS[mismatched[0]?.kind ?? 'number']}, so it is shown as the file has it and left alone.`
+            : `${mismatched.map((field) => field.label).join(' and ')} in this file are not what these fields can show (${mismatched.map((field) => `a ${KIND_WORDS[field.kind]}`).join(', ')}), so they are shown as the file has them and left alone.`}{' '}
           Remove and then Add starts again from the description&apos;s values.
         </Note>
       )}
 
       {inherited !== undefined && (
-        <Note data-testid={`entity-component-${type}-inherited`}>
-          This one has a {type} because its prefab does. Adding one here gives this placement its own copy of
-          it, and it stops following the prefab.
+        <Note data-testid={`${prefix}-${type}-inherited`}>
+          These are the prefab&apos;s values, and this placement follows them. Adding one here gives this
+          placement its own copy to change, and it stops following the prefab.
+        </Note>
+      )}
+
+      {onPrefab && has && (
+        <Note data-testid={`${prefix}-${type}-shared`}>
+          Every instance of this prefab carries this, unless it has been given a {type} of its own.
         </Note>
       )}
 
@@ -208,11 +267,15 @@ function DescribedComponent({
           <button
             type="button"
             className="control control--action"
-            data-testid={`entity-component-${type}-remove`}
-            title={`Take the ${type} off this entity. Ctrl-Z puts it back.`}
+            data-testid={`${prefix}-${type}-remove`}
+            title={
+              onPrefab
+                ? `Take the ${type} off this prefab — and off every instance that has not got one of its own. Ctrl-Z puts it back.`
+                : `Take the ${type} off this entity. Ctrl-Z puts it back.`
+            }
             onClick={() =>
-              edit(`Remove ${type}`, undefined, (target) => {
-                delete target.components[type]
+              edit(`Remove ${type}`, undefined, (components) => {
+                delete components[type]
               })
             }
           >
@@ -222,14 +285,16 @@ function DescribedComponent({
           <button
             type="button"
             className="control control--action"
-            data-testid={`entity-component-${type}-add`}
+            data-testid={`${prefix}-${type}-add`}
             title={
-              inherited === undefined
-                ? `Give this entity a ${type}, with the values ${description.title} starts at.`
-                : `Give this placement its own ${type} — a copy of the one its prefab gives it — so it can be tuned on its own.`
+              onPrefab
+                ? `Give this prefab a ${type}, with the values ${description.title} starts at. Every instance placed from it will carry one.`
+                : inherited === undefined
+                  ? `Give this ${carrierWord} a ${type}, with the values ${description.title} starts at.`
+                  : `Give this placement its own ${type} — a copy of the one its prefab gives it — so it can be tuned on its own.`
             }
             onClick={() =>
-              edit(`Add ${type}`, undefined, (target) => {
+              edit(`Add ${type}`, undefined, (components) => {
                 // **A placement that inherits one gets a copy of what it inherits,
                 // whole — not the description's defaults.** "Its own" has to mean
                 // the thing it already has, or pressing Add changes the entity:
@@ -239,7 +304,7 @@ function DescribedComponent({
                 // type, whole — `prefab-schema.ts`) then loses the squashed art
                 // the description never knew about. Copied deep, so the nested
                 // keys the description cannot see come along too.
-                target.components[type] =
+                components[type] =
                   inherited === undefined ? defaultValueFor(description) : structuredClone(inherited)
               })
             }
@@ -264,24 +329,30 @@ const KIND_WORDS: Record<KnownComponentField['kind'], string> = {
 
 /**
  * One field, as whichever control its kind calls for — or as a value the human
- * reads and cannot change, when the file holds something the control cannot
- * show or the kind is one this editor does not know.
+ * reads and cannot change: when the file holds something the control cannot
+ * show, when the kind is one this editor does not know, or when the value is
+ * the prefab's and this placement has not been given its own yet.
  */
 function DescribedField({
+  prefix,
   type,
   field,
   carried,
   tree,
+  readOnly = false,
   onWrite,
 }: {
+  prefix: string
   type: string
   field: ComponentField
   carried: unknown
   tree: ProjectTree | null
+  /** Show the value as text, with nothing to type into. */
+  readOnly?: boolean
   onWrite: (field: KnownComponentField, value: FieldValue) => void
 }): ReactElement {
-  const testId = `entity-component-${type}-${field.key}`
-  const title = field.title ?? `${field.label}, on this entity's ${type}`
+  const testId = `${prefix}-${type}-${field.key}`
+  const title = field.title ?? `${field.label}, on this ${type}`
 
   if (!isKnownField(field)) {
     return (
@@ -300,6 +371,10 @@ function DescribedField({
     // As the file has it, and nothing to type into: the note under the section
     // says why.
     return <Field label={field.label} value={shown(read.held)} testId={testId} />
+  }
+
+  if (readOnly) {
+    return <Field label={field.label} value={describeValue(field, read.value)} testId={testId} />
   }
 
   switch (field.kind) {
@@ -392,6 +467,24 @@ function DescribedField({
           onPick={(path) => onWrite(field, path)}
         />
       )
+  }
+}
+
+/** A field's value as the words its control would show, for reading without one. */
+function describeValue(field: KnownComponentField, value: FieldValue): string {
+  switch (field.kind) {
+    case 'number':
+      return String(value)
+    case 'text':
+      return typeof value === 'string' && value !== '' ? value : '—'
+    case 'toggle':
+      return value === true ? 'yes' : 'no'
+    case 'choice':
+      return field.options.find((option) => option.value === value)?.label ?? String(value)
+    case 'asset':
+      return value !== null && typeof value === 'object' ? value.path : 'Nothing'
+    case 'scene':
+      return typeof value === 'string' ? value : 'Nothing'
   }
 }
 

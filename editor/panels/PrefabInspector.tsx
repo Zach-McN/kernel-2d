@@ -4,10 +4,12 @@ import { PREFAB_FORMAT, type Prefab } from '../../runtime/formats/prefab-schema'
 import { spriteOf, unknownComponentTypesOf, type AssetRef } from '../../runtime/formats/scene-schema'
 import type { ProjectTree } from '../../sidecar/tree-schema'
 import { basename } from '../shell/asset-kinds'
+import { useComponentTypes } from '../shell/component-types'
 import { describeProblem, useSceneAssets } from '../shell/scene-assets'
 import { instancesOf, useResolvedScene } from '../shell/scene-prefabs'
 import { usePlacePrefab } from '../shell/usePlacePrefab'
 import { editDocument, sealEdits } from '../store/open-documents'
+import { ComponentFields } from './ComponentFields'
 import { Field, Note, Section } from './fields'
 import { PlaceByClicking } from './PlaceByClicking'
 import { TexturePicker } from './TexturePicker'
@@ -25,6 +27,14 @@ import { TexturePicker } from './TexturePicker'
  * afterwards reach every instance. An entity that copied the prefab's components
  * at placement time would look identical on the day it was placed and be dead
  * weight the next.
+ *
+ * **The game's own components are edited here too, through the same fields the
+ * entity panel draws** (`ComponentFields.tsx`, aimed at the prefab document).
+ * That is what makes "every walker in the level" one edit: a speed typed here
+ * reaches every instance that has not been given a speed of its own, the same
+ * way the picture does. Until this existed the panel named those components
+ * as ones it had no controls for, and the only way to retune all of an enemy
+ * was to edit the file by hand.
  */
 export function PrefabInspector({
   path,
@@ -41,7 +51,10 @@ export function PrefabInspector({
 
   const sprite = spriteOf(prefab)
   const textureProblem = sprite === null ? undefined : assets.problems[sprite.texture.path]
-  const unknown = unknownComponentTypesOf(prefab)
+  // What is left after both registries: the types this editor owns, and the
+  // ones the game has described, which have fields of their own below.
+  const described = useComponentTypes().byType
+  const unknown = unknownComponentTypesOf(prefab).filter((type) => described[type] === undefined)
 
   const change = (field: string, label: string, recipe: (draft: Prefab) => void): void => {
     editDocument(path, { label, merge: `${path}#${field}` }, (document) => {
@@ -98,6 +111,11 @@ export function PrefabInspector({
           </p>
         )}
       </Section>
+
+      {/* The game's own nouns, on the prefab: what every instance carries unless
+          it has been given its own. After the picture, before the placing, for
+          the entity panel's reason — what a thing is before where it goes. */}
+      <ComponentFields target={{ kind: 'prefab', path, prefab }} />
 
       <Section title="In a level">
         {placing.scenePath === null ? (

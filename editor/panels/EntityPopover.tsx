@@ -230,7 +230,7 @@ export function EntityPopover({
           above the line changes a value on this entity. Compacted by the
           stylesheet to the window's width, but the markup is the Inspector's. */}
       <div className="entity-popover__components" data-testid="popover-components">
-        <ComponentFields scenePath={scenePath} entity={entity} resolved={resolved} />
+        <ComponentFields target={{ kind: 'entity', scenePath, entity, resolved }} />
       </div>
 
       <div className="entity-popover__actions">

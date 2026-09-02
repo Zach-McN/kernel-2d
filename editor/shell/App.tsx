@@ -7,6 +7,7 @@ import { AssetBrowsingProvider } from './asset-browsing'
 import { AssetMetaProvider } from './asset-meta-context'
 import { ComponentTypesProvider } from './component-types'
 import { EntityPopoverProvider } from './entity-popover'
+import { OutlinerFilterProvider } from './outliner-filter'
 import { LayoutProvider, useLayout } from './layout-context'
 import { OpenSceneProvider } from './open-scene'
 import { PANEL_COMPONENTS } from './panels'
@@ -78,6 +79,7 @@ export function App(): ReactElement {
         <SelectionProvider>
           <EntityPopoverProvider>
             <PlacingProvider>
+              <OutlinerFilterProvider>
               <AssetBrowsingProvider>
                 <ThumbnailProvider>
                   <AssetMetaProvider>
@@ -99,6 +101,7 @@ export function App(): ReactElement {
                   </AssetMetaProvider>
                 </ThumbnailProvider>
               </AssetBrowsingProvider>
+              </OutlinerFilterProvider>
             </PlacingProvider>
           </EntityPopoverProvider>
         </SelectionProvider>

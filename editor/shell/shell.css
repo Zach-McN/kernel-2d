@@ -1935,6 +1935,41 @@ body {
   border-bottom: 1px solid var(--shell-line);
 }
 
+/*
+ * The filter box, a fixed row of its own under the buttons — one line, always,
+ * so typing never resizes the list under the pointer (UG8). The count beside it
+ * appears only while there is something to count against.
+ */
+.outliner__filter {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--shell-line);
+}
+
+.outliner__filter-box {
+  flex: 1;
+  min-width: 0;
+  height: 22px;
+  padding: 0 6px;
+  font-family: var(--shell-sans);
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.outliner__filter-box::placeholder {
+  color: var(--shell-text-dim);
+}
+
+.outliner__filter-count {
+  flex: none;
+  color: var(--shell-text-dim);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
 .outliner__list {
   flex: 1;
   min-height: 0;

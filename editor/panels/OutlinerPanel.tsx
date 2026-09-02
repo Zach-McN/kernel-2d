@@ -17,6 +17,7 @@ import {
 } from '../../runtime/formats/scene-schema'
 import { basename } from '../shell/asset-kinds'
 import { useEntityPopover, popoverSpot } from '../shell/entity-popover'
+import { nameMatches, useOutlinerFilter } from '../shell/outliner-filter'
 import { freeName, namesIn } from '../shell/entity-names'
 import { useDeleteEntities } from '../shell/useDeleteEntities'
 import { useDuplicateEntity } from '../shell/useDuplicateEntity'
@@ -107,6 +108,11 @@ export function OutlinerPanel(): ReactElement {
   // the one it was opened from (`../shell/entity-popover.tsx`).
   const popovers = useEntityPopover()
   const popover = popovers.anchor?.owner === 'outliner' ? popovers.anchor : null
+  // The filter box: which rows are on screen. Narrows what is shown and nothing
+  // else; a row that is hidden is still in the level, still selected if it was,
+  // still where it was in the draw order (`../shell/outliner-filter.tsx`).
+  const { filter, setFilter } = useOutlinerFilter()
+  const filtering = filter.trim() !== ''
   // The panel it is measured against, and the list it hangs over — the second
   // so a closed window can hand the keys back to the row it was about.
   const panel = useRef<HTMLDivElement | null>(null)
@@ -298,6 +304,7 @@ export function OutlinerPanel(): ReactElement {
   }
 
   const at = entities.findIndex((entity) => entity.id === selected)
+  const shownCount = filtering ? entities.filter((entity) => nameMatches(entity.name, filter)).length : entities.length
   // The file's entity, never the resolved one: everything the window changes
   // goes to the document (`editor-ui` U23). Null is also how the window closes
   // when its entity is deleted from under it — there is nothing to draw.
@@ -310,6 +317,7 @@ export function OutlinerPanel(): ReactElement {
       data-testid="outliner-panel"
       data-scene={path}
       data-popover-entity={popoverEntity?.id ?? ''}
+      data-filter={filter.trim()}
       ref={panel}
     >
       <header className="outliner__bar">
@@ -363,9 +371,45 @@ export function OutlinerPanel(): ReactElement {
         </button>
       </header>
 
+      {/* Its own row under the buttons rather than a sixth thing on the bar: the
+          bar is full at the panel's narrowest, and a box that reads on every
+          keystroke wants a line of its own. Fixed height, so typing never moves
+          the list under a press. */}
+      <div className="outliner__filter">
+        <input
+          type="search"
+          className="control control--text outliner__filter-box"
+          data-testid="entity-filter"
+          aria-label="Show only entities whose name contains this"
+          title="Show only the rows whose name contains this. Esc clears. Rows cannot be dragged while a filter is on."
+          placeholder="Filter by name"
+          autoComplete="off"
+          spellCheck={false}
+          value={filter}
+          onChange={(event) => {
+            setFilter(event.target.value)
+          }}
+          onKeyDown={(event) => {
+            if (event.key !== 'Escape') return
+            event.stopPropagation()
+            if (filter !== '') setFilter('')
+            else event.currentTarget.blur()
+          }}
+        />
+        {filtering && (
+          <span className="outliner__filter-count" data-testid="entity-filter-count">
+            {shownCount} of {entities.length}
+          </span>
+        )}
+      </div>
+
       {entities.length === 0 ? (
         <p className="outliner__message" data-testid="outliner-message">
           This scene is empty. Add an entity to put something in it.
+        </p>
+      ) : filtering && shownCount === 0 ? (
+        <p className="outliner__message" data-testid="outliner-filter-empty">
+          Nothing here is called “{filter.trim()}”.
         </p>
       ) : (
         <ol
@@ -420,6 +464,10 @@ export function OutlinerPanel(): ReactElement {
           }}
         >
           {entities.map((entity, index) => {
+            // Hidden by the filter: not drawn at all, and the index it keeps is
+            // its place in the whole list, so nothing that reads a row's index
+            // has to know about the filter.
+            if (filtering && !nameMatches(entity.name, filter)) return null
             // The file's entity decides what this row *is*; the resolved one
             // decides what it draws. Falling back is the gap of one render
             // before the prefabs it points at have been read.
@@ -428,6 +476,10 @@ export function OutlinerPanel(): ReactElement {
               <Row
                 key={entity.id}
                 index={index}
+                // A drag reorders by the slot under the pointer, and a slot
+                // between two shown rows may hold any number of hidden ones —
+                // so a row is not picked up at all while a filter is on.
+                draggable={!filtering}
                 entity={drawn}
                 fromPrefab={prefabRefOf(entity)?.path ?? null}
                 selected={selectedHere.has(entity.id)}
@@ -553,6 +605,8 @@ interface RowProps {
   onContext: (event: MouseEvent<HTMLElement>) => void
   onDragStart: (event: DragEvent<HTMLElement>) => void
   onDragEnd: () => void
+  /** Whether this row can be picked up to reorder it. Off while a filter hides rows. */
+  draggable: boolean
 }
 
 function Row({
@@ -567,6 +621,7 @@ function Row({
   onContext,
   onDragStart,
   onDragEnd,
+  draggable,
 }: RowProps): ReactElement {
   const sprite = spriteOf(entity)
 
@@ -580,7 +635,7 @@ function Row({
         data-primary={primary}
         data-entity-problem={problem ?? ''}
         data-entity-prefab={fromPrefab ?? ''}
-        draggable
+        draggable={draggable}
         onClick={onSelect}
         onContextMenu={onContext}
         onDragStart={onDragStart}

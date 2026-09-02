@@ -409,7 +409,12 @@ last row is drawn in front.
   *New scene* / *New prefab*. Also **drag a file onto the level** — see below.
 - **Outliner** → add, duplicate, delete, and reorder — with the `↑` `↓` buttons,
   or by dragging a row to where it should sit. A line shows where it will land;
-  `Ctrl-Z` takes either kind of reorder back in one press. Right-click a row for
+  `Ctrl-Z` takes either kind of reorder back in one press. **Type in the filter
+  box** under the buttons and only the rows whose name contains it stay on
+  screen, with a count; `Esc` clears it. It hides rows and nothing else — what
+  is selected stays selected, and the draw order is untouched — and rows cannot
+  be dragged to reorder while a filter is on, since a gap between two shown
+  rows could hold any number of hidden ones. Right-click a row for
   the same small window a right-click on the sprite opens — rename, position,
   your game's own fields, Snap to grid, Frame, Duplicate, Delete.
 - **Viewport** → click to select, drag to move, `G` to move without holding
@@ -545,11 +550,18 @@ anything.
   which gives it one with the starting values the description names — a file or
   a level starts as Nothing. An entity that has one gets **Remove**, which takes
   it out of the level entirely. Both are one press of `Ctrl-Z`.
-- **A prefab's is inherited.** If a placement has no patrol of its own but its
-  prefab has one, the section says so. Pressing Add gives that placement its own
-  **copy** of the prefab's — every value it had, including ones the fields do not
-  show — and it stops following the prefab from then on. Change one number and
-  only that placement changes; Remove puts it back under the prefab's control.
+- **A prefab's is inherited, and you can read it.** If a placement has no patrol
+  of its own but its prefab has one, the section shows the prefab's values as
+  plain text — the speed it is actually walking at — with a line saying they are
+  the prefab's. Pressing Add gives that placement its own **copy** of them —
+  every value, including ones the fields do not show — and it stops following
+  the prefab from then on. Change one number and only that placement changes;
+  Remove puts it back under the prefab's control.
+- **On a prefab too.** Open the prefab itself and the same section is there,
+  with boxes to type in. A number typed on the prefab reaches every instance
+  that has not been given its own — the way changing the prefab's picture does —
+  and one `Ctrl-Z` takes it back everywhere at once. So there are two dials:
+  the prefab for all of them, a placement for one of them.
 - **Some components are never offered.** A description can say it is not to be
   handed out by a button, and then the section appears only where the entity is
   already one — where it carries a patrol, or inherits one from its prefab.
@@ -696,6 +708,12 @@ reference, so editing the prefab changes every instance at once — while each
 placement keeps its own position, rotation and scale. Select an instance and the
 Inspector offers *Open prefab* and *Place another*, and tells you how many
 instances the level has.
+
+**Your game's own fields are on the prefab as well** — an enemy's speed, say —
+and a value typed there reaches every instance that has not been given its own
+(see *Your game's own fields in the Inspector*). Select an instance and the same
+section shows the prefab's values as text, with an Add button that gives that
+one placement its own copy to change.
 
 **Place by clicking** is the button for putting a lot of them down. Press it and
 every click in the picture puts another one where you clicked, on the snap,

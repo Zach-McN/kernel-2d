@@ -181,6 +181,10 @@ test('Add on a placement inheriting one copies what the prefab gives it, keys th
   await expect(page.getByTestId('inspector-name')).toHaveText('Tilted slime')
   await expect(page.getByTestId('entity-component-patrol-inherited')).toBeVisible({ timeout: WITHIN_A_SECOND + 2_000 })
 
+  // Readable before Add, as text: the prefab's 12, not the description's 24.
+  await expect(page.getByTestId('entity-component-patrol-unitsPerSecond')).toHaveText('12')
+  await expect(page.getByTestId('entity-component-patrol-fromX')).toHaveText('96')
+
   await page.getByTestId('entity-component-patrol-add').click()
 
   const levelTwo = path.join(editorTestProjectPath(), 'scenes', 'level-02.json')
@@ -197,6 +201,68 @@ test('Add on a placement inheriting one copies what the prefab gives it, keys th
   await type(page, 'entity-component-patrol-unitsPerSecond', '30')
   await expect.poll(() => (own() as { unitsPerSecond?: unknown })?.unitsPerSecond).toBe(30)
   expect(JSON.parse(fs.readFileSync(prefabFile, 'utf8')).components.patrol).toEqual(inherited)
+})
+
+// --- acceptance: the same fields on a prefab -------------------------------
+
+/**
+ * The other direction: a speed typed on the prefab reaches every instance that
+ * has not been given its own. The assertion is the prefab file changing and the
+ * level file not — the same shape as changing a prefab's picture — plus the
+ * instance's panel reading the new number as inherited.
+ */
+test('a described component on a prefab is edited there, and every instance follows without the level changing', async ({
+  page,
+}) => {
+  const prefabFile = path.join(editorTestProjectPath(), 'prefabs', 'enemy-slime.json')
+  const prefab = JSON.parse(fs.readFileSync(prefabFile, 'utf8')) as { components: Record<string, unknown> }
+  prefab.components['patrol'] = { unitsPerSecond: 12, fromX: 96, toX: 176, squashed: { texture: { id: 'abc', path: 'a.png' } } }
+  fs.writeFileSync(prefabFile, `${JSON.stringify(prefab, null, 2)}\n`)
+  const levelTwo = path.join(editorTestProjectPath(), 'scenes', 'level-02.json')
+  const levelBefore = fs.readFileSync(levelTwo, 'utf8')
+
+  await selectAsset(page, 'scenes/level-02.json')
+  await selectAsset(page, 'prefabs/enemy-slime.json')
+  await expect(page.getByTestId('inspector-document-format')).toHaveText('Prefab')
+  await expect(page.getByTestId('prefab-component-patrol-unitsPerSecond')).toHaveValue('12', {
+    timeout: WITHIN_A_SECOND + 2_000,
+  })
+  // No longer named as a component with no controls: it has some.
+  await expect(page.getByTestId('prefab-unknown-components')).toHaveCount(0)
+
+  await typeInto(page, 'prefab-component-patrol-unitsPerSecond', '30')
+
+  await expect
+    .poll(() => (JSON.parse(fs.readFileSync(prefabFile, 'utf8')) as { components: Record<string, unknown> }).components['patrol'])
+    .toEqual({ unitsPerSecond: 30, fromX: 96, toX: 176, squashed: { texture: { id: 'abc', path: 'a.png' } } })
+  expect(fs.readFileSync(levelTwo, 'utf8')).toBe(levelBefore)
+
+  // And an instance reads the new number as the prefab's, still following it.
+  await page.getByTestId('outliner-panel').locator('[data-entity-id]').filter({ hasText: 'Tilted slime' }).first().click()
+  await expect(page.getByTestId('entity-component-patrol-inherited')).toBeVisible()
+  await expect(page.getByTestId('entity-component-patrol-unitsPerSecond')).toHaveText('30')
+
+  // One Ctrl-Z takes the prefab's change back, everywhere.
+  await page.keyboard.press('ControlOrMeta+z')
+  await expect(page.getByTestId('entity-component-patrol-unitsPerSecond')).toHaveText('12')
+})
+
+test('Add on a prefab gives it the described defaults, and every instance inherits them', async ({ page }) => {
+  await selectAsset(page, 'scenes/level-02.json')
+  await selectAsset(page, 'prefabs/enemy-slime.json')
+  await expect(page.getByTestId('prefab-component-patrol-add')).toBeVisible()
+
+  await page.getByTestId('prefab-component-patrol-add').click()
+
+  const prefabFile = path.join(editorTestProjectPath(), 'prefabs', 'enemy-slime.json')
+  await expect
+    .poll(() => (JSON.parse(fs.readFileSync(prefabFile, 'utf8')) as { components: Record<string, unknown> }).components['patrol'])
+    .toEqual({ unitsPerSecond: 24, fromX: 0, toX: 0 })
+  await expect(page.getByTestId('prefab-component-patrol-shared')).toBeVisible()
+
+  await page.getByTestId('outliner-panel').locator('[data-entity-id]').filter({ hasText: 'Tilted slime' }).first().click()
+  await expect(page.getByTestId('entity-component-patrol-inherited')).toBeVisible()
+  await expect(page.getByTestId('entity-component-patrol-unitsPerSecond')).toHaveText('24')
 })
 
 test('Remove takes the component out of the level, and Ctrl-Z brings it back', async ({ page }) => {
