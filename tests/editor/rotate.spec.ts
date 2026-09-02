@@ -1,7 +1,7 @@
-import { expect, test, type Locator, type Page } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
 
 import { restoreProjectAfterEach } from './restore-project.js'
-import { selectAsset } from './select-asset.js'
+import { openScene, outlinerRow, viewport } from './scene-view.js'
 
 /**
  * Turning entities with `R`: the gizmo, the angle, and the two ways out.
@@ -37,31 +37,6 @@ test.beforeEach(async ({ page }) => {
 })
 
 // --- reading what happened -------------------------------------------------
-
-const viewport = (page: Page): Locator => page.getByTestId('viewport-panel')
-const row = (page: Page, name: string): Locator =>
-  page.getByTestId('outliner-panel').locator('[data-entity-id]').filter({ hasText: name }).first()
-
-async function settled(page: Page): Promise<void> {
-  let previous = Number.NaN
-  await expect
-    .poll(
-      async () => {
-        const now = Number(await viewport(page).getAttribute('data-scene-scale'))
-        const same = now === previous
-        previous = now
-        return same && Number.isFinite(now)
-      },
-      { intervals: [120, 120, 120, 120, 120, 120, 120, 120] },
-    )
-    .toBe(true)
-}
-
-async function openScene(page: Page): Promise<void> {
-  await selectAsset(page, LEVEL_ONE)
-  await expect(viewport(page)).toHaveAttribute('data-scene-showing', LEVEL_ONE)
-  await settled(page)
-}
 
 /** What the Inspector says about the selected entity, in the level's own units. */
 async function transform(page: Page): Promise<{ x: number; y: number; rotation: number }> {
@@ -131,8 +106,8 @@ async function turnTo(
 // --- acceptance: the gesture ------------------------------------------------
 
 test('R turns the selected entity, and a click keeps it', async ({ page }) => {
-  await openScene(page)
-  await row(page, 'Slime').click()
+  await openScene(page, LEVEL_ONE)
+  await outlinerRow(page, 'Slime').click()
   const before = await transform(page)
 
   await turnTo(page, 90)
@@ -148,8 +123,8 @@ test('R turns the selected entity, and a click keeps it', async ({ page }) => {
 })
 
 test('the gizmo and its line are on screen while it turns, and gone afterwards', async ({ page }) => {
-  await openScene(page)
-  await row(page, 'Slime').click()
+  await openScene(page, LEVEL_ONE)
+  await outlinerRow(page, 'Slime').click()
 
   await turnTo(page, 60)
 
@@ -162,8 +137,8 @@ test('the gizmo and its line are on screen while it turns, and gone afterwards',
 })
 
 test('Enter puts it down as well as a click', async ({ page }) => {
-  await openScene(page)
-  await row(page, 'Slime').click()
+  await openScene(page, LEVEL_ONE)
+  await outlinerRow(page, 'Slime').click()
   const before = await transform(page)
 
   await turnTo(page, 90)
@@ -181,8 +156,8 @@ test('Enter puts it down as well as a click', async ({ page }) => {
  * nothing (`editor-verification` V30).
  */
 test('Esc puts it back and leaves no step behind', async ({ page }) => {
-  await openScene(page)
-  await row(page, 'Slime').click()
+  await openScene(page, LEVEL_ONE)
+  await outlinerRow(page, 'Slime').click()
 
   // A change to reverse *before* the cancelled turn, so the next Ctrl-Z has
   // something of its own to take back.
@@ -191,7 +166,7 @@ test('Esc puts it back and leaves no step behind', async ({ page }) => {
   // Focus back out of the field, or `r` is typed into it rather than starting a
   // turn — which is the typing guard working, and would read here as `R` being
   // broken.
-  await row(page, 'Slime').click()
+  await outlinerRow(page, 'Slime').click()
   const before = await transform(page)
 
   await turnTo(page, 90)
@@ -206,8 +181,8 @@ test('Esc puts it back and leaves no step behind', async ({ page }) => {
 })
 
 test('the whole turn is one press of Ctrl-Z', async ({ page }) => {
-  await openScene(page)
-  await row(page, 'Slime').click()
+  await openScene(page, LEVEL_ONE)
+  await outlinerRow(page, 'Slime').click()
   const before = await transform(page)
 
   // Taken round in stages, so the gesture writes many times over.
@@ -236,15 +211,15 @@ test('the whole turn is one press of Ctrl-Z', async ({ page }) => {
  * that only spins them leaves the positions alone, so both are asserted.
  */
 test('several selected swing round their middle and each one turns', async ({ page }) => {
-  await openScene(page)
+  await openScene(page, LEVEL_ONE)
 
-  await row(page, 'Knight').click()
+  await outlinerRow(page, 'Knight').click()
   const knightBefore = await transform(page)
-  await row(page, 'Slime').click()
+  await outlinerRow(page, 'Slime').click()
   const slimeBefore = await transform(page)
 
-  await row(page, 'Knight').click()
-  await row(page, 'Slime').click({ modifiers: ['Shift'] })
+  await outlinerRow(page, 'Knight').click()
+  await outlinerRow(page, 'Slime').click({ modifiers: ['Shift'] })
   await expect(viewport(page)).toHaveAttribute('data-scene-selected-count', '2')
 
   await turnTo(page, 90)
@@ -255,7 +230,7 @@ test('several selected swing round their middle and each one turns', async ({ pa
   const slimeAfter = await transform(page)
   expect(slimeAfter.rotation).toBeCloseTo(slimeBefore.rotation + 90, 0)
 
-  await row(page, 'Knight').click()
+  await outlinerRow(page, 'Knight').click()
   const knightAfter = await transform(page)
   expect(knightAfter.rotation).toBeCloseTo(knightBefore.rotation + 90, 0)
 
@@ -266,10 +241,10 @@ test('several selected swing round their middle and each one turns', async ({ pa
 })
 
 test('turning several is still one press of Ctrl-Z', async ({ page }) => {
-  await openScene(page)
-  await row(page, 'Knight').click()
+  await openScene(page, LEVEL_ONE)
+  await outlinerRow(page, 'Knight').click()
   const before = await transform(page)
-  await row(page, 'Slime').click({ modifiers: ['Shift'] })
+  await outlinerRow(page, 'Slime').click({ modifiers: ['Shift'] })
 
   await turnTo(page, 90)
   await page.mouse.down()
@@ -277,7 +252,7 @@ test('turning several is still one press of Ctrl-Z', async ({ page }) => {
 
   await page.keyboard.press('ControlOrMeta+z')
 
-  await row(page, 'Knight').click()
+  await outlinerRow(page, 'Knight').click()
   await expect.poll(async () => (await transform(page)).rotation).toBeCloseTo(before.rotation, 1)
   await expect.poll(async () => (await transform(page)).x).toBeCloseTo(before.x, 1)
 })
@@ -291,9 +266,9 @@ async function setSnapping(page: Page, on: boolean): Promise<void> {
 }
 
 test('with snapping on the angle lands on a multiple of 15', async ({ page }) => {
-  await openScene(page)
+  await openScene(page, LEVEL_ONE)
   await setSnapping(page, true)
-  await row(page, 'Slime').click()
+  await outlinerRow(page, 'Slime').click()
 
   await turnTo(page, 37)
 
@@ -302,9 +277,9 @@ test('with snapping on the angle lands on a multiple of 15', async ({ page }) =>
 })
 
 test('holding Ctrl turns freely while snapping is on', async ({ page }) => {
-  await openScene(page)
+  await openScene(page, LEVEL_ONE)
   await setSnapping(page, true)
-  await row(page, 'Slime').click()
+  await outlinerRow(page, 'Slime').click()
 
   await turnTo(page, 37, { ctrl: true })
 
@@ -320,9 +295,9 @@ test('holding Ctrl turns freely while snapping is on', async ({ page }) => {
 
 /** The half that catches an inversion written backwards. */
 test('holding Ctrl lands on 15° steps while snapping is off', async ({ page }) => {
-  await openScene(page)
+  await openScene(page, LEVEL_ONE)
   await setSnapping(page, false)
-  await row(page, 'Slime').click()
+  await outlinerRow(page, 'Slime').click()
 
   await turnTo(page, 37)
   expect((await turnedBy(page)) % 15).not.toBe(0)
@@ -339,7 +314,7 @@ test('holding Ctrl lands on 15° steps while snapping is off', async ({ page }) 
 // --- acceptance: where it is refused ----------------------------------------
 
 test('does nothing with nothing selected', async ({ page }) => {
-  await openScene(page)
+  await openScene(page, LEVEL_ONE)
 
   await page.getByTestId('viewport-stage').click({ position: { x: 6, y: 6 } })
   await expect(viewport(page)).toHaveAttribute('data-scene-selected-count', '0')
@@ -349,8 +324,8 @@ test('does nothing with nothing selected', async ({ page }) => {
 })
 
 test('does nothing while a level is running', async ({ page }) => {
-  await openScene(page)
-  await row(page, 'Slime').click()
+  await openScene(page, LEVEL_ONE)
+  await outlinerRow(page, 'Slime').click()
   const before = await transform(page)
   await expect(page.getByTestId('play-start')).toBeEnabled()
   await page.getByTestId('play-start').click()
@@ -366,8 +341,8 @@ test('does nothing while a level is running', async ({ page }) => {
 
 /** One modal gesture at a time: a grab keeps the picture and `R` bounces off. */
 test('does not start on top of a grab', async ({ page }) => {
-  await openScene(page)
-  await row(page, 'Slime').click()
+  await openScene(page, LEVEL_ONE)
+  await outlinerRow(page, 'Slime').click()
 
   await page.keyboard.press('g')
   await expect(viewport(page)).not.toHaveAttribute('data-scene-grabbing', '')
@@ -386,8 +361,8 @@ test('does not start on top of a grab', async ({ page }) => {
  * go wrong.
  */
 test('Play stays greyed for the whole turn', async ({ page }) => {
-  await openScene(page)
-  await row(page, 'Slime').click()
+  await openScene(page, LEVEL_ONE)
+  await outlinerRow(page, 'Slime').click()
 
   await turnTo(page, 45)
 
@@ -400,9 +375,9 @@ test('Play stays greyed for the whole turn', async ({ page }) => {
 })
 
 test('leaves a picture of a turn in progress', async ({ page }, testInfo) => {
-  await openScene(page)
-  await row(page, 'Knight').click()
-  await row(page, 'Slime').click({ modifiers: ['Shift'] })
+  await openScene(page, LEVEL_ONE)
+  await outlinerRow(page, 'Knight').click()
+  await outlinerRow(page, 'Slime').click({ modifiers: ['Shift'] })
 
   await turnTo(page, 50)
   await expect(page.getByTestId('scene-turn')).toBeVisible()

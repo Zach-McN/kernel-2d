@@ -359,7 +359,21 @@ async function everythingUnder(folder: string): Promise<string[]> {
   return found
 }
 
-/** Whether `candidate` is the folder `parent` itself or anything under it. */
+/**
+ * Whether `candidate` is the folder `parent` itself or anything under it.
+ *
+ * Deliberately lexical — no `realpathSync`, unlike the export's version of this
+ * question (`scripts/export/config.ts`), which must resolve links because it
+ * compares paths from two different namespaces. Both arguments here were built
+ * by `resolveInsideProject` from plain validated segments on the same project
+ * root, so they already live in one namespace and resolving would add nothing.
+ * A junction inside the project *can* alias the destination back into the
+ * folder being moved without this check noticing — and the operating system
+ * then refuses the rename itself (`EINVAL`), so the cost of staying lexical is
+ * a raw code instead of this file's plain sentence, in a corner reachable only
+ * through a self-referential link the scan will not even display
+ * (editor-kernel D35).
+ */
 function isInside(parent: string, candidate: string): boolean {
   const relative = path.relative(path.resolve(parent), path.resolve(candidate))
   return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative))

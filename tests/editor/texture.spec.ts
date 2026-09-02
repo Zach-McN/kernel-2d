@@ -3,6 +3,7 @@ import path from 'node:path'
 
 import { expect, test, type Locator, type Page } from '@playwright/test'
 
+import { typeInto } from './fields.js'
 import { showPanel } from './panels.js'
 import { restoreProjectAfterEach } from './restore-project.js'
 import { selectAsset } from './select-asset.js'
@@ -95,13 +96,6 @@ async function settledScale(page: Page): Promise<number> {
 
 async function setFrames(page: Page, mode: 'single' | 'grid'): Promise<void> {
   await page.getByTestId('slice-mode-control').selectOption(mode)
-}
-
-async function typeInto(page: Page, testId: string, text: string): Promise<void> {
-  const field = page.getByTestId(testId)
-  await field.click()
-  await field.press('ControlOrMeta+a')
-  await field.pressSequentially(text, { delay: 20 })
 }
 
 // --- the acceptances -------------------------------------------------------

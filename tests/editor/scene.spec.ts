@@ -1,10 +1,13 @@
 import fs from 'node:fs'
 import path from 'node:path'
 
-import { expect, test, type Locator, type Page } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
 
+import { typeInto } from './fields.js'
 import { showPanel } from './panels.js'
+import { parsedWhenWhole } from './parse-when-whole.js'
 import { restoreProjectAfterEach } from './restore-project.js'
+import { outlinerRow, viewport } from './scene-view.js'
 import { selectAsset } from './select-asset.js'
 import { editorTestProjectPath } from './test-project.js'
 
@@ -36,10 +39,6 @@ test.beforeEach(async ({ page }) => {
   await expect(page.getByTestId('viewport-stage').locator('canvas')).toBeVisible()
 })
 
-const viewport = (page: Page): Locator => page.getByTestId('viewport-panel')
-const row = (page: Page, name: string): Locator =>
-  page.getByTestId('outliner-panel').locator('[data-entity-id]').filter({ hasText: name }).first()
-
 async function openScene(page: Page, scenePath = LEVEL_ONE): Promise<void> {
   await selectAsset(page, scenePath)
   await expect(viewport(page)).toHaveAttribute('data-scene-showing', scenePath)
@@ -57,19 +56,12 @@ async function selectedOrigin(page: Page): Promise<{ x: number; y: number }> {
   }
 }
 
-async function typeInto(page: Page, testId: string, text: string): Promise<void> {
-  const field = page.getByTestId(testId)
-  await field.click()
-  await field.press('ControlOrMeta+a')
-  await field.pressSequentially(text, { delay: 20 })
-}
-
 // --- acceptance 2: two things looked at at once ----------------------------
 
 test.describe('looking at a texture while a scene is open', () => {
   test('opens the texture in its own tab and leaves the scene where it was', async ({ page }) => {
     await openScene(page)
-    await row(page, 'Knight').click()
+    await outlinerRow(page, 'Knight').click()
 
     await selectAsset(page, KNIGHT)
 
@@ -104,7 +96,7 @@ test.describe('looking at a texture while a scene is open', () => {
 test.describe('typing a new position', () => {
   test('moves it as it is typed, not when the field is left', async ({ page }) => {
     await openScene(page)
-    await row(page, 'Knight').click()
+    await outlinerRow(page, 'Knight').click()
     const before = await selectedOrigin(page)
 
     await typeInto(page, 'entity-x-control', '240')
@@ -117,7 +109,7 @@ test.describe('typing a new position', () => {
 
   test('goes back in one press of Ctrl-Z, not one per digit', async ({ page }) => {
     await openScene(page)
-    await row(page, 'Knight').click()
+    await outlinerRow(page, 'Knight').click()
     const before = await selectedOrigin(page)
 
     await typeInto(page, 'entity-x-control', '240')
@@ -131,7 +123,7 @@ test.describe('typing a new position', () => {
 
   test('y counts upward, so a bigger number is higher on screen', async ({ page }) => {
     await openScene(page)
-    await row(page, 'Knight').click()
+    await outlinerRow(page, 'Knight').click()
     const before = await selectedOrigin(page)
 
     await typeInto(page, 'entity-y-control', '120')
@@ -146,7 +138,7 @@ test.describe('typing a new position', () => {
 
 test('a sprite pivoted at its feet stands on its Y position rather than straddling it', async ({ page }) => {
   await openScene(page)
-  await row(page, 'Knight').click()
+  await outlinerRow(page, 'Knight').click()
 
   const origin = await selectedOrigin(page)
   const bounds = await page.getByTestId('scene-selected-bounds').boundingBox()
@@ -257,15 +249,16 @@ test.describe('the scene file changing on disk', () => {
       timeout: WITHIN_A_SECOND + 1_000,
     })
 
-    await row(page, 'Slime').click()
+    await outlinerRow(page, 'Slime').click()
     await typeInto(page, 'entity-x-control', '210')
 
     await expect
       .poll(
         () => {
-          const after = JSON.parse(fs.readFileSync(sceneFile(), 'utf8')) as Record<string, unknown> & {
-            entities: Record<string, unknown>[]
-          }
+          const after = parsedWhenWhole<Record<string, unknown> & { entities: Record<string, unknown>[] }>(
+            sceneFile(),
+          )
+          if (after === undefined) return undefined
           const moved = after.entities.some(
             (entity) => (entity['transform'] as { x?: number } | undefined)?.x === 210,
           )
@@ -299,7 +292,7 @@ test('a scene referring to a texture that is gone says so, by name', async ({ pa
     })
     await expect(page.getByTestId('viewport-problem')).toContainText('not in the project folder')
     // Named in the list as well, so the entity it belongs to is findable.
-    await expect(row(page, 'Health icon')).toHaveAttribute('data-entity-problem', 'missing texture')
+    await expect(outlinerRow(page, 'Health icon')).toHaveAttribute('data-entity-problem', 'missing texture')
     // And drawn as four rather than five, rather than quietly as five.
     await expect(viewport(page)).toHaveAttribute('data-scene-drawn', '4')
   } finally {
@@ -309,7 +302,7 @@ test('a scene referring to a texture that is gone says so, by name', async ({ pa
 
 test('a picture of the scene, to look at when something is reported as looking wrong', async ({ page }) => {
   await openScene(page)
-  await row(page, 'Knight').click()
+  await outlinerRow(page, 'Knight').click()
   await expect(page.getByTestId('scene-selected-bounds')).toBeVisible()
 
   await page.screenshot({ path: 'test-results/scene.png', fullPage: false })

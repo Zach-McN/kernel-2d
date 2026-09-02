@@ -1,10 +1,12 @@
 import fs from 'node:fs'
 import path from 'node:path'
 
-import { expect, test, type Locator, type Page } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
 
+import { typeInto } from './fields.js'
 import { showPanel } from './panels.js'
-import { editableFiles, restoreProjectAfterEach } from './restore-project.js'
+import { projectFiles, restoreProjectAfterEach } from './restore-project.js'
+import { outlinerRow, viewport } from './scene-view.js'
 import { selectAsset } from './select-asset.js'
 import { editorTestProjectPath } from './test-project.js'
 
@@ -46,10 +48,6 @@ test.beforeEach(async ({ page }) => {
   await expect(page.getByTestId('viewport-stage').locator('canvas')).toBeVisible()
 })
 
-const viewport = (page: Page): Locator => page.getByTestId('viewport-panel')
-const row = (page: Page, name: string): Locator =>
-  page.getByTestId('outliner-panel').locator('[data-entity-id]').filter({ hasText: name }).first()
-
 async function openScene(page: Page, scenePath: string): Promise<void> {
   await selectAsset(page, scenePath)
   await expect(viewport(page)).toHaveAttribute('data-scene-showing', scenePath)
@@ -90,15 +88,8 @@ function projectFile(relative: string): string {
  */
 function snapshotProject(): Map<string, string> {
   return new Map(
-    editableFiles().map((file) => [file, `${fs.statSync(file).mtimeMs} ${fs.readFileSync(file, 'utf8')}`]),
+    projectFiles().map((file) => [file, `${fs.statSync(file).mtimeMs} ${fs.readFileSync(file, 'utf8')}`]),
   )
-}
-
-async function typeInto(page: Page, testId: string, text: string): Promise<void> {
-  const field = page.getByTestId(testId)
-  await field.click()
-  await field.press('ControlOrMeta+a')
-  await field.pressSequentially(text, { delay: 20 })
 }
 
 async function camera(page: Page): Promise<{ scale: string | null; x: string | null; y: string | null }> {
@@ -224,9 +215,9 @@ test.describe('a level that is running', () => {
     await stop(page)
     const movedIds = new Set(moved)
 
-    await row(page, 'Health icon').click()
+    await outlinerRow(page, 'Health icon').click()
     const icon = await page.getByTestId('entity-id').textContent()
-    await row(page, 'Slime').click()
+    await outlinerRow(page, 'Slime').click()
     const slime = await page.getByTestId('entity-id').textContent()
 
     expect(movedIds).toEqual(new Set([icon, slime]))
@@ -341,7 +332,7 @@ function movedCount(pair: Pictures): number {
 test.describe('pressing Stop', () => {
   test('leaves the level, the selection and the view exactly as they were', async ({ page }) => {
     await openScene(page, LEVEL_ONE)
-    await row(page, 'Knight').click()
+    await outlinerRow(page, 'Knight').click()
     // Moved off the framing default, so "the camera came back" is a claim about
     // a value somebody chose rather than about a default being recomputed. Read
     // after the zoom has landed: a press and the attribute it changes are a
@@ -363,7 +354,7 @@ test.describe('pressing Stop', () => {
 
     await expect(viewport(page)).toHaveAttribute('data-scene-showing', LEVEL_ONE)
     await expect(page.getByTestId('inspector-panel')).toHaveAttribute('data-inspecting-entity', /.+/)
-    await expect(row(page, 'Knight')).toHaveAttribute('data-selected', 'true')
+    await expect(outlinerRow(page, 'Knight')).toHaveAttribute('data-selected', 'true')
     expect(await camera(page)).toEqual(before)
     // Every sprite back at the angle the file has it, because the level that was
     // turning was a copy and the copy has been dropped.
@@ -375,7 +366,7 @@ test.describe('pressing Stop', () => {
     // number a human would look at, which never moved because the document
     // never moved.
     await openScene(page, LEVEL_ONE)
-    await row(page, 'Health icon').click()
+    await outlinerRow(page, 'Health icon').click()
     await expect(page.getByTestId('entity-rotation-control')).toHaveValue('0')
 
     await play(page)
@@ -409,7 +400,7 @@ test.describe('pressing Stop', () => {
 
 test('runs the change made a moment earlier, with no save in between', async ({ page }) => {
   await openScene(page, LEVEL_ONE)
-  await row(page, 'Health icon').click()
+  await outlinerRow(page, 'Health icon').click()
 
   await typeInto(page, 'entity-x-control', '44')
 
@@ -479,7 +470,7 @@ test.describe('a level the runtime cannot fully load', () => {
 
 test('writes nothing at all while a level is running', async ({ page }) => {
   await openScene(page, LEVEL_ONE)
-  await row(page, 'Knight').click()
+  await outlinerRow(page, 'Knight').click()
   const before = snapshotProject()
 
   await play(page)

@@ -41,7 +41,7 @@ test.afterEach(() => {
 
 test.describe('pictures on the tiles', () => {
   test('a sprite shows itself rather than a blank page', async ({ page }) => {
-    await openFolder(page, 'assets/textures/characters')
+    await walkIntoFolder(page, 'assets/textures/characters')
 
     const knight = tile(page, 'assets/textures/characters/knight-idle.png')
     await expect(knight).toHaveAttribute('data-thumbnail', 'drawn')
@@ -50,7 +50,7 @@ test.describe('pictures on the tiles', () => {
   })
 
   test('a run strip shows one frame, not the smear of all of them', async ({ page }) => {
-    await openFolder(page, 'assets/textures/characters')
+    await walkIntoFolder(page, 'assets/textures/characters')
 
     const strip = tile(page, 'assets/textures/characters/knight-run-strip.png')
     await expect(strip).toHaveAttribute('data-thumbnail', 'drawn')
@@ -60,7 +60,7 @@ test.describe('pictures on the tiles', () => {
   })
 
   test('a tileset shows its first tile, cut by the settings beside it', async ({ page }) => {
-    await openFolder(page, 'assets/textures/tiles')
+    await walkIntoFolder(page, 'assets/textures/tiles')
 
     const tileset = tile(page, 'assets/textures/tiles/tileset-grass.png')
     await expect(tileset).toHaveAttribute('data-thumbnail', 'drawn')
@@ -69,7 +69,7 @@ test.describe('pictures on the tiles', () => {
   })
 
   test('re-slicing a sheet changes what its tile shows, without a reload', async ({ page }) => {
-    await openFolder(page, 'assets/textures/characters')
+    await walkIntoFolder(page, 'assets/textures/characters')
 
     const strip = tile(page, 'assets/textures/characters/knight-run-strip.png')
     await expect(strip).toHaveAttribute('data-thumb-frame', '16x16')
@@ -84,10 +84,10 @@ test.describe('pictures on the tiles', () => {
   })
 
   test('everything that is not a picture keeps the glyph it had', async ({ page }) => {
-    await openFolder(page, 'assets/audio/sfx')
+    await walkIntoFolder(page, 'assets/audio/sfx')
     await expect(tile(page, 'assets/audio/sfx/jump.wav')).toHaveAttribute('data-thumbnail', 'none')
 
-    await openFolder(page, 'scenes')
+    await walkIntoFolder(page, 'scenes')
     await expect(tile(page, 'scenes/level-01.json')).toHaveAttribute('data-thumbnail', 'none')
 
     await goToTop(page)
@@ -96,7 +96,7 @@ test.describe('pictures on the tiles', () => {
 
   test('a picture saved on disk is on its tile within a second', async ({ page }) => {
     writeSprite(`${SCRATCH}/star.png`, 16, 16)
-    await openFolder(page, SCRATCH)
+    await walkIntoFolder(page, SCRATCH)
 
     const later = tile(page, `${SCRATCH}/moon.png`)
     await expect(later).toBeHidden()
@@ -119,7 +119,7 @@ test.describe('pictures on the tiles', () => {
       }
     })
 
-    await openFolder(page, SCRATCH)
+    await walkIntoFolder(page, SCRATCH)
 
     const broken = tile(page, `${SCRATCH}/not-really.png`)
     await expect(broken).toHaveAttribute('data-thumbnail', 'refused', { timeout: 2000 })
@@ -136,7 +136,7 @@ test.describe('pictures on the tiles', () => {
     // Left and come back to: a refusal is remembered exactly like a picture, so
     // the tile cannot flicker and the file is not read again.
     await goToTop(page)
-    await openFolder(page, SCRATCH)
+    await walkIntoFolder(page, SCRATCH)
     await expect(broken).toHaveAttribute('data-thumbnail', 'refused')
     expect(reads).toHaveLength(0)
   })
@@ -159,7 +159,7 @@ test.describe('pictures on the tiles', () => {
       )}\n`,
     )
 
-    await openFolder(page, SCRATCH)
+    await walkIntoFolder(page, SCRATCH)
 
     await expect(tile(page, `${SCRATCH}/not-a-texture.png`)).toHaveAttribute(
       'data-thumbnail',
@@ -180,7 +180,7 @@ test.describe('pictures on the tiles', () => {
       if (url.includes('/api/asset?') && url.includes('thumbnail-tests')) read.add(url)
     })
 
-    await openFolder(page, SCRATCH)
+    await walkIntoFolder(page, SCRATCH)
     await expect(tile(page, `${SCRATCH}/sprite-000.png`)).toHaveAttribute('data-thumbnail', 'drawn', {
       timeout: 2000,
     })
@@ -193,7 +193,7 @@ test.describe('pictures on the tiles', () => {
   })
 
   test('leaves a picture of a folder of sprites behind', async ({ page }, testInfo) => {
-    await openFolder(page, 'assets/textures/characters')
+    await walkIntoFolder(page, 'assets/textures/characters')
     await expect(tile(page, 'assets/textures/characters/knight-idle.png')).toHaveAttribute(
       'data-thumbnail',
       'drawn',
@@ -209,7 +209,7 @@ function tile(page: Page, assetPath: string): Locator {
 }
 
 /** Walks into a folder the way a human does: one double-click per step. */
-async function openFolder(page: Page, folder: string): Promise<void> {
+async function walkIntoFolder(page: Page, folder: string): Promise<void> {
   await goToTop(page)
   const steps = folder.split('/')
   for (let depth = 0; depth < steps.length; depth += 1) {

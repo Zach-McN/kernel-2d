@@ -133,7 +133,7 @@ export function freePoint(point: Point): Point {
  * aligned is the commonest reason to reach for a key mid-drag.
  *
  * That exclusive-or is computed here and nowhere else. Spelled out at each of
- * the four call sites it would be four chances to write the inversion backwards
+ * the three call sites it would be three chances to write the inversion backwards
  * — and backwards is silent: things land on the grid when you asked for
  * anywhere, which reads as the snap being stuck rather than as a modifier being
  * inverted. It is also why the argument is called `invert` rather than `free`,

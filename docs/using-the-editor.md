@@ -8,9 +8,9 @@ It is kept current by the definition of done in `CLAUDE.md`: a session that
 changes what you can do, or how you do it, changes this page in the same commit.
 If this page and the editor disagree, the editor is right and the page is a bug.
 
-Last true as of: **the panel arrangement, the Assets view and the folder you
-were in are remembered per project across reloads and restarts, with Reset
-layout in the Windows menu** (2026-08-16).
+Last true as of: **the Assets panel's search box answers for the whole
+project, the Outliner filters, and your game's own fields appear in the
+right-click window and on a prefab** (2026-09-01).
 
 ---
 
@@ -787,7 +787,8 @@ you already had, held down. Taking things away is still select-and-`Delete`.
 #### The right-click window
 
 **Right-click an entity and a small window opens next to it** holding its name,
-its position, and four buttons — with the cursor already in the X field. It opens
+its position, your game's own fields for it, and four buttons — with the cursor
+already in the X field. It opens
 below what you pressed, or above it when there is not room below.
 
 - **Name and position are the same fields the Inspector has.** Type in either
@@ -1245,9 +1246,9 @@ the editor takes the change.
   than the first, and an animated GIF does not move.
 - **A choice of tile size.** The tiles are one size and the pictures on them are
   one size.
-- **Sort, search or filter the icon view.** Folders first and then files,
+- **Sort or filter the icon view.** Folders first and then files,
   alphabetically, the same order the tree uses, and everything in the folder is
-  shown.
+  shown; the search box is the one way to narrow it.
 - **Drag a file from one folder into another.** Files drag *into the level*, not
   into other folders; moving one is still the name field and the folder chooser
   in its right-click menu.

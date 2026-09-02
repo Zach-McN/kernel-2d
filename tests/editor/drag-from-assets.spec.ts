@@ -1,10 +1,12 @@
 import fs from 'node:fs'
 import path from 'node:path'
 
-import { expect, test, type Locator, type Page } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
 
+import { parsedWhenWhole } from './parse-when-whole.js'
 import { restoreProjectAfterEach } from './restore-project.js'
-import { openFolder, selectAsset } from './select-asset.js'
+import { openScene, outlinerRow, outlinerRows, viewport } from './scene-view.js'
+import { openFolder } from './select-asset.js'
 import { editorTestProjectPath } from './test-project.js'
 
 /**
@@ -40,13 +42,13 @@ test.beforeEach(async ({ page }) => {
 // --- acceptance ------------------------------------------------------------
 
 test('a prefab dropped on the level becomes an instance of it', async ({ page }) => {
-  await openScene(page)
-  const before = await rows(page).count()
+  await openScene(page, LEVEL_ONE)
+  const before = await outlinerRows(page).count()
 
   await dropOnScene(page, SLIME_PREFAB, middleOfCanvas)
 
-  await expect(rows(page)).toHaveCount(before + 1)
-  await expect(row(page, 'Slime')).toBeVisible()
+  await expect(outlinerRows(page)).toHaveCount(before + 1)
+  await expect(outlinerRow(page, 'Slime')).toBeVisible()
 
   // By reference, exactly as every other way of placing one writes it — the
   // property the whole prefab feature rests on.
@@ -55,14 +57,14 @@ test('a prefab dropped on the level becomes an instance of it', async ({ page })
 })
 
 test('a texture dropped on the level becomes an entity that draws it', async ({ page }) => {
-  await openScene(page)
-  const before = await rows(page).count()
+  await openScene(page, LEVEL_ONE)
+  const before = await outlinerRows(page).count()
 
   await dropOnScene(page, HEART, middleOfCanvas)
 
-  await expect(rows(page)).toHaveCount(before + 1)
+  await expect(outlinerRows(page)).toHaveCount(before + 1)
   // Named after the file, which is the only name anybody could have meant.
-  await expect(row(page, 'icon-heart')).toBeVisible()
+  await expect(outlinerRow(page, 'icon-heart')).toBeVisible()
 
   // A whole D5 reference: the id as well as the path, so it survives a rename.
   const placed = (await levelOnDisk(before + 1)).at(-1)
@@ -79,8 +81,8 @@ test('a texture dropped on the level becomes an entity that draws it', async ({ 
 // --- where it lands --------------------------------------------------------
 
 test('it lands where it was let go, not in the middle of the level', async ({ page }) => {
-  await openScene(page)
-  const before = await rows(page).count()
+  await openScene(page, LEVEL_ONE)
+  const before = await outlinerRows(page).count()
 
   const box = await canvasBox(page)
   // A quarter of the way in, so the drop is nowhere near either the camera's
@@ -118,8 +120,8 @@ test('it lands where it was let go, not in the middle of the level', async ({ pa
 })
 
 test('it lands on the snap, like everything else that is placed', async ({ page }) => {
-  await openScene(page)
-  const before = await rows(page).count()
+  await openScene(page, LEVEL_ONE)
+  const before = await outlinerRows(page).count()
 
   await page.getByTestId('scene-snap-step').fill('16')
   await expect(page.getByTestId('scene-snap')).toHaveAttribute('data-snap-step', '16')
@@ -134,7 +136,7 @@ test('it lands on the snap, like everything else that is placed', async ({ page 
 // --- what it says ----------------------------------------------------------
 
 test('the picture says what it is about to place while the file is over it', async ({ page }) => {
-  await openScene(page)
+  await openScene(page, LEVEL_ONE)
 
   await carry(page, SLIME_PREFAB, middleOfCanvas)
 
@@ -143,44 +145,44 @@ test('the picture says what it is about to place while the file is over it', asy
 })
 
 test('a file that cannot be placed says what it is, and adds nothing', async ({ page }) => {
-  await openScene(page)
-  const before = await rows(page).count()
+  await openScene(page, LEVEL_ONE)
+  const before = await outlinerRows(page).count()
 
   await openFolder(page, 'scenes')
   await dropOnScene(page, 'scenes/level-02.json', middleOfCanvas)
 
   await expect(page.getByTestId('viewport-drop-refused')).toContainText('is a level')
-  await expect(rows(page)).toHaveCount(before)
+  await expect(outlinerRows(page)).toHaveCount(before)
 })
 
 test('a sound says so too, rather than being refused silently', async ({ page }) => {
-  await openScene(page)
-  const before = await rows(page).count()
+  await openScene(page, LEVEL_ONE)
+  const before = await outlinerRows(page).count()
 
   await dropOnScene(page, JUMP, middleOfCanvas)
 
   await expect(page.getByTestId('viewport-drop-refused')).toContainText('is a sound')
-  await expect(rows(page)).toHaveCount(before)
+  await expect(outlinerRows(page)).toHaveCount(before)
 })
 
 // --- the surroundings ------------------------------------------------------
 
 test('one drop is one press of Ctrl-Z', async ({ page }) => {
-  await openScene(page)
-  const before = await rows(page).count()
+  await openScene(page, LEVEL_ONE)
+  const before = await outlinerRows(page).count()
 
   await dropOnScene(page, SLIME_PREFAB, middleOfCanvas)
-  await expect(rows(page)).toHaveCount(before + 1)
+  await expect(outlinerRows(page)).toHaveCount(before + 1)
 
   await page.keyboard.press('Control+z')
 
-  await expect(rows(page)).toHaveCount(before)
+  await expect(outlinerRows(page)).toHaveCount(before)
   expect(await levelOnDisk(before)).toHaveLength(before)
 })
 
 test('it works from the icon view as well as from the tree', async ({ page }) => {
-  await openScene(page)
-  const before = await rows(page).count()
+  await openScene(page, LEVEL_ONE)
+  const before = await outlinerRows(page).count()
 
   await page.getByTestId('assets-settings').click()
   await page.getByTestId('assets-view-icons').click()
@@ -197,7 +199,7 @@ test('it works from the icon view as well as from the tree', async ({ page }) =>
 
   await slime.dragTo(page.getByTestId('viewport-stage'))
 
-  await expect(rows(page)).toHaveCount(before + 1)
+  await expect(outlinerRows(page)).toHaveCount(before + 1)
 })
 
 test('a folder cannot be picked up at all', async ({ page }) => {
@@ -207,38 +209,12 @@ test('a folder cannot be picked up at all', async ({ page }) => {
 })
 
 test('leaves a picture of a file hovering over the level', async ({ page }, testInfo) => {
-  await openScene(page)
+  await openScene(page, LEVEL_ONE)
   await carry(page, SLIME_PREFAB, middleOfCanvas)
   await page.screenshot({ path: testInfo.outputPath('drag-from-assets.png') })
 })
 
 // --- driving ---------------------------------------------------------------
-
-const viewport = (page: Page): Locator => page.getByTestId('viewport-panel')
-const rows = (page: Page): Locator => page.getByTestId('outliner-panel').locator('[data-entity-id]')
-const row = (page: Page, name: string): Locator => rows(page).filter({ hasText: name }).first()
-
-async function openScene(page: Page): Promise<void> {
-  await selectAsset(page, LEVEL_ONE)
-  await expect(viewport(page)).toHaveAttribute('data-scene-showing', LEVEL_ONE)
-  await settled(page)
-}
-
-/** The camera, once it has stopped moving — opening a scene frames it a beat later. */
-async function settled(page: Page): Promise<void> {
-  let previous = Number.NaN
-  await expect
-    .poll(
-      async () => {
-        const now = Number(await viewport(page).getAttribute('data-scene-scale'))
-        const same = now === previous
-        previous = now
-        return same && Number.isFinite(now)
-      },
-      { intervals: [120, 120, 120, 120, 120, 120, 120, 120] },
-    )
-    .toBe(true)
-}
 
 async function canvasBox(page: Page): Promise<{ x: number; y: number; width: number; height: number }> {
   const box = await page.getByTestId('viewport-stage').locator('canvas').boundingBox()
@@ -289,13 +265,9 @@ async function levelOnDisk(
 ): Promise<{ name: string; transform: { x: number; y: number }; components: Record<string, unknown> }[]> {
   const file = path.join(editorTestProjectPath(), LEVEL_ONE.replaceAll('/', path.sep))
   await expect
-    .poll(
-      () => {
-        const scene = JSON.parse(fs.readFileSync(file, 'utf8')) as { entities: unknown[] }
-        return scene.entities.length
-      },
-      { timeout: WITHIN_A_SECOND + 1_000 },
-    )
+    .poll(() => parsedWhenWhole<{ entities: unknown[] }>(file)?.entities.length ?? -1, {
+      timeout: WITHIN_A_SECOND + 1_000,
+    })
     .toBe(entities)
 
   const scene = JSON.parse(fs.readFileSync(file, 'utf8')) as {

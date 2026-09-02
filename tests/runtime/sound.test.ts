@@ -5,6 +5,7 @@ import { STEP_MS } from '../../runtime/game/loop'
 import { runLevel } from '../../runtime/game/run-level'
 import { MAX_STANDING_CUES, SOUND_ENTITY_ID, playSound, soundIn, type SoundCue } from '../../runtime/game/sound'
 import type { System } from '../../runtime/game/system'
+import { handCrankedFrames } from './hand-cranked-frames.js'
 
 /**
  * The sound seam: a system asks for notes, the host is handed them once, and
@@ -14,22 +15,6 @@ import type { System } from '../../runtime/game/system'
 
 const BEEP: SoundCue = [{ from: 440, to: 880, seconds: 0.1, wave: 'square', volume: 0.2 }]
 const THUD: SoundCue = [{ from: 130, to: 60, seconds: 0.09, wave: 'sine', volume: 0.5 }]
-
-function handCrankedFrames(): {
-  onFrame: (tick: (elapsedMs: number) => void) => () => void
-  frame: (elapsedMs: number) => void
-} {
-  const ticks = new Set<(elapsedMs: number) => void>()
-  return {
-    onFrame: (tick) => {
-      ticks.add(tick)
-      return () => ticks.delete(tick)
-    },
-    frame: (elapsedMs) => {
-      for (const tick of [...ticks]) tick(elapsedMs)
-    },
-  }
-}
 
 function noisy(cue: SoundCue): System {
   return {

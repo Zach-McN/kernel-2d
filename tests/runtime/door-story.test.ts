@@ -6,6 +6,7 @@ import { STEP_MS } from '../../runtime/game/loop'
 import { runLevel } from '../../runtime/game/run-level'
 import { factOf, factsIn, learn, sceneIn, storyEntity } from '../../runtime/game/story'
 import type { System } from '../../runtime/game/system'
+import { handCrankedFrames } from './hand-cranked-frames.js'
 
 /**
  * The two seams a game reaches its host through: the door (asking to be in
@@ -13,22 +14,6 @@ import type { System } from '../../runtime/game/system'
  * as entities, exactly as input does, and both are tested here the same way —
  * a hand-cranked clock, no browser, no host beyond a recording function.
  */
-
-function handCrankedFrames(): {
-  onFrame: (tick: (elapsedMs: number) => void) => () => void
-  frame: (elapsedMs: number) => void
-} {
-  const ticks = new Set<(elapsedMs: number) => void>()
-  return {
-    onFrame: (tick) => {
-      ticks.add(tick)
-      return () => ticks.delete(tick)
-    },
-    frame: (elapsedMs) => {
-      for (const tick of [...ticks]) tick(elapsedMs)
-    },
-  }
-}
 
 describe('the door, on its own', () => {
   it('carries the scene a system asked for', () => {

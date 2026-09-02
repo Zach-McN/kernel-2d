@@ -5,6 +5,7 @@ import { expect, test, type Page } from '@playwright/test'
 
 import type { AssetMeta, TextureImportSettings } from '../../runtime/formats/meta-schema.js'
 
+import { typeInto } from './fields.js'
 import { assetRow, selectAsset } from './select-asset.js'
 import { editorTestProjectPath } from './test-project.js'
 
@@ -92,15 +93,6 @@ function writeMetaByHand(assetPath: string, meta: unknown): void {
 
 async function setFilter(page: Page, value: 'nearest' | 'linear'): Promise<void> {
   await page.getByTestId('filter-control').selectOption(value)
-}
-
-async function typeInto(page: Page, testId: string, text: string): Promise<void> {
-  const field = page.getByTestId(testId)
-  await field.click()
-  await field.press('ControlOrMeta+a')
-  // Typed a character at a time, because "one press of Ctrl-Z, not one per
-  // digit" is a claim about keystrokes and `fill` makes only one of them.
-  await field.pressSequentially(text, { delay: 20 })
 }
 
 const undo = (page: Page): Promise<void> => page.keyboard.press('ControlOrMeta+z')

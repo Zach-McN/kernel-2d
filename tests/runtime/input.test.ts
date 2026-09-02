@@ -5,6 +5,7 @@ import { clickedIn, heldIn, inputEntity, pressedIn, writeInput } from '../../run
 import { STEP_MS } from '../../runtime/game/loop'
 import { runLevel } from '../../runtime/game/run-level'
 import type { System } from '../../runtime/game/system'
+import { handCrankedFrames } from './hand-cranked-frames.js'
 
 /**
  * Input as data in the running level.
@@ -15,23 +16,6 @@ import type { System } from '../../runtime/game/system'
  * runner's end of the bargain: a press reaches exactly one step, however the
  * frames fall.
  */
-
-/** The same hand-cranked frames as `run-level.test.ts`. */
-function handCrankedFrames(): {
-  onFrame: (tick: (elapsedMs: number) => void) => () => void
-  frame: (elapsedMs: number) => void
-} {
-  const ticks = new Set<(elapsedMs: number) => void>()
-  return {
-    onFrame: (tick) => {
-      ticks.add(tick)
-      return () => ticks.delete(tick)
-    },
-    frame: (elapsedMs) => {
-      for (const tick of [...ticks]) tick(elapsedMs)
-    },
-  }
-}
 
 /** Records what every step saw pressed. */
 function listener(): { system: System; heard: string[][] } {

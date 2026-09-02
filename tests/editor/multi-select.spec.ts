@@ -1,7 +1,7 @@
 import { expect, test, type Locator, type Page } from '@playwright/test'
 
 import { restoreProjectAfterEach } from './restore-project.js'
-import { selectAsset } from './select-asset.js'
+import { cameraScale, openScene, outlinerRow, outlinerRows, viewport } from './scene-view.js'
 
 /**
  * Selecting several entities, and removing them together.
@@ -15,7 +15,7 @@ import { selectAsset } from './select-asset.js'
  * Nothing here asserts on a selection *store*. What is selected is read as the
  * highlighted rows, the outlines the renderer's report puts on screen, and what
  * the level ends up holding — behaviour, not structure (`editor-verification`
- * V1). The two negative tests are the load-bearing ones: a delete key that fires
+ * V1). The negative tests are the load-bearing ones: a delete key that fires
  * while somebody is renaming an entity, or while a level is running, passes
  * every positive test in this file — and `Backspace` makes the first of those
  * sharper, since a key that is *only* ever a delete can be got wrong quietly
@@ -38,12 +38,7 @@ test.beforeEach(async ({ page }) => {
 
 // --- reading what is selected ----------------------------------------------
 
-const viewport = (page: Page): Locator => page.getByTestId('viewport-panel')
 const outliner = (page: Page): Locator => page.getByTestId('outliner-panel')
-const rows = (page: Page): Locator => outliner(page).locator('[data-entity-id]')
-const row = (page: Page, name: string): Locator =>
-  outliner(page).locator('[data-entity-id]').filter({ hasText: name }).first()
-
 /** The rows the Outliner is highlighting. */
 const highlighted = (page: Page): Locator => outliner(page).locator('[data-selected="true"]')
 
@@ -53,31 +48,9 @@ async function selectedCount(page: Page): Promise<number> {
 }
 
 async function names(page: Page): Promise<string[]> {
-  return rows(page).evaluateAll((buttons) =>
+  return outlinerRows(page).evaluateAll((buttons) =>
     buttons.map((button) => button.querySelector('.entity-row__name')?.textContent ?? ''),
   )
-}
-
-/** The camera, once it has stopped moving — opening a scene frames it a beat later. */
-async function settled(page: Page): Promise<void> {
-  let previous = Number.NaN
-  await expect
-    .poll(
-      async () => {
-        const now = Number(await viewport(page).getAttribute('data-scene-scale'))
-        const same = now === previous
-        previous = now
-        return same && Number.isFinite(now)
-      },
-      { intervals: [120, 120, 120, 120, 120, 120, 120, 120] },
-    )
-    .toBe(true)
-}
-
-async function openScene(page: Page): Promise<void> {
-  await selectAsset(page, LEVEL_ONE)
-  await expect(viewport(page)).toHaveAttribute('data-scene-showing', LEVEL_ONE)
-  await settled(page)
 }
 
 /**
@@ -93,7 +66,7 @@ async function openScene(page: Page): Promise<void> {
  * entity, which turns a multi-entity test into a single-entity one that passes.
  */
 async function spotOf(page: Page, name: string): Promise<{ x: number; y: number }> {
-  await row(page, name).click()
+  await outlinerRow(page, name).click()
   await expect(page.getByTestId('scene-selected-bounds')).toHaveCount(1)
   const box = await page.getByTestId('scene-selected-bounds').boundingBox()
   expect(box).not.toBeNull()
@@ -129,13 +102,13 @@ async function emptySpot(page: Page): Promise<{ x: number; y: number }> {
 
 test.describe('the Outliner', () => {
   test('Shift-click adds to the selection, in the list and in the picture', async ({ page }) => {
-    await openScene(page)
+    await openScene(page, LEVEL_ONE)
 
-    await row(page, 'Ground').click()
+    await outlinerRow(page, 'Ground').click()
     await expect(highlighted(page)).toHaveCount(1)
 
-    await row(page, 'Knight').click({ modifiers: ['Shift'] })
-    await row(page, 'Slime').click({ modifiers: ['Shift'] })
+    await outlinerRow(page, 'Knight').click({ modifiers: ['Shift'] })
+    await outlinerRow(page, 'Slime').click({ modifiers: ['Shift'] })
 
     await expect(highlighted(page)).toHaveCount(3)
     // The picture agrees, and it agrees by drawing three outlines rather than by
@@ -145,36 +118,36 @@ test.describe('the Outliner', () => {
   })
 
   test('Ctrl-click takes one back out', async ({ page }) => {
-    await openScene(page)
-    await row(page, 'Ground').click()
-    await row(page, 'Knight').click({ modifiers: ['Shift'] })
-    await row(page, 'Slime').click({ modifiers: ['Shift'] })
+    await openScene(page, LEVEL_ONE)
+    await outlinerRow(page, 'Ground').click()
+    await outlinerRow(page, 'Knight').click({ modifiers: ['Shift'] })
+    await outlinerRow(page, 'Slime').click({ modifiers: ['Shift'] })
     await expect(highlighted(page)).toHaveCount(3)
 
-    await row(page, 'Knight').click({ modifiers: ['ControlOrMeta'] })
+    await outlinerRow(page, 'Knight').click({ modifiers: ['ControlOrMeta'] })
 
     await expect(highlighted(page)).toHaveCount(2)
-    await expect(row(page, 'Knight')).toHaveAttribute('data-selected', 'false')
+    await expect(outlinerRow(page, 'Knight')).toHaveAttribute('data-selected', 'false')
     await expect.poll(() => selectedCount(page)).toBe(2)
   })
 
   test('a plain click starts again with one', async ({ page }) => {
-    await openScene(page)
-    await row(page, 'Ground').click()
-    await row(page, 'Knight').click({ modifiers: ['Shift'] })
+    await openScene(page, LEVEL_ONE)
+    await outlinerRow(page, 'Ground').click()
+    await outlinerRow(page, 'Knight').click({ modifiers: ['Shift'] })
     await expect(highlighted(page)).toHaveCount(2)
 
-    await row(page, 'Slime').click()
+    await outlinerRow(page, 'Slime').click()
 
     await expect(highlighted(page)).toHaveCount(1)
-    await expect(row(page, 'Slime')).toHaveAttribute('data-selected', 'true')
+    await expect(outlinerRow(page, 'Slime')).toHaveAttribute('data-selected', 'true')
   })
 
   test('the Inspector says which one of several it is describing', async ({ page }) => {
-    await openScene(page)
-    await row(page, 'Ground').click()
-    await row(page, 'Knight').click({ modifiers: ['Shift'] })
-    await row(page, 'Slime').click({ modifiers: ['Shift'] })
+    await openScene(page, LEVEL_ONE)
+    await outlinerRow(page, 'Ground').click()
+    await outlinerRow(page, 'Knight').click({ modifiers: ['Shift'] })
+    await outlinerRow(page, 'Slime').click({ modifiers: ['Shift'] })
 
     // The last one clicked is the one described, and the panel says so rather
     // than showing one entity's fields under a selection of three.
@@ -184,12 +157,12 @@ test.describe('the Outliner', () => {
   })
 
   test('the Delete button says how many it would remove', async ({ page }) => {
-    await openScene(page)
-    await row(page, 'Ground').click()
+    await openScene(page, LEVEL_ONE)
+    await outlinerRow(page, 'Ground').click()
     await expect(page.getByTestId('entity-delete')).toHaveText('Delete')
 
-    await row(page, 'Knight').click({ modifiers: ['Shift'] })
-    await row(page, 'Slime').click({ modifiers: ['Shift'] })
+    await outlinerRow(page, 'Knight').click({ modifiers: ['Shift'] })
+    await outlinerRow(page, 'Slime').click({ modifiers: ['Shift'] })
 
     await expect(page.getByTestId('entity-delete')).toHaveText('Delete 3')
   })
@@ -199,7 +172,7 @@ test.describe('the Outliner', () => {
 
 test.describe('the picture', () => {
   test('Shift-click on a sprite adds it to the selection', async ({ page }) => {
-    await openScene(page)
+    await openScene(page, LEVEL_ONE)
     const knight = await spotOf(page, 'Knight')
     const slime = await spotOf(page, 'Slime')
 
@@ -215,7 +188,7 @@ test.describe('the picture', () => {
   })
 
   test('Ctrl-click on a sprite takes it back out', async ({ page }) => {
-    await openScene(page)
+    await openScene(page, LEVEL_ONE)
     const knight = await spotOf(page, 'Knight')
     const slime = await spotOf(page, 'Slime')
 
@@ -226,7 +199,7 @@ test.describe('the picture', () => {
     await clickIn(page, slime, 'Control')
 
     await expect.poll(() => selectedCount(page)).toBe(1)
-    await expect(row(page, 'Knight')).toHaveAttribute('data-selected', 'true')
+    await expect(outlinerRow(page, 'Knight')).toHaveAttribute('data-selected', 'true')
   })
 
   /**
@@ -235,7 +208,7 @@ test.describe('the picture', () => {
    * selection nobody attempts a second time.
    */
   test('a Shift-click that misses everything leaves the selection alone', async ({ page }) => {
-    await openScene(page)
+    await openScene(page, LEVEL_ONE)
     const knight = await spotOf(page, 'Knight')
     const slime = await spotOf(page, 'Slime')
     await clickIn(page, knight)
@@ -254,7 +227,7 @@ test.describe('the picture', () => {
   })
 
   test('leaves a picture of three entities selected at once', async ({ page }, testInfo) => {
-    await openScene(page)
+    await openScene(page, LEVEL_ONE)
     const knight = await spotOf(page, 'Knight')
     const slime = await spotOf(page, 'Slime')
     const ground = await spotOf(page, 'Ground')
@@ -272,24 +245,24 @@ test.describe('the picture', () => {
 
 test.describe('the delete keys', () => {
   test('removes the one selected entity', async ({ page }) => {
-    await openScene(page)
-    await row(page, 'Slime').click()
+    await openScene(page, LEVEL_ONE)
+    await outlinerRow(page, 'Slime').click()
 
     await page.keyboard.press('Delete')
 
-    await expect(rows(page)).toHaveCount(4)
+    await expect(outlinerRows(page)).toHaveCount(4)
     expect(await names(page)).not.toContain('Slime')
   })
 
   test('removes everything selected, and one Ctrl-Z brings it all back', async ({ page }) => {
-    await openScene(page)
-    await row(page, 'Knight').click()
-    await row(page, 'Slime').click({ modifiers: ['Shift'] })
-    await row(page, 'Health icon').click({ modifiers: ['Shift'] })
+    await openScene(page, LEVEL_ONE)
+    await outlinerRow(page, 'Knight').click()
+    await outlinerRow(page, 'Slime').click({ modifiers: ['Shift'] })
+    await outlinerRow(page, 'Health icon').click({ modifiers: ['Shift'] })
 
     await page.keyboard.press('Delete')
 
-    await expect(rows(page)).toHaveCount(2)
+    await expect(outlinerRows(page)).toHaveCount(2)
     expect(await names(page)).toEqual(['Ground', 'Knight running'])
 
     // **One** press, not three. Three entities removed in three transactions
@@ -297,15 +270,15 @@ test.describe('the delete keys', () => {
     // asked for on the way back.
     await page.keyboard.press('ControlOrMeta+z')
 
-    await expect(rows(page)).toHaveCount(5)
+    await expect(outlinerRows(page)).toHaveCount(5)
     expect(await names(page)).toEqual(ALL_FIVE)
     // Everything the entities had, not merely their names — the patches the
     // transaction recorded put the whole entity back.
-    await expect(row(page, 'Slime')).toContainText('slime.png')
+    await expect(outlinerRow(page, 'Slime')).toContainText('slime.png')
   })
 
   test('works from the picture, on a selection built there', async ({ page }) => {
-    await openScene(page)
+    await openScene(page, LEVEL_ONE)
     const knight = await spotOf(page, 'Knight')
     const slime = await spotOf(page, 'Slime')
 
@@ -315,7 +288,7 @@ test.describe('the delete keys', () => {
 
     await page.keyboard.press('Delete')
 
-    await expect(rows(page)).toHaveCount(3)
+    await expect(outlinerRows(page)).toHaveCount(3)
     expect(await names(page)).toEqual(['Ground', 'Knight running', 'Health icon'])
 
     await page.keyboard.press('ControlOrMeta+z')
@@ -329,8 +302,8 @@ test.describe('the delete keys', () => {
    * why.
    */
   test('does not delete anything while a name is being typed', async ({ page }) => {
-    await openScene(page)
-    await row(page, 'Slime').click()
+    await openScene(page, LEVEL_ONE)
+    await outlinerRow(page, 'Slime').click()
 
     const name = page.getByTestId('entity-name-control')
     await name.click()
@@ -338,7 +311,7 @@ test.describe('the delete keys', () => {
     await name.press('Delete')
 
     // The character went; the entity did not.
-    await expect(rows(page)).toHaveCount(5)
+    await expect(outlinerRows(page)).toHaveCount(5)
     await expect(name).toHaveValue('lime')
   })
 
@@ -349,26 +322,26 @@ test.describe('the delete keys', () => {
    * were halfway through renaming.
    */
   test('Backspace is still a backspace inside a name field', async ({ page }) => {
-    await openScene(page)
-    await row(page, 'Slime').click()
+    await openScene(page, LEVEL_ONE)
+    await outlinerRow(page, 'Slime').click()
 
     const name = page.getByTestId('entity-name-control')
     await name.click()
     await name.press('End')
     await name.press('Backspace')
 
-    await expect(rows(page)).toHaveCount(5)
+    await expect(outlinerRows(page)).toHaveCount(5)
     await expect(name).toHaveValue('Slim')
   })
 
   test('Backspace removes the selection, exactly as Delete does', async ({ page }) => {
-    await openScene(page)
-    await row(page, 'Knight').click()
-    await row(page, 'Slime').click({ modifiers: ['Shift'] })
+    await openScene(page, LEVEL_ONE)
+    await outlinerRow(page, 'Knight').click()
+    await outlinerRow(page, 'Slime').click({ modifiers: ['Shift'] })
 
     await page.keyboard.press('Backspace')
 
-    await expect(rows(page)).toHaveCount(3)
+    await expect(outlinerRows(page)).toHaveCount(3)
     expect(await names(page)).toEqual(['Ground', 'Knight running', 'Health icon'])
 
     await page.keyboard.press('ControlOrMeta+z')
@@ -376,21 +349,21 @@ test.describe('the delete keys', () => {
   })
 
   test('Backspace works from the picture too', async ({ page }) => {
-    await openScene(page)
+    await openScene(page, LEVEL_ONE)
     const slime = await spotOf(page, 'Slime')
     await clickIn(page, slime)
     await expect.poll(() => selectedCount(page)).toBe(1)
 
     await page.keyboard.press('Backspace')
 
-    await expect(rows(page)).toHaveCount(4)
+    await expect(outlinerRows(page)).toHaveCount(4)
     expect(await names(page)).not.toContain('Slime')
   })
 
   /** A bare Backspace used to mean "go back a page", which would lose the window. */
   test('Backspace does not navigate away from the editor', async ({ page }) => {
-    await openScene(page)
-    await row(page, 'Slime').click()
+    await openScene(page, LEVEL_ONE)
+    await outlinerRow(page, 'Slime').click()
 
     await page.keyboard.press('Backspace')
 
@@ -399,8 +372,8 @@ test.describe('the delete keys', () => {
   })
 
   test('does not delete anything while a level is running', async ({ page }) => {
-    await openScene(page)
-    await row(page, 'Slime').click()
+    await openScene(page, LEVEL_ONE)
+    await outlinerRow(page, 'Slime').click()
     await expect(page.getByTestId('play-start')).toBeEnabled()
     await page.getByTestId('play-start').click()
     await expect(viewport(page)).toHaveAttribute('data-play-state', 'running')
@@ -409,16 +382,16 @@ test.describe('the delete keys', () => {
 
     await page.getByTestId('play-stop').click()
     await expect(viewport(page)).toHaveAttribute('data-play-state', 'stopped')
-    await expect(rows(page)).toHaveCount(5)
+    await expect(outlinerRows(page)).toHaveCount(5)
     expect(await names(page)).toEqual(ALL_FIVE)
   })
 
   test('does nothing when nothing is selected', async ({ page }) => {
-    await openScene(page)
+    await openScene(page, LEVEL_ONE)
 
     await page.keyboard.press('Delete')
 
-    await expect(rows(page)).toHaveCount(5)
+    await expect(outlinerRows(page)).toHaveCount(5)
   })
 })
 
@@ -432,10 +405,6 @@ async function position(page: Page): Promise<{ x: number; y: number }> {
   }
 }
 
-async function cameraScale(page: Page): Promise<number> {
-  return Number(await viewport(page).getAttribute('data-scene-scale'))
-}
-
 /** A left-drag from a point, settled before it returns. */
 async function dragFrom(page: Page, from: { x: number; y: number }, dx: number, dy: number): Promise<void> {
   await page.mouse.move(from.x, from.y)
@@ -447,16 +416,16 @@ async function dragFrom(page: Page, from: { x: number; y: number }, dx: number, 
 
 test.describe('moving several at once', () => {
   test('dragging one of them carries the whole selection, keeping its shape', async ({ page }) => {
-    await openScene(page)
+    await openScene(page, LEVEL_ONE)
 
-    await row(page, 'Knight').click()
+    await outlinerRow(page, 'Knight').click()
     const knightBefore = await position(page)
-    await row(page, 'Slime').click()
+    await outlinerRow(page, 'Slime').click()
     const slimeBefore = await position(page)
     const slimeSpot = await spotOf(page, 'Slime')
 
-    await row(page, 'Knight').click()
-    await row(page, 'Slime').click({ modifiers: ['Shift'] })
+    await outlinerRow(page, 'Knight').click()
+    await outlinerRow(page, 'Slime').click({ modifiers: ['Shift'] })
     await expect.poll(() => selectedCount(page)).toBe(2)
 
     const scale = await cameraScale(page)
@@ -470,18 +439,18 @@ test.describe('moving several at once', () => {
     // assertion rather than equal positions: a group that keeps its shape is the
     // whole claim, and an implementation snapping each entity on its own account
     // moves them by *different* amounts onto the same grid.
-    await row(page, 'Knight').click()
+    await outlinerRow(page, 'Knight').click()
     const knightAfter = await position(page)
     expect(knightAfter.x - knightBefore.x).toBeCloseTo(slimeAfter.x - slimeBefore.x, 1)
     expect(knightAfter.y - knightBefore.y).toBeCloseTo(slimeAfter.y - slimeBefore.y, 1)
   })
 
   test('G carries the whole selection too', async ({ page }) => {
-    await openScene(page)
+    await openScene(page, LEVEL_ONE)
 
-    await row(page, 'Knight').click()
+    await outlinerRow(page, 'Knight').click()
     const knightBefore = await position(page)
-    await row(page, 'Slime').click({ modifiers: ['Shift'] })
+    await outlinerRow(page, 'Slime').click({ modifiers: ['Shift'] })
     const slimeBefore = await position(page)
 
     const spot = await page.getByTestId('viewport-stage').boundingBox()
@@ -494,26 +463,26 @@ test.describe('moving several at once', () => {
     const slimeAfter = await position(page)
     expect(slimeAfter.x).not.toBeCloseTo(slimeBefore.x, 1)
 
-    await row(page, 'Knight').click()
+    await outlinerRow(page, 'Knight').click()
     const knightAfter = await position(page)
     expect(knightAfter.x - knightBefore.x).toBeCloseTo(slimeAfter.x - slimeBefore.x, 1)
   })
 
   test('moving several is one press of Ctrl-Z', async ({ page }) => {
-    await openScene(page)
-    await row(page, 'Knight').click()
+    await openScene(page, LEVEL_ONE)
+    await outlinerRow(page, 'Knight').click()
     const before = await position(page)
-    await row(page, 'Slime').click({ modifiers: ['Shift'] })
+    await outlinerRow(page, 'Slime').click({ modifiers: ['Shift'] })
     const spot = await spotOf(page, 'Slime')
 
-    await row(page, 'Knight').click()
-    await row(page, 'Slime').click({ modifiers: ['Shift'] })
+    await outlinerRow(page, 'Knight').click()
+    await outlinerRow(page, 'Slime').click({ modifiers: ['Shift'] })
     const scale = await cameraScale(page)
     await dragFrom(page, spot, 20 * scale, 0)
 
     await page.keyboard.press('ControlOrMeta+z')
 
-    await row(page, 'Knight').click()
+    await outlinerRow(page, 'Knight').click()
     await expect.poll(async () => (await position(page)).x).toBeCloseTo(before.x, 1)
   })
 
@@ -526,13 +495,13 @@ test.describe('moving several at once', () => {
   test('pressing one of several keeps the selection; a click that does not move collapses it', async ({
     page,
   }) => {
-    await openScene(page)
+    await openScene(page, LEVEL_ONE)
     // Taken before the selection is built, and reused: asking again afterwards
     // would collapse the very selection under test.
     const spot = await spotOf(page, 'Slime')
 
-    await row(page, 'Knight').click()
-    await row(page, 'Slime').click({ modifiers: ['Shift'] })
+    await outlinerRow(page, 'Knight').click()
+    await outlinerRow(page, 'Slime').click({ modifiers: ['Shift'] })
     await expect.poll(() => selectedCount(page)).toBe(2)
 
     // Dragged: still two selected afterwards.
@@ -543,19 +512,19 @@ test.describe('moving several at once', () => {
     // Clicked without moving, on the sprite where it has *now* got to.
     await clickIn(page, { x: spot.x + 20 * scale, y: spot.y })
     await expect.poll(() => selectedCount(page)).toBe(1)
-    await expect(row(page, 'Slime')).toHaveAttribute('data-selected', 'true')
+    await expect(outlinerRow(page, 'Slime')).toHaveAttribute('data-selected', 'true')
   })
 
   test('pressing something outside the selection picks up only that one', async ({ page }) => {
-    await openScene(page)
+    await openScene(page, LEVEL_ONE)
     // Both taken up front, for the reason in `spotOf`'s note.
     const knightSpot = await spotOf(page, 'Knight')
     const knightBefore = await position(page)
-    await row(page, 'Ground').click()
+    await outlinerRow(page, 'Ground').click()
     const groundBefore = await position(page)
 
-    await row(page, 'Slime').click()
-    await row(page, 'Ground').click({ modifiers: ['Shift'] })
+    await outlinerRow(page, 'Slime').click()
+    await outlinerRow(page, 'Ground').click({ modifiers: ['Shift'] })
     await expect.poll(() => selectedCount(page)).toBe(2)
 
     // The Knight is not in that selection, so pressing it replaces the selection
@@ -564,11 +533,11 @@ test.describe('moving several at once', () => {
     await dragFrom(page, knightSpot, 20 * scale, 0)
 
     await expect.poll(() => selectedCount(page)).toBe(1)
-    await expect(row(page, 'Knight')).toHaveAttribute('data-selected', 'true')
+    await expect(outlinerRow(page, 'Knight')).toHaveAttribute('data-selected', 'true')
     expect((await position(page)).x).toBeCloseTo(knightBefore.x + 20, 0)
 
     // And nothing that *was* selected came along for the ride.
-    await row(page, 'Ground').click()
+    await outlinerRow(page, 'Ground').click()
     expect((await position(page)).x).toBeCloseTo(groundBefore.x, 1)
   })
 })

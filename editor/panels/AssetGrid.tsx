@@ -214,8 +214,8 @@ function AssetTile({ row, thumbKey, selected, onSelect, onEnter, drag }: AssetTi
         data-selected={selected}
         data-has-settings={row.hasSettings}
         data-orphaned-settings={row.isOrphanedSettings}
-        // Which of the four states this tile's picture is in, and — when there
-        // is one — the frame that was cut and the image it came from. That pair
+        // Which of the four states this tile's picture is in (`none` when there
+        // is no picture to be in one), and — when there is one — the frame that was cut and the image it came from. That pair
         // is how "the sixteen-frame strip shows one frame" is asserted without
         // comparing pixels: 16×16 out of 96×16.
         data-thumbnail={thumbKey === null ? 'none' : thumbnail.state}

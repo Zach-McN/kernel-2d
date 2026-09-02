@@ -1,9 +1,10 @@
 import fs from 'node:fs'
 import path from 'node:path'
 
-import { expect, test, type Locator, type Page } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
 
 import { restoreProjectAfterEach } from './restore-project.js'
+import { viewport } from './scene-view.js'
 import { selectAsset } from './select-asset.js'
 import { editorTestProjectPath } from './test-project.js'
 
@@ -114,8 +115,6 @@ test('leaves a picture of the choice on the scene', async ({ page }, testInfo) =
 })
 
 // --- driving ---------------------------------------------------------------
-
-const viewport = (page: Page): Locator => page.getByTestId('viewport-panel')
 
 async function openScene(page: Page): Promise<void> {
   await selectAsset(page, LEVEL_ONE)

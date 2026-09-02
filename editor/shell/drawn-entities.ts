@@ -2,7 +2,7 @@
 // and that is not a style choice. The barrel re-exports the renderers, so
 // touching it loads Phaser — which needs a browser, and which would put this
 // module out of reach of a unit test that has no business booting one. The
-// three types below are erased entirely; only `isOnScreen` survives, and its
+// four types below are erased entirely; only `isOnScreen` survives, and its
 // module imports nothing at all.
 import { isOnScreen, type Point, type Rect } from '../../runtime/scene/coordinates'
 import type { DrawnEntity } from '../../runtime/scene/entity-layer'

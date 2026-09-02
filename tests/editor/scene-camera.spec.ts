@@ -1,11 +1,12 @@
 import fs from 'node:fs'
 import path from 'node:path'
 
-import { expect, test, type Locator, type Page } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
 
 import { verticalDividerNear } from './dividers.js'
 import { showPanel } from './panels.js'
 import { restoreProjectAfterEach } from './restore-project.js'
+import { outlinerRow, viewport } from './scene-view.js'
 import { selectAsset } from './select-asset.js'
 import { editorTestProjectPath } from './test-project.js'
 
@@ -38,11 +39,6 @@ test.beforeEach(async ({ page }) => {
 })
 
 // --- reading what the renderer reported ------------------------------------
-
-const viewport = (page: Page): Locator => page.getByTestId('viewport-panel')
-
-const row = (page: Page, name: string): Locator =>
-  page.getByTestId('outliner-panel').locator('[data-entity-id]').filter({ hasText: name }).first()
 
 interface Camera {
   scale: number
@@ -184,7 +180,7 @@ test('dragging moves the sprites, the crosshair and the origin marker by the sam
   page,
 }) => {
   await openScene(page)
-  await row(page, 'Knight').click()
+  await outlinerRow(page, 'Knight').click()
   await expect(page.getByTestId('scene-selected-bounds')).toBeVisible()
 
   const before = {
@@ -220,7 +216,7 @@ test('dragging moves the sprites, the crosshair and the origin marker by the sam
 
 test('zooming in stays on whole steps, and grows the sprite by exactly the step', async ({ page }) => {
   await openScene(page)
-  await row(page, 'Health icon').click()
+  await outlinerRow(page, 'Health icon').click()
 
   const before = { camera: await settledCamera(page), sprite: await outline(page) }
 
@@ -251,7 +247,7 @@ test('zooming in stays on whole steps, and grows the sprite by exactly the step'
 
 test('the wheel keeps what is under the cursor under the cursor', async ({ page }) => {
   await openScene(page)
-  await row(page, 'Health icon').click()
+  await outlinerRow(page, 'Health icon').click()
 
   const sprite = await outline(page)
   const at = await inWindow(page, { x: sprite.x + sprite.width / 2, y: sprite.y + sprite.height / 2 })
@@ -313,7 +309,7 @@ test('Home puts everything back in frame after panning away', async ({ page }) =
 
 test('F frames just the selected entity', async ({ page }) => {
   const framed = await openScene(page)
-  await row(page, 'Health icon').click()
+  await outlinerRow(page, 'Health icon').click()
 
   const before = await outline(page)
   await page.keyboard.press('f')
@@ -356,7 +352,7 @@ test('the buttons do what the keys do', async ({ page }) => {
   // Nothing selected, nothing to frame — and the button says so rather than
   // doing nothing when pressed.
   await expect(page.getByTestId('scene-frame-selected')).toBeDisabled()
-  await row(page, 'Knight').click()
+  await outlinerRow(page, 'Knight').click()
   await expect(page.getByTestId('scene-frame-selected')).toBeEnabled()
 })
 
@@ -369,11 +365,11 @@ test('an entity selected off screen is named, with the key that reaches it', asy
   // well above him and goes off the top. Deliberately *not* zoomed so far that
   // nothing at all is visible, because that is the other sentence — this test
   // is about one entity being missing from a view that is otherwise fine.
-  await row(page, 'Knight').click()
+  await outlinerRow(page, 'Knight').click()
   await wheelAt(page, await inWindow(page, await crosshair(page)), 1, 3)
   expect(await onScreenCount(page)).toBeGreaterThan(0)
 
-  await row(page, 'Health icon').click()
+  await outlinerRow(page, 'Health icon').click()
 
   await expect(page.getByTestId('viewport-offscreen')).toContainText('Health icon')
   await expect(page.getByTestId('viewport-offscreen')).toContainText('is off screen')
@@ -393,7 +389,7 @@ test('the Inspector shows the level’s own units at every zoom, and typing stil
   page,
 }) => {
   await openScene(page)
-  await row(page, 'Knight').click()
+  await outlinerRow(page, 'Knight').click()
   await expect(page.getByTestId('entity-x-control')).toHaveValue('100')
 
   await wheelAt(page, await stageCentre(page), 1, 2)
@@ -511,7 +507,7 @@ test('panning and zooming never touch the scene file', async ({ page }) => {
 
 test('Ctrl-Z after panning reverses the last edit, not the last look', async ({ page }) => {
   await openScene(page)
-  await row(page, 'Knight').click()
+  await outlinerRow(page, 'Knight').click()
 
   const field = page.getByTestId('entity-x-control')
   await field.click()
@@ -539,7 +535,7 @@ test('a picture of a framed scene, to look at when something is reported as look
   page,
 }) => {
   await openScene(page)
-  await row(page, 'Knight').click()
+  await outlinerRow(page, 'Knight').click()
   await page.keyboard.press('f')
   await expect(page.getByTestId('scene-selected-bounds')).toBeVisible()
   await settledCamera(page)

@@ -5,6 +5,7 @@ import { STEP_MS } from '../../runtime/game/loop'
 import { runLevel, type RunState } from '../../runtime/game/run-level'
 import { spinSystem } from '../../runtime/game/systems/index'
 import type { System } from '../../runtime/game/system'
+import { handCrankedFrames } from './hand-cranked-frames.js'
 
 /**
  * A level running, with the browser taken out of it.
@@ -16,26 +17,6 @@ import type { System } from '../../runtime/game/system'
  * files, undo and Stop rests on it, and none of those promises is testable at
  * this layer. This is.
  */
-
-/** A frame source a test drives by hand, standing in for the engine's ticker. */
-function handCrankedFrames(): {
-  onFrame: (tick: (elapsedMs: number) => void) => () => void
-  frame: (elapsedMs: number) => void
-  subscribers: () => number
-} {
-  const ticks = new Set<(elapsedMs: number) => void>()
-
-  return {
-    onFrame: (tick) => {
-      ticks.add(tick)
-      return () => ticks.delete(tick)
-    },
-    frame: (elapsedMs) => {
-      for (const tick of [...ticks]) tick(elapsedMs)
-    },
-    subscribers: () => ticks.size,
-  }
-}
 
 function spinner(id: string, degreesPerSecond: number): Entity {
   const entity = defaultEntity(id, 'Spinner')

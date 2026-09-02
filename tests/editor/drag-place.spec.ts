@@ -1,10 +1,10 @@
-import fs from 'node:fs'
 import path from 'node:path'
 
-import { expect, test, type Locator, type Page } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
 
+import { parsedWhenWhole } from './parse-when-whole.js'
 import { restoreProjectAfterEach } from './restore-project.js'
-import { selectAsset } from './select-asset.js'
+import { cameraScale, openScene, outlineCentre, outlinerRow, settled, viewport } from './scene-view.js'
 import { editorTestProjectPath } from './test-project.js'
 
 /**
@@ -37,51 +37,12 @@ test.beforeEach(async ({ page }) => {
 
 // --- reading what happened -------------------------------------------------
 
-const viewport = (page: Page): Locator => page.getByTestId('viewport-panel')
-
-const row = (page: Page, name: string): Locator =>
-  page.getByTestId('outliner-panel').locator('[data-entity-id]').filter({ hasText: name }).first()
-
-async function cameraScale(page: Page): Promise<number> {
-  return Number(await viewport(page).getAttribute('data-scene-scale'))
-}
-
-/** The camera, once it has stopped moving — opening a scene frames it a beat later. */
-async function settled(page: Page): Promise<number> {
-  let previous = Number.NaN
-  await expect
-    .poll(
-      async () => {
-        const now = await cameraScale(page)
-        const same = now === previous
-        previous = now
-        return same && Number.isFinite(now)
-      },
-      { intervals: [120, 120, 120, 120, 120, 120, 120, 120] },
-    )
-    .toBe(true)
-  return previous
-}
-
-async function openScene(page: Page): Promise<void> {
-  await selectAsset(page, LEVEL_ONE)
-  await expect(viewport(page)).toHaveAttribute('data-scene-showing', LEVEL_ONE)
-  await settled(page)
-}
-
 /** Where the entity is, as the Inspector reads it — the level's own units. */
 async function position(page: Page): Promise<{ x: number; y: number }> {
   return {
     x: Number(await page.getByTestId('entity-x-control').inputValue()),
     y: Number(await page.getByTestId('entity-y-control').inputValue()),
   }
-}
-
-/** The middle of the selected entity's outline, in window coordinates. */
-async function outlineCentre(page: Page): Promise<{ x: number; y: number }> {
-  const box = await page.getByTestId('scene-selected-bounds').boundingBox()
-  expect(box).not.toBeNull()
-  return { x: (box?.x ?? 0) + (box?.width ?? 0) / 2, y: (box?.y ?? 0) + (box?.height ?? 0) / 2 }
 }
 
 async function stageBox(page: Page): Promise<{ x: number; y: number; width: number; height: number }> {
@@ -125,25 +86,25 @@ async function emptySpot(page: Page): Promise<{ x: number; y: number }> {
 // --- acceptance: clicking in the picture ------------------------------------
 
 test('clicking a sprite selects it, in the picture and in the Outliner', async ({ page }) => {
-  await openScene(page)
+  await openScene(page, LEVEL_ONE)
   await expect(page.getByTestId('scene-selected-bounds')).toHaveCount(0)
 
   // Pick the Slime out of the list first only to find out where it is on
   // screen; the click under test is the one in the picture.
-  await row(page, 'Slime').click()
+  await outlinerRow(page, 'Slime').click()
   const at = await outlineCentre(page)
-  await row(page, 'Knight').click()
+  await outlinerRow(page, 'Knight').click()
 
   await page.mouse.click(at.x, at.y)
 
   await expect(page.getByTestId('entity-name-control')).toHaveValue('Slime')
-  await expect(row(page, 'Slime')).toHaveAttribute('data-selected', 'true')
+  await expect(outlinerRow(page, 'Slime')).toHaveAttribute('data-selected', 'true')
   await expect(page.getByTestId('scene-selected-bounds')).toHaveCount(1)
 })
 
 test('clicking empty space selects nothing', async ({ page }) => {
-  await openScene(page)
-  await row(page, 'Knight').click()
+  await openScene(page, LEVEL_ONE)
+  await outlinerRow(page, 'Knight').click()
   await expect(page.getByTestId('scene-selected-bounds')).toHaveCount(1)
 
   await page.mouse.click(...(Object.values(await emptySpot(page)) as [number, number]))
@@ -153,11 +114,11 @@ test('clicking empty space selects nothing', async ({ page }) => {
 })
 
 test('where two sprites overlap, the one in front is picked', async ({ page }) => {
-  await openScene(page)
+  await openScene(page, LEVEL_ONE)
 
   // The Knight stands on the Ground, and the Ground is drawn first — so where
   // they overlap, the Knight is the one being pointed at.
-  await row(page, 'Knight').click()
+  await outlinerRow(page, 'Knight').click()
   const knight = await page.getByTestId('scene-selected-bounds').boundingBox()
   expect(knight).not.toBeNull()
 
@@ -171,8 +132,8 @@ test('where two sprites overlap, the one in front is picked', async ({ page }) =
 // --- acceptance: dragging ---------------------------------------------------
 
 test('dragging a sprite moves it, and it lands on whole level units', async ({ page }) => {
-  await openScene(page)
-  await row(page, 'Slime').click()
+  await openScene(page, LEVEL_ONE)
+  await outlinerRow(page, 'Slime').click()
   const before = await position(page)
 
   const scale = await cameraScale(page)
@@ -185,8 +146,8 @@ test('dragging a sprite moves it, and it lands on whole level units', async ({ p
 })
 
 test('a drag that would land between units is snapped to one', async ({ page }) => {
-  await openScene(page)
-  await row(page, 'Slime').click()
+  await openScene(page, LEVEL_ONE)
+  await outlinerRow(page, 'Slime').click()
   const before = await position(page)
 
   // Deliberately not a whole number of level units at this zoom.
@@ -199,8 +160,8 @@ test('a drag that would land between units is snapped to one', async ({ page }) 
 })
 
 test('holding Ctrl places it between whole units', async ({ page }) => {
-  await openScene(page)
-  await row(page, 'Slime').click()
+  await openScene(page, LEVEL_ONE)
+  await outlinerRow(page, 'Slime').click()
 
   // Zoomed in far enough that one screen pixel is a fraction of a level unit,
   // which is the only zoom at which a free position is even expressible.
@@ -215,8 +176,8 @@ test('holding Ctrl places it between whole units', async ({ page }) => {
 })
 
 test('a drag is one press of Ctrl-Z, not one per wobble', async ({ page }) => {
-  await openScene(page)
-  await row(page, 'Slime').click()
+  await openScene(page, LEVEL_ONE)
+  await outlinerRow(page, 'Slime').click()
   const before = await position(page)
 
   const scale = await cameraScale(page)
@@ -229,8 +190,8 @@ test('a drag is one press of Ctrl-Z, not one per wobble', async ({ page }) => {
 })
 
 test('the dropped position is in the scene file within a second', async ({ page }) => {
-  await openScene(page)
-  await row(page, 'Slime').click()
+  await openScene(page, LEVEL_ONE)
+  await outlinerRow(page, 'Slime').click()
   const before = await position(page)
 
   const scale = await cameraScale(page)
@@ -240,12 +201,10 @@ test('the dropped position is in the scene file within a second', async ({ page 
   const file = path.join(editorTestProjectPath(), LEVEL_ONE.replaceAll('/', path.sep))
   await expect
     .poll(
-      () => {
-        const scene = JSON.parse(fs.readFileSync(file, 'utf8')) as {
-          entities: { name: string; transform: { x: number } }[]
-        }
-        return scene.entities.find((one) => one.name === 'Slime')?.transform.x
-      },
+      () =>
+        parsedWhenWhole<{ entities: { name: string; transform: { x: number } }[] }>(
+          file,
+        )?.entities.find((one) => one.name === 'Slime')?.transform.x,
       { timeout: WITHIN_A_SECOND + 1_000 },
     )
     .toBe(after.x)
@@ -260,8 +219,8 @@ test('the dropped position is in the scene file within a second', async ({ page 
  * the scene opened at.
  */
 test('the same drag moves the same number of level units at any zoom', async ({ page }) => {
-  await openScene(page)
-  await row(page, 'Slime').click()
+  await openScene(page, LEVEL_ONE)
+  await outlinerRow(page, 'Slime').click()
 
   const scale = await cameraScale(page)
   const start = await position(page)
@@ -284,8 +243,8 @@ test('the same drag moves the same number of level units at any zoom', async ({ 
 // --- acceptance: the camera still has its gestures --------------------------
 
 test('space-drag over a sprite pans the level and moves nothing', async ({ page }) => {
-  await openScene(page)
-  await row(page, 'Slime').click()
+  await openScene(page, LEVEL_ONE)
+  await outlinerRow(page, 'Slime').click()
   const before = await position(page)
   const originBefore = Number(await page.getByTestId('scene-origin').getAttribute('data-origin-x'))
 
@@ -306,8 +265,8 @@ test('space-drag over a sprite pans the level and moves nothing', async ({ page 
 })
 
 test('a click does not nudge what it selects', async ({ page }) => {
-  await openScene(page)
-  await row(page, 'Slime').click()
+  await openScene(page, LEVEL_ONE)
+  await outlinerRow(page, 'Slime').click()
   const before = await position(page)
 
   await page.mouse.click(...(Object.values(await outlineCentre(page)) as [number, number]))
@@ -316,11 +275,11 @@ test('a click does not nudge what it selects', async ({ page }) => {
 })
 
 test('pressing F after clicking in the picture frames, rather than typing an f', async ({ page }) => {
-  await openScene(page)
+  await openScene(page, LEVEL_ONE)
 
   // Focus starts in a text field, which is the situation that makes this real:
   // without the press moving focus out, F would land in the name.
-  await row(page, 'Slime').click()
+  await outlinerRow(page, 'Slime').click()
   await page.getByTestId('entity-name-control').click()
 
   await page.mouse.click(...(Object.values(await outlineCentre(page)) as [number, number]))
@@ -332,8 +291,8 @@ test('pressing F after clicking in the picture frames, rather than typing an f',
 })
 
 test('a picture of a drag in progress', async ({ page }) => {
-  await openScene(page)
-  await row(page, 'Slime').click()
+  await openScene(page, LEVEL_ONE)
+  await outlinerRow(page, 'Slime').click()
 
   const at = await outlineCentre(page)
   await page.mouse.move(at.x, at.y)

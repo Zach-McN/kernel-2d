@@ -1,7 +1,7 @@
-import { expect, test, type Locator, type Page } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
 
 import { restoreProjectAfterEach } from './restore-project.js'
-import { selectAsset } from './select-asset.js'
+import { cameraScale, openScene, outlineCentre, outlinerRow, viewport } from './scene-view.js'
 
 /**
  * Moving an entity with the keyboard: `G` to pick it up, `X` and `Y` to hold it
@@ -35,51 +35,12 @@ test.beforeEach(async ({ page }) => {
 
 // --- reading what happened -------------------------------------------------
 
-const viewport = (page: Page): Locator => page.getByTestId('viewport-panel')
-
-const row = (page: Page, name: string): Locator =>
-  page.getByTestId('outliner-panel').locator('[data-entity-id]').filter({ hasText: name }).first()
-
-async function cameraScale(page: Page): Promise<number> {
-  return Number(await viewport(page).getAttribute('data-scene-scale'))
-}
-
-/** The camera, once it has stopped moving — opening a scene frames it a beat later. */
-async function settled(page: Page): Promise<number> {
-  let previous = Number.NaN
-  await expect
-    .poll(
-      async () => {
-        const now = await cameraScale(page)
-        const same = now === previous
-        previous = now
-        return same && Number.isFinite(now)
-      },
-      { intervals: [120, 120, 120, 120, 120, 120, 120, 120] },
-    )
-    .toBe(true)
-  return previous
-}
-
-async function openScene(page: Page): Promise<void> {
-  await selectAsset(page, LEVEL_ONE)
-  await expect(viewport(page)).toHaveAttribute('data-scene-showing', LEVEL_ONE)
-  await settled(page)
-}
-
 /** Where the selected entity is, as the Inspector reads it — the level's own units. */
 async function position(page: Page): Promise<{ x: number; y: number }> {
   return {
     x: Number(await page.getByTestId('entity-x-control').inputValue()),
     y: Number(await page.getByTestId('entity-y-control').inputValue()),
   }
-}
-
-/** The middle of the selected entity's outline, in window coordinates. */
-async function outlineCentre(page: Page): Promise<{ x: number; y: number }> {
-  const box = await page.getByTestId('scene-selected-bounds').boundingBox()
-  expect(box).not.toBeNull()
-  return { x: (box?.x ?? 0) + (box?.width ?? 0) / 2, y: (box?.y ?? 0) + (box?.height ?? 0) / 2 }
 }
 
 async function stageBox(page: Page): Promise<{ x: number; y: number; width: number; height: number }> {
@@ -109,8 +70,8 @@ async function moveTo(page: Page, from: { x: number; y: number }, dx: number, dy
 // --- acceptance: the grab ---------------------------------------------------
 
 test('pressing G moves the selected entity with the pointer, and a click puts it down', async ({ page }) => {
-  await openScene(page)
-  await row(page, 'Slime').click()
+  await openScene(page, LEVEL_ONE)
+  await outlinerRow(page, 'Slime').click()
   const before = await position(page)
 
   const scale = await cameraScale(page)
@@ -129,8 +90,8 @@ test('pressing G moves the selected entity with the pointer, and a click puts it
  * press to start on the sprite would pass every other test in this file.
  */
 test('G grabs the selection with the pointer nowhere near it', async ({ page }) => {
-  await openScene(page)
-  await row(page, 'Slime').click()
+  await openScene(page, LEVEL_ONE)
+  await outlinerRow(page, 'Slime').click()
   const before = await position(page)
 
   // A corner of the panel with nothing in it, deliberately far from the sprite.
@@ -148,8 +109,8 @@ test('G grabs the selection with the pointer nowhere near it', async ({ page }) 
 })
 
 test('pressing X holds it to the X axis, from where it started', async ({ page }) => {
-  await openScene(page)
-  await row(page, 'Slime').click()
+  await openScene(page, LEVEL_ONE)
+  await outlinerRow(page, 'Slime').click()
   const before = await position(page)
 
   const scale = await cameraScale(page)
@@ -165,8 +126,8 @@ test('pressing X holds it to the X axis, from where it started', async ({ page }
 })
 
 test('pressing Y holds it to the Y axis, from where it started', async ({ page }) => {
-  await openScene(page)
-  await row(page, 'Slime').click()
+  await openScene(page, LEVEL_ONE)
+  await outlinerRow(page, 'Slime').click()
   const before = await position(page)
 
   const scale = await cameraScale(page)
@@ -181,8 +142,8 @@ test('pressing Y holds it to the Y axis, from where it started', async ({ page }
 })
 
 test('pressing the same axis again frees it, without starting over', async ({ page }) => {
-  await openScene(page)
-  await row(page, 'Slime').click()
+  await openScene(page, LEVEL_ONE)
+  await outlinerRow(page, 'Slime').click()
   const before = await position(page)
 
   const scale = await cameraScale(page)
@@ -199,8 +160,8 @@ test('pressing the same axis again frees it, without starting over', async ({ pa
 })
 
 test('Esc puts it back exactly where it was', async ({ page }) => {
-  await openScene(page)
-  await row(page, 'Slime').click()
+  await openScene(page, LEVEL_ONE)
+  await outlinerRow(page, 'Slime').click()
   const before = await position(page)
 
   const scale = await cameraScale(page)
@@ -221,8 +182,8 @@ test('Esc puts it back exactly where it was', async ({ page }) => {
  * press of Ctrl-Z would appear to do nothing at all.
  */
 test('a cancelled grab leaves the undo history as it was', async ({ page }) => {
-  await openScene(page)
-  await row(page, 'Slime').click()
+  await openScene(page, LEVEL_ONE)
+  await outlinerRow(page, 'Slime').click()
   const before = await position(page)
 
   // A change to reverse, made before the grab and nothing to do with it.
@@ -250,8 +211,8 @@ test('a cancelled grab leaves the undo history as it was', async ({ page }) => {
 })
 
 test('a whole grab is one press of Ctrl-Z', async ({ page }) => {
-  await openScene(page)
-  await row(page, 'Slime').click()
+  await openScene(page, LEVEL_ONE)
+  await outlinerRow(page, 'Slime').click()
   const before = await position(page)
 
   const scale = await cameraScale(page)
@@ -269,8 +230,8 @@ test('a whole grab is one press of Ctrl-Z', async ({ page }) => {
 })
 
 test('the bar says what is being moved and how to get out of it', async ({ page }) => {
-  await openScene(page)
-  await row(page, 'Slime').click()
+  await openScene(page, LEVEL_ONE)
+  await outlinerRow(page, 'Slime').click()
 
   const at = await outlineCentre(page)
   await grabFrom(page, at)
@@ -288,15 +249,15 @@ test('the bar says what is being moved and how to get out of it', async ({ page 
 })
 
 test('G with nothing selected does nothing at all', async ({ page }) => {
-  await openScene(page)
+  await openScene(page, LEVEL_ONE)
   await page.keyboard.press('g')
 
   await expect(viewport(page)).toHaveAttribute('data-scene-grabbing', '')
 })
 
 test('a grab takes the wheel and the framing keys with it', async ({ page }) => {
-  await openScene(page)
-  await row(page, 'Slime').click()
+  await openScene(page, LEVEL_ONE)
+  await outlinerRow(page, 'Slime').click()
 
   const scale = await cameraScale(page)
   const at = await outlineCentre(page)
@@ -312,8 +273,8 @@ test('a grab takes the wheel and the framing keys with it', async ({ page }) => 
 // --- acceptance: duplicating ------------------------------------------------
 
 test('Shift-D copies the selected entity in place and selects the copy', async ({ page }) => {
-  await openScene(page)
-  await row(page, 'Slime').click()
+  await openScene(page, LEVEL_ONE)
+  await outlinerRow(page, 'Slime').click()
   const before = await position(page)
 
   // Focus in the picture, which is where a hand that has been dragging is.
@@ -321,13 +282,13 @@ test('Shift-D copies the selected entity in place and selects the copy', async (
   await page.keyboard.press('Shift+d')
 
   await expect(page.getByTestId('entity-name-control')).toHaveValue('Slime 2')
-  await expect(row(page, 'Slime 2')).toHaveAttribute('data-selected', 'true')
+  await expect(outlinerRow(page, 'Slime 2')).toHaveAttribute('data-selected', 'true')
   expect(await position(page)).toEqual(before)
 })
 
 test('the copy is the one that moves, and the original stays', async ({ page }) => {
-  await openScene(page)
-  await row(page, 'Slime').click()
+  await openScene(page, LEVEL_ONE)
+  await outlinerRow(page, 'Slime').click()
   const before = await position(page)
 
   const scale = await cameraScale(page)
@@ -341,18 +302,18 @@ test('the copy is the one that moves, and the original stays', async ({ page }) 
   await page.mouse.up()
 
   expect((await position(page)).x).toBe(before.x + 20)
-  await row(page, 'Slime').first().click()
+  await outlinerRow(page, 'Slime').first().click()
   expect(await position(page)).toEqual(before)
 })
 
 test('Shift-D typed into a name is a D', async ({ page }) => {
-  await openScene(page)
-  await row(page, 'Slime').click()
+  await openScene(page, LEVEL_ONE)
+  await outlinerRow(page, 'Slime').click()
 
   await page.getByTestId('entity-name-control').click()
   await page.keyboard.press('End')
   await page.keyboard.press('Shift+D')
 
   await expect(page.getByTestId('entity-name-control')).toHaveValue('SlimeD')
-  await expect(row(page, 'Slime 2')).toHaveCount(0)
+  await expect(outlinerRow(page, 'Slime 2')).toHaveCount(0)
 })

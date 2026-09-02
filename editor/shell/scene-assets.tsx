@@ -7,6 +7,7 @@ import type { SceneTexture } from '../../runtime'
 import { MetaViewSchema } from '../../sidecar/meta-view-schema'
 import type { ProjectTree } from '../../sidecar/tree-schema'
 import { adoptFromDisk, useAllDocuments } from '../store/open-documents'
+import { basename } from './asset-kinds'
 import { useProject } from './project-context'
 import { useResolvedScene } from './scene-prefabs'
 import { referencesTo, useReferences, type Answer } from './useReferences'
@@ -215,7 +216,7 @@ export function problemsIn(assets: SceneAssets): TextureProblem[] {
 
 /** One problem, as the sentence a human reads. */
 export function describeProblem(problem: TextureProblem): string {
-  const name = problem.path.split('/').at(-1) ?? problem.path
+  const name = basename(problem.path)
 
   if (problem.kind === 'missing') {
     return `${name} is not in the project folder, so nothing is drawn for it. It is still referenced at ${problem.path}.`

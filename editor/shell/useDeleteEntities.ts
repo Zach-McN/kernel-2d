@@ -1,5 +1,6 @@
 import { SCENE_FORMAT } from '../../runtime/formats/scene-schema'
 import { editDocument } from '../store/open-documents'
+import { entitiesLabel } from './entity-count'
 import { useOpenScene } from './open-scene'
 import { useSelection } from './selection'
 
@@ -58,7 +59,7 @@ export function useDeleteEntities(): {
       if (scenePath === null || entities.length === 0) return
       const going = new Set(entities)
 
-      editDocument(scenePath, { label: labelFor(entities.length) }, (document) => {
+      editDocument(scenePath, { label: entitiesLabel('Delete', entities.length) }, (document) => {
         if (document.format !== SCENE_FORMAT) return
         for (let at = document.entities.length - 1; at >= 0; at -= 1) {
           const entity = document.entities[at]
@@ -71,13 +72,3 @@ export function useDeleteEntities(): {
   }
 }
 
-/**
- * What the undo history calls it.
- *
- * The count is in the label because the history is read by somebody deciding
- * whether to press Ctrl-Z again, and "Delete entity" against a step that
- * removed six of them is the one wrong answer available here.
- */
-function labelFor(count: number): string {
-  return count === 1 ? 'Delete entity' : `Delete ${count} entities`
-}

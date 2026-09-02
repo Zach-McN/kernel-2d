@@ -5,6 +5,7 @@ import { prefabRefOf, type Entity, type Scene } from '../../runtime/formats/scen
 import { DocumentViewSchema } from '../../sidecar/document-view-schema'
 import type { ProjectTree } from '../../sidecar/tree-schema'
 import { adoptFromDisk, useAllDocuments } from '../store/open-documents'
+import { basename } from './asset-kinds'
 import { useOpenScene } from './open-scene'
 import { useProject } from './project-context'
 import { referencesTo, useReferences, type Answer } from './useReferences'
@@ -183,7 +184,7 @@ export function prefabProblemsIn(resolved: ResolvedScene): PrefabProblem[] {
 
 /** One problem, as the sentence a human reads. */
 export function describePrefabProblem(problem: PrefabProblem): string {
-  const name = problem.path.split('/').at(-1) ?? problem.path
+  const name = basename(problem.path)
 
   if (problem.kind === 'missing') {
     return `${name} is not in the project folder, so everything placed from it draws nothing. It is still referenced at ${problem.path}.`

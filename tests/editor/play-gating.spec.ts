@@ -1,6 +1,7 @@
 import { expect, test, type Locator, type Page } from '@playwright/test'
 
 import { restoreProjectAfterEach } from './restore-project.js'
+import { outlineCentre, outlinerRow, settled, viewport } from './scene-view.js'
 import { selectAsset } from './select-asset.js'
 
 /**
@@ -45,28 +46,7 @@ test.beforeEach(async ({ page }) => {
   await expect(page.getByTestId('viewport-stage').locator('canvas')).toBeVisible()
 })
 
-const viewport = (page: Page): Locator => page.getByTestId('viewport-panel')
 const play = (page: Page): Locator => page.getByTestId('play-start')
-const row = (page: Page, name: string): Locator =>
-  page.getByTestId('outliner-panel').locator('[data-entity-id]').filter({ hasText: name }).first()
-
-/** The camera, once it has stopped moving — opening a scene frames it a beat later. */
-async function settled(page: Page): Promise<number> {
-  let previous = Number.NaN
-  await expect
-    .poll(
-      async () => {
-        const now = Number(await viewport(page).getAttribute('data-scene-scale'))
-        const same = now === previous
-        previous = now
-        return same && Number.isFinite(now)
-      },
-      { intervals: [120, 120, 120, 120, 120, 120, 120, 120] },
-    )
-    .toBe(true)
-  return previous
-}
-
 async function openScene(page: Page): Promise<void> {
   await selectAsset(page, LEVEL_ONE)
   await expect(viewport(page)).toHaveAttribute('data-scene-showing', LEVEL_ONE)
@@ -74,19 +54,12 @@ async function openScene(page: Page): Promise<void> {
   await expect(play(page)).toBeEnabled()
 }
 
-/** The middle of the selected entity's outline, in window coordinates. */
-async function outlineCentre(page: Page): Promise<{ x: number; y: number }> {
-  const box = await page.getByTestId('scene-selected-bounds').boundingBox()
-  expect(box).not.toBeNull()
-  return { x: (box?.x ?? 0) + (box?.width ?? 0) / 2, y: (box?.y ?? 0) + (box?.height ?? 0) / 2 }
-}
-
 test('stays greyed for the whole of a keyboard grab, however long the hand is still', async ({ page }) => {
   await openScene(page)
-  await row(page, 'Slime').click()
+  await outlinerRow(page, 'Slime').click()
 
   await page.getByTestId('viewport-stage').click({ position: { x: 4, y: 4 } })
-  await row(page, 'Slime').click()
+  await outlinerRow(page, 'Slime').click()
   await page.keyboard.press('g')
   await expect(viewport(page)).not.toHaveAttribute('data-scene-grabbing', '')
 
@@ -104,7 +77,7 @@ test('stays greyed for the whole of a keyboard grab, however long the hand is st
 
 test('stays greyed through a pause in the middle of a drag', async ({ page }) => {
   await openScene(page)
-  await row(page, 'Slime').click()
+  await outlinerRow(page, 'Slime').click()
 
   const from = await outlineCentre(page)
   await page.mouse.move(from.x, from.y)
@@ -129,7 +102,7 @@ test('stays greyed through a pause in the middle of a drag', async ({ page }) =>
  */
 test('comes back once the entity is put down', async ({ page }) => {
   await openScene(page)
-  await row(page, 'Slime').click()
+  await outlinerRow(page, 'Slime').click()
   await page.keyboard.press('g')
   await expect(play(page)).toBeDisabled()
 
@@ -141,7 +114,7 @@ test('comes back once the entity is put down', async ({ page }) => {
 
 test('says why it is greyed rather than blaming the level for still opening', async ({ page }) => {
   await openScene(page)
-  await row(page, 'Slime').click()
+  await outlinerRow(page, 'Slime').click()
   await page.keyboard.press('g')
 
   await expect(play(page)).toHaveAttribute('title', /still being moved/)

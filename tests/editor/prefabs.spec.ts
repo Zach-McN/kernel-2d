@@ -4,6 +4,7 @@ import path from 'node:path'
 import { expect, test, type Locator, type Page } from '@playwright/test'
 
 import { restoreProjectAfterEach } from './restore-project.js'
+import { outlinerRow, outlinerRows } from './scene-view.js'
 import { openNewDocument, selectAsset, showTree } from './select-asset.js'
 import { editorTestProjectPath } from './test-project.js'
 
@@ -49,10 +50,6 @@ test.beforeEach(async ({ page }) => {
 // --- driving ---------------------------------------------------------------
 
 const outliner = (page: Page): Locator => page.getByTestId('outliner-panel')
-const rows = (page: Page): Locator => outliner(page).locator('[data-entity-id]')
-const row = (page: Page, name: string): Locator =>
-  outliner(page).locator('[data-entity-id]').filter({ hasText: name }).first()
-
 async function openScene(page: Page, scenePath: string): Promise<void> {
   await selectAsset(page, scenePath)
   await expect(outliner(page)).toHaveAttribute('data-scene', scenePath)
@@ -83,7 +80,7 @@ function fingerprint(projectRelative: string): { text: string; modifiedAt: numbe
 
 /** Which texture each row in the Outliner says it draws. */
 function textures(page: Page): Promise<string[]> {
-  return rows(page).evaluateAll((buttons) =>
+  return outlinerRows(page).evaluateAll((buttons) =>
     buttons.map((button) => button.querySelector('.entity-row__texture')?.textContent ?? ''),
   )
 }
@@ -108,12 +105,12 @@ test('the sample level is built from a prefab, and it is drawn', async ({ page }
 
   // Four entities, four sprites on screen — two of which have no picture of
   // their own anywhere in the level file.
-  await expect(rows(page)).toHaveCount(4)
+  await expect(outlinerRows(page)).toHaveCount(4)
   await expect.poll(() => drawn(page), { timeout: SETTLES }).toBe('4')
 
-  await expect(row(page, 'Slime')).toHaveAttribute('data-entity-prefab', SLIME_PREFAB)
-  await expect(row(page, 'Tilted slime')).toHaveAttribute('data-entity-prefab', SLIME_PREFAB)
-  await expect(row(page, 'Cave floor')).toHaveAttribute('data-entity-prefab', '')
+  await expect(outlinerRow(page, 'Slime')).toHaveAttribute('data-entity-prefab', SLIME_PREFAB)
+  await expect(outlinerRow(page, 'Tilted slime')).toHaveAttribute('data-entity-prefab', SLIME_PREFAB)
+  await expect(outlinerRow(page, 'Cave floor')).toHaveAttribute('data-entity-prefab', '')
 
   // And the level really does say nothing about a picture for them.
   const slime = sceneOnDisk().entities.find((entity) => entity.name === 'Slime')
@@ -225,7 +222,7 @@ test('a prefab is placed by reference and nothing else, however many times', asy
   await page.getByTestId('entity-place-another').click()
   await page.getByTestId('entity-place-another').click()
 
-  await expect(rows(page)).toHaveCount(7)
+  await expect(outlinerRows(page)).toHaveCount(7)
   await expect.poll(() => drawn(page), { timeout: SETTLES }).toBe('7')
   await expect(page.getByTestId('entity-prefab-count')).toContainText('3 times')
 
@@ -264,18 +261,18 @@ test('one press of Ctrl-Z takes a placement back', async ({ page }) => {
   await page.getByTestId('prefab-texture-control').selectOption(SLIME)
 
   await page.getByTestId('prefab-place').click()
-  await expect(rows(page)).toHaveCount(5)
+  await expect(outlinerRows(page)).toHaveCount(5)
 
   await page.keyboard.press('ControlOrMeta+z')
 
-  await expect(rows(page)).toHaveCount(4)
+  await expect(outlinerRows(page)).toHaveCount(4)
 })
 
 // --- acceptance: an instance is an ordinary entity --------------------------
 
 test('an instance moves, duplicates and deletes like anything else', async ({ page }) => {
   await openScene(page, LEVEL_TWO)
-  await row(page, 'Tilted slime').click()
+  await outlinerRow(page, 'Tilted slime').click()
 
   // Where it stands is its own, not the prefab's: this one is turned and the
   // other is not.
@@ -291,18 +288,18 @@ test('an instance moves, duplicates and deletes like anything else', async ({ pa
   expect(fs.readFileSync(fileFor(SLIME_PREFAB), 'utf8')).not.toContain('200')
 
   await page.getByTestId('entity-duplicate').click()
-  await expect(rows(page)).toHaveCount(5)
+  await expect(outlinerRows(page)).toHaveCount(5)
   // The copy is an instance too — a duplicate that quietly cut the link would
   // look identical and stop following the prefab.
-  await expect(row(page, 'Tilted slime 2')).toHaveAttribute('data-entity-prefab', SLIME_PREFAB)
+  await expect(outlinerRow(page, 'Tilted slime 2')).toHaveAttribute('data-entity-prefab', SLIME_PREFAB)
 
   await page.getByTestId('entity-delete').click()
-  await expect(rows(page)).toHaveCount(4)
+  await expect(outlinerRows(page)).toHaveCount(4)
 })
 
 test('the inspector for an instance points at the prefab instead of offering a picker', async ({ page }) => {
   await openScene(page, LEVEL_TWO)
-  await row(page, 'Slime').click()
+  await outlinerRow(page, 'Slime').click()
 
   // No texture control at all: this entity's picture is not its to decide.
   await expect(page.getByTestId('entity-texture-control')).toHaveCount(0)
@@ -326,14 +323,14 @@ test('a prefab that goes missing is named, rather than its instances going quiet
   // Deleted from the folder itself, the way it would happen in real life.
   fs.rmSync(fileFor(SLIME_PREFAB))
 
-  await expect(row(page, 'Slime')).toHaveAttribute('data-entity-problem', 'missing prefab', {
+  await expect(outlinerRow(page, 'Slime')).toHaveAttribute('data-entity-problem', 'missing prefab', {
     timeout: SETTLES,
   })
   await expect(page.getByTestId('viewport-problem').first()).toContainText('enemy-slime.json')
   // Two sprites left, and the level says which two are gone and why.
   await expect.poll(() => drawn(page), { timeout: SETTLES }).toBe('2')
 
-  await row(page, 'Slime').click()
+  await outlinerRow(page, 'Slime').click()
   await expect(page.getByTestId('entity-prefab-problem')).toContainText('not in the project folder')
 })
 

@@ -1,7 +1,7 @@
-import { expect, test, type Locator, type Page } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
 
 import { restoreProjectAfterEach } from './restore-project.js'
-import { selectAsset } from './select-asset.js'
+import { openScene, outlinerRow, viewport } from './scene-view.js'
 
 /**
  * Scaling entities with `S`: the gizmo, the factor, the axis lock, and the two
@@ -33,31 +33,6 @@ test.beforeEach(async ({ page }) => {
 })
 
 // --- reading what happened -------------------------------------------------
-
-const viewport = (page: Page): Locator => page.getByTestId('viewport-panel')
-const row = (page: Page, name: string): Locator =>
-  page.getByTestId('outliner-panel').locator('[data-entity-id]').filter({ hasText: name }).first()
-
-async function settled(page: Page): Promise<void> {
-  let previous = Number.NaN
-  await expect
-    .poll(
-      async () => {
-        const now = Number(await viewport(page).getAttribute('data-scene-scale'))
-        const same = now === previous
-        previous = now
-        return same && Number.isFinite(now)
-      },
-      { intervals: [120, 120, 120, 120, 120, 120, 120, 120] },
-    )
-    .toBe(true)
-}
-
-async function openScene(page: Page): Promise<void> {
-  await selectAsset(page, LEVEL_ONE)
-  await expect(viewport(page)).toHaveAttribute('data-scene-showing', LEVEL_ONE)
-  await settled(page)
-}
 
 /** What the Inspector says about the selected entity, in the level's own units. */
 async function transform(
@@ -123,8 +98,8 @@ async function scaleTo(
 // --- acceptance: the gesture ------------------------------------------------
 
 test('S scales the selected entity, and a click keeps it', async ({ page }) => {
-  await openScene(page)
-  await row(page, 'Slime').click()
+  await openScene(page, LEVEL_ONE)
+  await outlinerRow(page, 'Slime').click()
   const before = await transform(page)
 
   await scaleTo(page, 2)
@@ -141,8 +116,8 @@ test('S scales the selected entity, and a click keeps it', async ({ page }) => {
 })
 
 test('taking the pointer in makes it smaller', async ({ page }) => {
-  await openScene(page)
-  await row(page, 'Slime').click()
+  await openScene(page, LEVEL_ONE)
+  await outlinerRow(page, 'Slime').click()
   const before = await transform(page)
 
   await scaleTo(page, 0.5)
@@ -155,8 +130,8 @@ test('taking the pointer in makes it smaller', async ({ page }) => {
 test('the gizmo, its line and the mark it started from are on screen, and gone afterwards', async ({
   page,
 }) => {
-  await openScene(page)
-  await row(page, 'Slime').click()
+  await openScene(page, LEVEL_ONE)
+  await outlinerRow(page, 'Slime').click()
 
   await scaleTo(page, 1.6)
 
@@ -169,8 +144,8 @@ test('the gizmo, its line and the mark it started from are on screen, and gone a
 })
 
 test('Enter puts it down as well as a click', async ({ page }) => {
-  await openScene(page)
-  await row(page, 'Slime').click()
+  await openScene(page, LEVEL_ONE)
+  await outlinerRow(page, 'Slime').click()
   const before = await transform(page)
 
   await scaleTo(page, 2)
@@ -186,8 +161,8 @@ test('Enter puts it down as well as a click', async ({ page }) => {
  * old size back would fail, and it fails invisibly (`editor-verification` V30).
  */
 test('Esc puts it back and leaves no step behind', async ({ page }) => {
-  await openScene(page)
-  await row(page, 'Slime').click()
+  await openScene(page, LEVEL_ONE)
+  await outlinerRow(page, 'Slime').click()
 
   // A change to reverse *before* the cancelled scale, so the next Ctrl-Z has
   // something of its own to take back.
@@ -195,7 +170,7 @@ test('Esc puts it back and leaves no step behind', async ({ page }) => {
   await expect.poll(async () => (await transform(page)).x).toBe(123)
   // Focus back out of the field, or `s` is typed into it rather than starting a
   // scale — the typing guard working, which would read here as `S` being broken.
-  await row(page, 'Slime').click()
+  await outlinerRow(page, 'Slime').click()
   const before = await transform(page)
 
   await scaleTo(page, 2)
@@ -210,8 +185,8 @@ test('Esc puts it back and leaves no step behind', async ({ page }) => {
 })
 
 test('the whole scale is one press of Ctrl-Z', async ({ page }) => {
-  await openScene(page)
-  await row(page, 'Slime').click()
+  await openScene(page, LEVEL_ONE)
+  await outlinerRow(page, 'Slime').click()
   const before = await transform(page)
 
   await page.keyboard.press('s')
@@ -238,8 +213,8 @@ test('the whole scale is one press of Ctrl-Z', async ({ page }) => {
 // --- acceptance: the axis lock ----------------------------------------------
 
 test('X stretches one side only, and pressing it again frees both', async ({ page }) => {
-  await openScene(page)
-  await row(page, 'Slime').click()
+  await openScene(page, LEVEL_ONE)
+  await outlinerRow(page, 'Slime').click()
   const before = await transform(page)
 
   await scaleTo(page, 2)
@@ -259,8 +234,8 @@ test('X stretches one side only, and pressing it again frees both', async ({ pag
 })
 
 test('a scale held to X leaves the height exactly as it was', async ({ page }) => {
-  await openScene(page)
-  await row(page, 'Slime').click()
+  await openScene(page, LEVEL_ONE)
+  await outlinerRow(page, 'Slime').click()
   const before = await transform(page)
 
   await scaleTo(page, 2)
@@ -274,8 +249,8 @@ test('a scale held to X leaves the height exactly as it was', async ({ page }) =
 })
 
 test('Y is the other side', async ({ page }) => {
-  await openScene(page)
-  await row(page, 'Slime').click()
+  await openScene(page, LEVEL_ONE)
+  await outlinerRow(page, 'Slime').click()
   const before = await transform(page)
 
   await scaleTo(page, 2)
@@ -296,15 +271,15 @@ test('Y is the other side', async ({ page }) => {
  * grows them leaves the positions alone, so both are asserted.
  */
 test('several selected grow and spread apart from their middle', async ({ page }) => {
-  await openScene(page)
+  await openScene(page, LEVEL_ONE)
 
-  await row(page, 'Knight').click()
+  await outlinerRow(page, 'Knight').click()
   const knightBefore = await transform(page)
-  await row(page, 'Slime').click()
+  await outlinerRow(page, 'Slime').click()
   const slimeBefore = await transform(page)
 
-  await row(page, 'Knight').click()
-  await row(page, 'Slime').click({ modifiers: ['Shift'] })
+  await outlinerRow(page, 'Knight').click()
+  await outlinerRow(page, 'Slime').click({ modifiers: ['Shift'] })
   await expect(viewport(page)).toHaveAttribute('data-scene-selected-count', '2')
 
   await scaleTo(page, 2)
@@ -314,7 +289,7 @@ test('several selected grow and spread apart from their middle', async ({ page }
   // The Inspector describes the last one clicked, which is the Slime.
   expect((await transform(page)).scaleX).toBeCloseTo(slimeBefore.scaleX * 2, 1)
 
-  await row(page, 'Knight').click()
+  await outlinerRow(page, 'Knight').click()
   const knightAfter = await transform(page)
   expect(knightAfter.scaleX).toBeCloseTo(knightBefore.scaleX * 2, 1)
 
@@ -325,10 +300,10 @@ test('several selected grow and spread apart from their middle', async ({ page }
 })
 
 test('scaling several is still one press of Ctrl-Z', async ({ page }) => {
-  await openScene(page)
-  await row(page, 'Knight').click()
+  await openScene(page, LEVEL_ONE)
+  await outlinerRow(page, 'Knight').click()
   const before = await transform(page)
-  await row(page, 'Slime').click({ modifiers: ['Shift'] })
+  await outlinerRow(page, 'Slime').click({ modifiers: ['Shift'] })
 
   await scaleTo(page, 2)
   await page.mouse.down()
@@ -336,7 +311,7 @@ test('scaling several is still one press of Ctrl-Z', async ({ page }) => {
 
   await page.keyboard.press('ControlOrMeta+z')
 
-  await row(page, 'Knight').click()
+  await outlinerRow(page, 'Knight').click()
   await expect.poll(async () => (await transform(page)).scaleX).toBeCloseTo(before.scaleX, 1)
   await expect.poll(async () => (await transform(page)).x).toBeCloseTo(before.x, 1)
 })
@@ -355,9 +330,9 @@ function onStep(factor: number): boolean {
 }
 
 test('with snapping on the factor lands on a tenth', async ({ page }) => {
-  await openScene(page)
+  await openScene(page, LEVEL_ONE)
   await setSnapping(page, true)
-  await row(page, 'Slime').click()
+  await outlinerRow(page, 'Slime').click()
 
   await scaleTo(page, 1.37)
 
@@ -366,9 +341,9 @@ test('with snapping on the factor lands on a tenth', async ({ page }) => {
 })
 
 test('holding Ctrl scales freely while snapping is on', async ({ page }) => {
-  await openScene(page)
+  await openScene(page, LEVEL_ONE)
   await setSnapping(page, true)
-  await row(page, 'Slime').click()
+  await outlinerRow(page, 'Slime').click()
 
   await scaleTo(page, 1.37, { ctrl: true })
 
@@ -384,9 +359,9 @@ test('holding Ctrl scales freely while snapping is on', async ({ page }) => {
 
 /** The half that catches an inversion written backwards. */
 test('holding Ctrl lands on tenths while snapping is off', async ({ page }) => {
-  await openScene(page)
+  await openScene(page, LEVEL_ONE)
   await setSnapping(page, false)
-  await row(page, 'Slime').click()
+  await outlinerRow(page, 'Slime').click()
 
   await scaleTo(page, 1.37)
   expect(onStep((await scaledBy(page)).x)).toBe(false)
@@ -403,7 +378,7 @@ test('holding Ctrl lands on tenths while snapping is off', async ({ page }) => {
 // --- acceptance: where it is refused ----------------------------------------
 
 test('does nothing with nothing selected', async ({ page }) => {
-  await openScene(page)
+  await openScene(page, LEVEL_ONE)
 
   await page.getByTestId('viewport-stage').click({ position: { x: 6, y: 6 } })
   await expect(viewport(page)).toHaveAttribute('data-scene-selected-count', '0')
@@ -413,8 +388,8 @@ test('does nothing with nothing selected', async ({ page }) => {
 })
 
 test('does nothing while a level is running', async ({ page }) => {
-  await openScene(page)
-  await row(page, 'Slime').click()
+  await openScene(page, LEVEL_ONE)
+  await outlinerRow(page, 'Slime').click()
   const before = await transform(page)
   await expect(page.getByTestId('play-start')).toBeEnabled()
   await page.getByTestId('play-start').click()
@@ -430,8 +405,8 @@ test('does nothing while a level is running', async ({ page }) => {
 
 /** One modal gesture at a time, in both directions. */
 test('does not start on top of a grab, and a turn does not start on top of it', async ({ page }) => {
-  await openScene(page)
-  await row(page, 'Slime').click()
+  await openScene(page, LEVEL_ONE)
+  await outlinerRow(page, 'Slime').click()
 
   await page.keyboard.press('g')
   await expect(viewport(page)).not.toHaveAttribute('data-scene-grabbing', '')
@@ -451,8 +426,8 @@ test('does not start on top of a grab, and a turn does not start on top of it', 
  * the wait is the assertion (`editor-ui` U43).
  */
 test('Play stays greyed for the whole scale', async ({ page }) => {
-  await openScene(page)
-  await row(page, 'Slime').click()
+  await openScene(page, LEVEL_ONE)
+  await outlinerRow(page, 'Slime').click()
 
   await scaleTo(page, 1.5)
 
@@ -465,9 +440,9 @@ test('Play stays greyed for the whole scale', async ({ page }) => {
 })
 
 test('leaves a picture of a scale in progress', async ({ page }, testInfo) => {
-  await openScene(page)
-  await row(page, 'Knight').click()
-  await row(page, 'Slime').click({ modifiers: ['Shift'] })
+  await openScene(page, LEVEL_ONE)
+  await outlinerRow(page, 'Knight').click()
+  await outlinerRow(page, 'Slime').click({ modifiers: ['Shift'] })
 
   await scaleTo(page, 1.6)
   await expect(page.getByTestId('scene-scaling')).toBeVisible()

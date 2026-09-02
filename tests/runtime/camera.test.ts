@@ -5,28 +5,13 @@ import { CAMERA_ENTITY_ID, aimCamera, cameraIn } from '../../runtime/game/camera
 import { STEP_MS } from '../../runtime/game/loop'
 import { runLevel } from '../../runtime/game/run-level'
 import type { System } from '../../runtime/game/system'
+import { handCrankedFrames } from './hand-cranked-frames.js'
 
 /**
  * The camera seam: a system aims the view, the host is told, and the ask never
  * reaches the picture. Same shape as the door's suite — half of these need no
  * runner, because the ask is an ordinary entity.
  */
-
-function handCrankedFrames(): {
-  onFrame: (tick: (elapsedMs: number) => void) => () => void
-  frame: (elapsedMs: number) => void
-} {
-  const ticks = new Set<(elapsedMs: number) => void>()
-  return {
-    onFrame: (tick) => {
-      ticks.add(tick)
-      return () => ticks.delete(tick)
-    },
-    frame: (elapsedMs) => {
-      for (const tick of [...ticks]) tick(elapsedMs)
-    },
-  }
-}
 
 function chaser(x: number, y: number): System {
   return {

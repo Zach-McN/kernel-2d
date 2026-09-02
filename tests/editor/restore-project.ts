@@ -32,7 +32,7 @@ export function restoreProjectAfterEach(): void {
   let snapshot = new Map<string, Buffer>()
 
   test.beforeEach(() => {
-    snapshot = new Map(editableFiles().map((file) => [file, fs.readFileSync(file)]))
+    snapshot = new Map(projectFiles().map((file) => [file, fs.readFileSync(file)]))
   })
 
   test.afterEach(() => {
@@ -42,18 +42,18 @@ export function restoreProjectAfterEach(): void {
         fs.writeFileSync(file, contents)
       }
     }
-    for (const file of editableFiles()) {
+    for (const file of projectFiles()) {
       if (!snapshot.has(file)) fs.rmSync(file, { force: true })
     }
   })
 }
 
-export function editableFiles(root = editorTestProjectPath()): string[] {
+export function projectFiles(root = editorTestProjectPath()): string[] {
   return fs
     .readdirSync(root, { withFileTypes: true })
     .flatMap((entry) => {
       const full = path.join(root, entry.name)
-      if (entry.isDirectory()) return editableFiles(full)
+      if (entry.isDirectory()) return projectFiles(full)
       return [full]
     })
     .sort()

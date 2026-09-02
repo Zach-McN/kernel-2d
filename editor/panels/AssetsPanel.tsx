@@ -513,7 +513,7 @@ function folderFor(selectedPath: string | null, tree: ProjectTree, browsed: stri
   if (node === null) return standingIn
   if (node.kind === 'directory') return node.path
 
-  return node.path.split('/').slice(0, -1).join('/')
+  return parentOf(node.path)
 }
 
 // --- renaming, moving and deleting -----------------------------------------

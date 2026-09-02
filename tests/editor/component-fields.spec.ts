@@ -8,6 +8,7 @@ import {
   type ComponentDescription,
 } from '../../runtime/formats/component-schema.js'
 import { DOOR_DESCRIPTION, DOOR_DESCRIPTION_PATH } from '../fixtures/door-description.js'
+import { typeInto } from './fields.js'
 import { restoreProjectAfterEach } from './restore-project.js'
 import { openFileMenu, selectAsset } from './select-asset.js'
 import { editorTestProjectPath } from './test-project.js'
@@ -74,18 +75,6 @@ function patrolInFile(name: string): Record<string, unknown> | null {
   return typeof carried === 'object' && carried !== null ? (carried as Record<string, unknown>) : null
 }
 
-/** Typing into a generated field, the way the spin field is driven. */
-async function type(page: Page, testId: string, value: string): Promise<void> {
-  await typeInto(page, testId, value)
-}
-
-async function typeInto(page: Page, testId: string, value: string): Promise<void> {
-  const field = page.getByTestId(testId)
-  await field.click()
-  await field.press('ControlOrMeta+a')
-  await field.pressSequentially(value, { delay: 20 })
-}
-
 // --- acceptance: the fields exist because a file says so --------------------
 
 test('an entity carrying a described component gets a field per described field', async ({ page }) => {
@@ -111,7 +100,7 @@ test('a described component is no longer reported as one with no controls', asyn
 test('typing in one reaches the level within a second, and one Ctrl-Z takes it back', async ({ page }) => {
   await selectEntity(page, 'Slime')
 
-  await type(page, 'entity-component-patrol-unitsPerSecond', '48')
+  await typeInto(page, 'entity-component-patrol-unitsPerSecond', '48')
 
   await expect
     .poll(() => patrolInFile('Slime')?.['unitsPerSecond'], { timeout: WITHIN_A_SECOND + 1_000 })
@@ -141,7 +130,7 @@ test('writing one field leaves a key the description has never heard of alone', 
   await selectEntity(page, 'Slime')
   await expect(page.getByTestId('entity-component-patrol-unitsPerSecond')).toHaveValue('24')
 
-  await type(page, 'entity-component-patrol-unitsPerSecond', '30')
+  await typeInto(page, 'entity-component-patrol-unitsPerSecond', '30')
 
   await expect.poll(() => patrolInFile('Slime')?.['unitsPerSecond']).toBe(30)
   expect(patrolInFile('Slime')?.['pauseFor']).toBe(2)
@@ -198,7 +187,7 @@ test('Add on a placement inheriting one copies what the prefab gives it, keys th
   await expect.poll(own).toEqual(inherited)
   await expect(page.getByTestId('entity-component-patrol-unitsPerSecond')).toHaveValue('12')
   // And it is a copy: tuning it leaves the prefab exactly as it was.
-  await type(page, 'entity-component-patrol-unitsPerSecond', '30')
+  await typeInto(page, 'entity-component-patrol-unitsPerSecond', '30')
   await expect.poll(() => (own() as { unitsPerSecond?: unknown })?.unitsPerSecond).toBe(30)
   expect(JSON.parse(fs.readFileSync(prefabFile, 'utf8')).components.patrol).toEqual(inherited)
 })
@@ -299,7 +288,7 @@ test('a value the field cannot show is shown as the file has it, with no control
   await expect(page.getByTestId('entity-component-patrol-unitsPerSecond')).toHaveText('fast')
   await expect(page.getByTestId('entity-component-patrol-mismatch')).toContainText('Speed')
   // The neighbours are still controls, and using one leaves the odd value alone.
-  await type(page, 'entity-component-patrol-fromX', '150')
+  await typeInto(page, 'entity-component-patrol-fromX', '150')
   await expect.poll(() => patrolInFile('Slime')?.['fromX']).toBe(150)
   expect(patrolInFile('Slime')?.['unitsPerSecond']).toBe('fast')
 })
@@ -419,7 +408,7 @@ test.describe('a component that cannot be added by hand', () => {
     await expect(page.getByTestId('entity-component-patrol-remove')).toBeVisible()
 
     // Still writable: this key governs adding, not editing.
-    await type(page, 'entity-component-patrol-unitsPerSecond', '48')
+    await typeInto(page, 'entity-component-patrol-unitsPerSecond', '48')
     await expect.poll(() => patrolInFile('Slime')?.['unitsPerSecond']).toBe(48)
   })
 

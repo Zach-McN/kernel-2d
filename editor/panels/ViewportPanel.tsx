@@ -10,6 +10,7 @@ import {
   type ShownScene,
 } from '../../runtime'
 import { SCENE_FORMAT, type Entity } from '../../runtime/formats/scene-schema'
+import { entitiesLabel } from '../shell/entity-count'
 import { basename } from '../shell/asset-kinds'
 import { entityAt, onScreen } from '../shell/drawn-entities'
 import { useOpenScene, type OpenSceneState } from '../shell/open-scene'
@@ -484,27 +485,6 @@ function usePlayComparison(
   }, [running, playing, entities])
 }
 
-/**
- * What the undo history calls a turn.
- *
- * The count is in it for the same reason the delete's is: the history is read by
- * somebody deciding whether to press Ctrl-Z again, and "Rotate entity" against a
- * step that turned six of them is the one wrong answer available.
- */
-function labelForTurn(count: number): string {
-  return count === 1 ? 'Rotate entity' : `Rotate ${count} entities`
-}
-
-/** The same, for a move. */
-function labelForMove(count: number): string {
-  return count === 1 ? 'Move entity' : `Move ${count} entities`
-}
-
-/** And for a scale. */
-function labelForScale(count: number): string {
-  return count === 1 ? 'Scale entity' : `Scale ${count} entities`
-}
-
 const noop = (): void => {}
 const noPan = (_dx: number, _dy: number): void => {}
 const noZoom = (_at: { x: number; y: number }, _direction: 1 | -1): void => {}
@@ -694,7 +674,7 @@ function usePlacement(
 
         editDocument(
           scenePath,
-          { label: labelForMove(start.started.length), merge: start.key },
+          { label: entitiesLabel('Move', start.started.length), merge: start.key },
           (document) => {
             if (document.format !== SCENE_FORMAT) return
             for (const one of start.started) {
@@ -858,7 +838,7 @@ function usePlacement(
         // switch governs the *angle* for this gesture.
         const turned = turnAbout(run.started, run.pivot, applied)
 
-        editDocument(scenePath, { label: labelForTurn(turned.length), merge: run.key }, (document) => {
+        editDocument(scenePath, { label: entitiesLabel('Rotate', turned.length), merge: run.key }, (document) => {
           if (document.format !== SCENE_FORMAT) return
           for (const one of turned) {
             // Re-found by id inside the transaction rather than closed over as
@@ -968,7 +948,7 @@ function usePlacement(
         // not a rigid scale, and the switch governs the *factor* here.
         const sized = scaleAbout(run.started, run.pivot, applied)
 
-        editDocument(scenePath, { label: labelForScale(sized.length), merge: run.key }, (document) => {
+        editDocument(scenePath, { label: entitiesLabel('Scale', sized.length), merge: run.key }, (document) => {
           if (document.format !== SCENE_FORMAT) return
           for (const one of sized) {
             // Re-found by id inside the transaction, never closed over as an

@@ -4,6 +4,7 @@ import path from 'node:path'
 import { expect, test, type Page } from '@playwright/test'
 
 import { restoreProjectAfterEach } from './restore-project.js'
+import { viewport } from './scene-view.js'
 import { selectAsset } from './select-asset.js'
 import { editorTestProjectPath } from './test-project.js'
 
@@ -79,8 +80,6 @@ test('an opacity outside the range is drawn as the nearest one it can be', async
 })
 
 // --- driving ---------------------------------------------------------------
-
-const viewport = (page: Page) => page.getByTestId('viewport-panel')
 
 interface DrawnUnit {
   id: string

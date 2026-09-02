@@ -1,6 +1,7 @@
 import { expect, test, type Locator, type Page } from '@playwright/test'
 
 import { restoreProjectAfterEach } from './restore-project.js'
+import { outlinerRow, outlinerRows } from './scene-view.js'
 import { selectAsset } from './select-asset.js'
 
 /**
@@ -26,13 +27,9 @@ test.beforeEach(async ({ page }) => {
   await expect(page.getByTestId('assets-panel')).toBeVisible()
 })
 
-const rows = (page: Page): Locator => outliner(page).locator('[data-entity-id]')
 const outliner = (page: Page): Locator => page.getByTestId('outliner-panel')
-const row = (page: Page, name: string): Locator =>
-  outliner(page).locator('[data-entity-id]').filter({ hasText: name }).first()
-
 async function names(page: Page): Promise<string[]> {
-  return rows(page).evaluateAll((buttons) =>
+  return outlinerRows(page).evaluateAll((buttons) =>
     buttons.map((button) => button.querySelector('.entity-row__name')?.textContent ?? ''),
   )
 }
@@ -49,7 +46,7 @@ async function openScene(page: Page, scenePath: string): Promise<void> {
  * UG11, one panel over).
  */
 async function moveOverRow(page: Page, target: string, edge: 'before' | 'after'): Promise<void> {
-  const box = await row(page, target).boundingBox()
+  const box = await outlinerRow(page, target).boundingBox()
   if (box === null) throw new Error(`no row for ${target}`)
   const spot = {
     x: box.x + box.width / 2,
@@ -62,7 +59,7 @@ async function moveOverRow(page: Page, target: string, edge: 'before' | 'after')
 
 /** Pick a row up and hold it over another, without letting go. */
 async function carryRow(page: Page, dragged: string, target: string, edge: 'before' | 'after'): Promise<void> {
-  await row(page, dragged).hover()
+  await outlinerRow(page, dragged).hover()
   await page.mouse.down()
   await moveOverRow(page, target, edge)
 }
@@ -79,7 +76,7 @@ test.describe('opening a scene', () => {
 
     await openScene(page, LEVEL_ONE)
 
-    await expect(rows(page)).toHaveCount(5)
+    await expect(outlinerRows(page)).toHaveCount(5)
     await expect(outliner(page)).toContainText('Knight')
     await expect(outliner(page)).toContainText('Slime')
     // Drawn, not merely listed: the count comes from the renderer's report of
@@ -96,11 +93,11 @@ test.describe('opening a scene', () => {
 
   test('opening a second one replaces the first', async ({ page }) => {
     await openScene(page, LEVEL_ONE)
-    await expect(rows(page)).toHaveCount(5)
+    await expect(outlinerRows(page)).toHaveCount(5)
 
     await openScene(page, LEVEL_TWO)
 
-    await expect(rows(page)).toHaveCount(4)
+    await expect(outlinerRows(page)).toHaveCount(4)
     await expect(outliner(page)).toContainText('Cave floor')
   })
 })
@@ -109,7 +106,7 @@ test.describe('selecting an entity', () => {
   test('shows its properties and marks it in the picture', async ({ page }) => {
     await openScene(page, LEVEL_ONE)
 
-    await row(page, 'Knight').click()
+    await outlinerRow(page, 'Knight').click()
 
     await expect(page.getByTestId('inspector-name')).toHaveText('Knight')
     await expect(page.getByTestId('entity-x-control')).toHaveValue('100')
@@ -120,10 +117,10 @@ test.describe('selecting an entity', () => {
 
   test('marks a different one when a different one is clicked', async ({ page }) => {
     await openScene(page, LEVEL_ONE)
-    await row(page, 'Knight').click()
+    await outlinerRow(page, 'Knight').click()
     const knight = await page.getByTestId('scene-selected').getAttribute('data-selected-entity')
 
-    await row(page, 'Slime').click()
+    await outlinerRow(page, 'Slime').click()
 
     await expect(page.getByTestId('inspector-name')).toHaveText('Slime')
     await expect(page.getByTestId('scene-selected')).not.toHaveAttribute('data-selected-entity', knight ?? '')
@@ -142,7 +139,7 @@ test.describe('changing what is in the scene', () => {
 
     await page.getByTestId('entity-add').click()
 
-    await expect(rows(page)).toHaveCount(6)
+    await expect(outlinerRows(page)).toHaveCount(6)
     // A new entity has no sprite, so the count of things actually drawn has not
     // moved yet — which is exactly what "and it appears" is about to test.
     await expect(page.getByTestId('inspector-name')).toHaveText('Entity 6')
@@ -158,7 +155,7 @@ test.describe('changing what is in the scene', () => {
 
   test('duplicates one, on top of the original and just in front of it', async ({ page }) => {
     await openScene(page, LEVEL_ONE)
-    await row(page, 'Slime').click()
+    await outlinerRow(page, 'Slime').click()
     const before = {
       x: await page.getByTestId('entity-x-control').inputValue(),
       y: await page.getByTestId('entity-y-control').inputValue(),
@@ -166,7 +163,7 @@ test.describe('changing what is in the scene', () => {
 
     await page.getByTestId('entity-duplicate').click()
 
-    await expect(rows(page)).toHaveCount(6)
+    await expect(outlinerRows(page)).toHaveCount(6)
     // Directly after the original rather than at the end: list order is draw
     // order, so appending would quietly put the copy in front of the level.
     expect(await names(page)).toEqual([
@@ -191,7 +188,7 @@ test.describe('changing what is in the scene', () => {
       .poll(() => page.getByTestId('viewport-panel').getAttribute('data-scene-drawn'))
       .toBe('5')
 
-    await row(page, 'Slime').click()
+    await outlinerRow(page, 'Slime').click()
     await page.getByTestId('entity-duplicate').click()
 
     await expect
@@ -203,17 +200,17 @@ test.describe('changing what is in the scene', () => {
     await openScene(page, LEVEL_ONE)
 
     await expect(page.getByTestId('entity-duplicate')).toBeDisabled()
-    await row(page, 'Slime').click()
+    await outlinerRow(page, 'Slime').click()
     await expect(page.getByTestId('entity-duplicate')).toBeEnabled()
   })
 
   test('deletes one and it goes', async ({ page }) => {
     await openScene(page, LEVEL_ONE)
-    await row(page, 'Slime').click()
+    await outlinerRow(page, 'Slime').click()
 
     await page.getByTestId('entity-delete').click()
 
-    await expect(rows(page)).toHaveCount(4)
+    await expect(outlinerRows(page)).toHaveCount(4)
     expect(await names(page)).not.toContain('Slime')
   })
 
@@ -221,7 +218,7 @@ test.describe('changing what is in the scene', () => {
     await openScene(page, LEVEL_ONE)
     expect(await names(page)).toEqual(['Ground', 'Knight', 'Slime', 'Knight running', 'Health icon'])
 
-    await row(page, 'Knight').first().click()
+    await outlinerRow(page, 'Knight').first().click()
     await page.getByTestId('entity-move-down').click()
 
     // The list *is* the draw order, so this is the whole of "bring it forward".
@@ -231,10 +228,10 @@ test.describe('changing what is in the scene', () => {
   test('will not move the first one back or the last one forward', async ({ page }) => {
     await openScene(page, LEVEL_ONE)
 
-    await row(page, 'Ground').click()
+    await outlinerRow(page, 'Ground').click()
     await expect(page.getByTestId('entity-move-up')).toBeDisabled()
 
-    await row(page, 'Health icon').click()
+    await outlinerRow(page, 'Health icon').click()
     await expect(page.getByTestId('entity-move-down')).toBeDisabled()
   })
 })
@@ -306,41 +303,41 @@ test.describe('undo covers all of it', () => {
   test('takes back an add', async ({ page }) => {
     await openScene(page, LEVEL_ONE)
     await page.getByTestId('entity-add').click()
-    await expect(rows(page)).toHaveCount(6)
+    await expect(outlinerRows(page)).toHaveCount(6)
 
     await page.keyboard.press('ControlOrMeta+z')
 
-    await expect(rows(page)).toHaveCount(5)
+    await expect(outlinerRows(page)).toHaveCount(5)
   })
 
   test('takes back a delete, with everything the entity had', async ({ page }) => {
     await openScene(page, LEVEL_ONE)
-    await row(page, 'Slime').click()
+    await outlinerRow(page, 'Slime').click()
     await page.getByTestId('entity-delete').click()
-    await expect(rows(page)).toHaveCount(4)
+    await expect(outlinerRows(page)).toHaveCount(4)
 
     await page.keyboard.press('ControlOrMeta+z')
 
-    await expect(rows(page)).toHaveCount(5)
+    await expect(outlinerRows(page)).toHaveCount(5)
     expect(await names(page)).toEqual(['Ground', 'Knight', 'Slime', 'Knight running', 'Health icon'])
-    await expect(row(page, 'Slime')).toContainText('slime.png')
+    await expect(outlinerRow(page, 'Slime')).toContainText('slime.png')
   })
 
   test('takes back a duplicate', async ({ page }) => {
     await openScene(page, LEVEL_ONE)
-    await row(page, 'Slime').click()
+    await outlinerRow(page, 'Slime').click()
     await page.getByTestId('entity-duplicate').click()
-    await expect(rows(page)).toHaveCount(6)
+    await expect(outlinerRows(page)).toHaveCount(6)
 
     await page.keyboard.press('ControlOrMeta+z')
 
-    await expect(rows(page)).toHaveCount(5)
+    await expect(outlinerRows(page)).toHaveCount(5)
     expect(await names(page)).toEqual(['Ground', 'Knight', 'Slime', 'Knight running', 'Health icon'])
   })
 
   test('takes back a reorder', async ({ page }) => {
     await openScene(page, LEVEL_ONE)
-    await row(page, 'Knight').first().click()
+    await outlinerRow(page, 'Knight').first().click()
     await page.getByTestId('entity-move-down').click()
     expect(await names(page)).toEqual(['Ground', 'Slime', 'Knight', 'Knight running', 'Health icon'])
 
@@ -354,7 +351,7 @@ test('an empty scene says it is empty rather than showing nothing', async ({ pag
   await openScene(page, LEVEL_TWO)
 
   for (const name of ['Cave floor', 'Slime', 'Tilted slime', 'Continue button']) {
-    await row(page, name).click()
+    await outlinerRow(page, name).click()
     await page.getByTestId('entity-delete').click()
   }
 

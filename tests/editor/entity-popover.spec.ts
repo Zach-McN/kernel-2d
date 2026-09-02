@@ -2,6 +2,7 @@ import { expect, test, type Locator, type Page } from '@playwright/test'
 
 import { gapFrom } from './floating.js'
 import { restoreProjectAfterEach } from './restore-project.js'
+import { openScene, outlinerRow, outlinerRows, settled, viewport } from './scene-view.js'
 import { selectAsset } from './select-asset.js'
 
 /**
@@ -169,7 +170,7 @@ test('renaming in it renames everywhere, and one rename is one press of Ctrl-Z',
 
   // The Inspector, the Outliner's row and the window's own title all follow.
   await expect(page.getByTestId('inspector-name')).toHaveText('Paladin')
-  await expect(row(page, 'Paladin')).toBeVisible()
+  await expect(outlinerRow(page, 'Paladin')).toBeVisible()
   await expect(page.getByTestId('entity-popover')).toContainText('Paladin')
 
   await page.keyboard.press('ControlOrMeta+z')
@@ -247,28 +248,28 @@ test('Frame closes the window it was pressed in, because the picture moved', asy
 test('Duplicate makes the same copy Shift-D does, and moves on to it', async ({ page }) => {
   const spot = await entitySpot(page, 'Knight')
   await page.mouse.click(spot.x, spot.y, { button: 'right' })
-  const before = await rows(page).count()
+  const before = await outlinerRows(page).count()
 
   await page.getByTestId('popover-duplicate').click()
 
-  await expect(rows(page)).toHaveCount(before + 1)
+  await expect(outlinerRows(page)).toHaveCount(before + 1)
   // The copy is what is selected now, so the window has moved off its entity
   // and put itself away.
   await expect(page.getByTestId('entity-popover')).toBeHidden()
   await expect(page.getByTestId('inspector-name')).toHaveText('Knight 2')
 
   await page.keyboard.press('ControlOrMeta+z')
-  await expect(rows(page)).toHaveCount(before)
+  await expect(outlinerRows(page)).toHaveCount(before)
 })
 
 test('Delete removes that one entity and Ctrl-Z brings it back', async ({ page }) => {
   const spot = await entitySpot(page, 'Knight')
   await page.mouse.click(spot.x, spot.y, { button: 'right' })
-  const before = await rows(page).count()
+  const before = await outlinerRows(page).count()
 
   await page.getByTestId('popover-delete').click()
 
-  await expect(rows(page)).toHaveCount(before - 1)
+  await expect(outlinerRows(page)).toHaveCount(before - 1)
   await expect(exactRow(page, 'Knight')).toHaveCount(0)
   await expect(page.getByTestId('entity-popover')).toBeHidden()
 
@@ -287,16 +288,16 @@ test('Delete takes only the entity the window is about', async ({ page }) => {
   await expect(viewport(page)).toHaveAttribute('data-scene-showing', LEVEL_ONE)
   await settled(page)
 
-  await row(page, 'Knight').click()
-  await row(page, 'Slime').click({ modifiers: ['Shift'] })
+  await outlinerRow(page, 'Knight').click()
+  await outlinerRow(page, 'Slime').click({ modifiers: ['Shift'] })
   await expect(viewport(page)).toHaveAttribute('data-scene-selected-count', '2')
-  const before = await rows(page).count()
+  const before = await outlinerRows(page).count()
 
-  await row(page, 'Knight').click({ button: 'right' })
+  await outlinerRow(page, 'Knight').click({ button: 'right' })
   await page.getByTestId('popover-delete').click()
 
-  await expect(rows(page)).toHaveCount(before - 1)
-  await expect(row(page, 'Slime')).toBeVisible()
+  await expect(outlinerRows(page)).toHaveCount(before - 1)
+  await expect(outlinerRow(page, 'Slime')).toBeVisible()
 })
 
 // --- snapping this one onto the grid ---------------------------------------
@@ -352,10 +353,10 @@ test('it says so instead when the entity is already on the grid', async ({ page 
 })
 
 test('the list’s door snaps to the same grid', async ({ page }) => {
-  await openLevel(page)
+  await openScene(page, LEVEL_ONE)
   await setGrid(page, 16, 8)
 
-  await row(page, 'Knight').click({ button: 'right' })
+  await outlinerRow(page, 'Knight').click({ button: 'right' })
   await inOutliner(page).getByTestId('popover-snap').click()
 
   const x = Number(await page.getByTestId('entity-x-control').inputValue())
@@ -365,9 +366,9 @@ test('the list’s door snaps to the same grid', async ({ page }) => {
 // --- the Outliner's door ---------------------------------------------------
 
 test('right-clicking a row opens the same window, on that entity', async ({ page }) => {
-  await openLevel(page)
+  await openScene(page, LEVEL_ONE)
 
-  await row(page, 'Knight').click({ button: 'right' })
+  await outlinerRow(page, 'Knight').click({ button: 'right' })
 
   const popover = inOutliner(page)
   await expect(popover).toBeVisible()
@@ -377,8 +378,8 @@ test('right-clicking a row opens the same window, on that entity', async ({ page
 })
 
 test('the row window edits the position, and the Inspector agrees', async ({ page }) => {
-  await openLevel(page)
-  await row(page, 'Knight').click({ button: 'right' })
+  await openScene(page, LEVEL_ONE)
+  await outlinerRow(page, 'Knight').click({ button: 'right' })
   await expect(inOutliner(page)).toBeVisible()
 
   await inOutliner(page).getByTestId('popover-x-control').fill('456')
@@ -387,28 +388,28 @@ test('the row window edits the position, and the Inspector agrees', async ({ pag
 })
 
 test('Esc closes the row window and the row has the keys again', async ({ page }) => {
-  await openLevel(page)
-  await row(page, 'Knight').click({ button: 'right' })
+  await openScene(page, LEVEL_ONE)
+  await outlinerRow(page, 'Knight').click({ button: 'right' })
   await expect(inOutliner(page)).toBeVisible()
 
   await page.keyboard.press('Escape')
 
   await expect(inOutliner(page)).toBeHidden()
-  await expect(row(page, 'Knight')).toBeFocused()
+  await expect(outlinerRow(page, 'Knight')).toBeFocused()
 })
 
 test('selecting another row closes it', async ({ page }) => {
-  await openLevel(page)
-  await row(page, 'Knight').click({ button: 'right' })
+  await openScene(page, LEVEL_ONE)
+  await outlinerRow(page, 'Knight').click({ button: 'right' })
   await expect(inOutliner(page)).toBeVisible()
 
-  await row(page, 'Ground').click()
+  await outlinerRow(page, 'Ground').click()
 
   await expect(inOutliner(page)).toBeHidden()
 })
 
 test('the browser context menu never opens over a row', async ({ page }) => {
-  await openLevel(page)
+  await openScene(page, LEVEL_ONE)
   await page.evaluate(() => {
     const flags = { seen: 0, prevented: 0 }
     const host = globalThis as unknown as {
@@ -422,7 +423,7 @@ test('the browser context menu never opens over a row', async ({ page }) => {
     })
   })
 
-  await row(page, 'Knight').click({ button: 'right' })
+  await outlinerRow(page, 'Knight').click({ button: 'right' })
 
   const flags = await page.evaluate(
     () => (globalThis as unknown as { __rowMenu: { seen: number; prevented: number } }).__rowMenu,
@@ -438,7 +439,7 @@ test('only one window is ever open, whichever door was used last', async ({ page
 
   // The same entity, from the other door: the picture's window is not left
   // standing beside the list's — it is one window that moved.
-  await row(page, 'Knight').click({ button: 'right' })
+  await outlinerRow(page, 'Knight').click({ button: 'right' })
 
   await expect(inOutliner(page)).toBeVisible()
   await expect(inViewport(page)).toBeHidden()
@@ -447,7 +448,7 @@ test('only one window is ever open, whichever door was used last', async ({ page
 
 test('the picture takes it back again', async ({ page }) => {
   const spot = await entitySpot(page, 'Knight')
-  await row(page, 'Knight').click({ button: 'right' })
+  await outlinerRow(page, 'Knight').click({ button: 'right' })
   await expect(inOutliner(page)).toBeVisible()
 
   await page.mouse.click(spot.x, spot.y, { button: 'right' })
@@ -457,8 +458,8 @@ test('the picture takes it back again', async ({ page }) => {
 })
 
 test('leaves a picture of the window over the list', async ({ page }, testInfo) => {
-  await openLevel(page)
-  await row(page, 'Knight').click({ button: 'right' })
+  await openScene(page, LEVEL_ONE)
+  await outlinerRow(page, 'Knight').click({ button: 'right' })
   await expect(inOutliner(page)).toBeVisible()
   await page
     .getByTestId('outliner-panel')
@@ -467,25 +468,10 @@ test('leaves a picture of the window over the list', async ({ page }, testInfo) 
 
 // --- driving ---------------------------------------------------------------
 
-const viewport = (page: Page): Locator => page.getByTestId('viewport-panel')
-
 const inViewport = (page: Page): Locator => viewport(page).getByTestId('entity-popover')
 
 const inOutliner = (page: Page): Locator =>
   page.getByTestId('outliner-panel').getByTestId('entity-popover')
-
-/** The level open and drawn, which is all the list's own tests need. */
-async function openLevel(page: Page): Promise<void> {
-  await selectAsset(page, LEVEL_ONE)
-  await expect(viewport(page)).toHaveAttribute('data-scene-showing', LEVEL_ONE)
-  await settled(page)
-}
-
-const rows = (page: Page): Locator =>
-  page.getByTestId('outliner-panel').locator('[data-entity-id]')
-
-const row = (page: Page, name: string): Locator =>
-  rows(page).filter({ hasText: name }).first()
 
 /**
  * The row of the entity called *exactly* this.
@@ -496,23 +482,7 @@ const row = (page: Page, name: string): Locator =>
  * match can answer.
  */
 const exactRow = (page: Page, name: string): Locator =>
-  rows(page).filter({ has: page.locator('.entity-row__name', { hasText: new RegExp(`^${name}$`) }) })
-
-/** The camera, once it has stopped moving — opening a scene frames it a beat later. */
-async function settled(page: Page): Promise<void> {
-  let previous = Number.NaN
-  await expect
-    .poll(
-      async () => {
-        const now = Number(await viewport(page).getAttribute('data-scene-scale'))
-        const same = now === previous
-        previous = now
-        return same && Number.isFinite(now)
-      },
-      { intervals: [120, 120, 120, 120, 120, 120, 120, 120] },
-    )
-    .toBe(true)
-}
+  outlinerRows(page).filter({ has: page.locator('.entity-row__name', { hasText: new RegExp(`^${name}$`) }) })
 
 /**
  * The middle of the named entity's sprite on screen, found by selecting it in
@@ -525,7 +495,7 @@ async function entitySpot(page: Page, name: string): Promise<{ x: number; y: num
   await expect(viewport(page)).toHaveAttribute('data-scene-showing', LEVEL_ONE)
   await settled(page)
 
-  await row(page, name).click()
+  await outlinerRow(page, name).click()
   const box = await page.getByTestId('scene-selected-bounds').boundingBox()
   expect(box).not.toBeNull()
   const spot = { x: (box?.x ?? 0) + (box?.width ?? 0) / 2, y: (box?.y ?? 0) + (box?.height ?? 0) / 2 }

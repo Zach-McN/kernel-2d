@@ -1,6 +1,7 @@
-import { expect, test, type Locator, type Page } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
 
 import { restoreProjectAfterEach } from './restore-project.js'
+import { outlinerRow, viewport } from './scene-view.js'
 import { selectAsset } from './select-asset.js'
 
 /**
@@ -21,11 +22,6 @@ test.beforeEach(async ({ page }) => {
   await expect(page.getByTestId('assets-panel')).toBeVisible()
   await expect(page.getByTestId('viewport-stage').locator('canvas')).toBeVisible()
 })
-
-const viewport = (page: Page): Locator => page.getByTestId('viewport-panel')
-
-const row = (page: Page, name: string): Locator =>
-  page.getByTestId('outliner-panel').locator('[data-entity-id]').filter({ hasText: name }).first()
 
 interface Camera {
   scale: number
@@ -97,7 +93,7 @@ test('pinning an entity keeps it where it appears, and the camera stops moving i
   await expect(viewport(page)).toHaveAttribute('data-scene-showing', LEVEL_TWO)
   const framed = await settledCamera(page)
 
-  await row(page, 'Continue button').click()
+  await outlinerRow(page, 'Continue button').click()
   await expect(page.getByTestId('scene-selected-bounds')).toBeVisible()
   const before = await outline(page)
 

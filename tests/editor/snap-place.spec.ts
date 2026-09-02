@@ -3,7 +3,9 @@ import path from 'node:path'
 
 import { expect, test, type Locator, type Page } from '@playwright/test'
 
+import { parsedWhenWhole } from './parse-when-whole.js'
 import { restoreProjectAfterEach } from './restore-project.js'
+import { cameraScale, openScene, outlineCentre, outlinerRow, outlinerRows, settled, viewport } from './scene-view.js'
 import { selectAsset } from './select-asset.js'
 import { editorTestProjectPath } from './test-project.js'
 
@@ -38,40 +40,6 @@ test.beforeEach(async ({ page }) => {
 
 // --- reading what happened -------------------------------------------------
 
-const viewport = (page: Page): Locator => page.getByTestId('viewport-panel')
-
-const row = (page: Page, name: string): Locator =>
-  page.getByTestId('outliner-panel').locator('[data-entity-id]').filter({ hasText: name }).first()
-
-const rows = (page: Page): Locator => page.getByTestId('outliner-panel').locator('[data-entity-id]')
-
-async function cameraScale(page: Page): Promise<number> {
-  return Number(await viewport(page).getAttribute('data-scene-scale'))
-}
-
-/** The camera, once it has stopped moving — opening a scene frames it a beat later. */
-async function settled(page: Page): Promise<number> {
-  let previous = Number.NaN
-  await expect
-    .poll(
-      async () => {
-        const now = await cameraScale(page)
-        const same = now === previous
-        previous = now
-        return same && Number.isFinite(now)
-      },
-      { intervals: [120, 120, 120, 120, 120, 120, 120, 120] },
-    )
-    .toBe(true)
-  return previous
-}
-
-async function openScene(page: Page): Promise<void> {
-  await selectAsset(page, LEVEL_ONE)
-  await expect(viewport(page)).toHaveAttribute('data-scene-showing', LEVEL_ONE)
-  await settled(page)
-}
-
 /** Where the selected entity is, as the Inspector reads it — the level's own units. */
 async function position(page: Page): Promise<{ x: number; y: number }> {
   return {
@@ -86,12 +54,6 @@ async function focus(page: Page): Promise<{ x: number; y: number }> {
     x: Number(await viewport(page).getAttribute('data-scene-focus-x')),
     y: Number(await viewport(page).getAttribute('data-scene-focus-y')),
   }
-}
-
-async function outlineCentre(page: Page): Promise<{ x: number; y: number }> {
-  const box = await page.getByTestId('scene-selected-bounds').boundingBox()
-  expect(box).not.toBeNull()
-  return { x: (box?.x ?? 0) + (box?.width ?? 0) / 2, y: (box?.y ?? 0) + (box?.height ?? 0) / 2 }
 }
 
 /** The canvas itself, so a click can be aimed at its exact middle. */
@@ -162,13 +124,9 @@ async function placeByClicking(page: Page): Promise<void> {
 async function levelOnDisk(entities: number): Promise<{ name: string; transform: { x: number; y: number } }[]> {
   const file = path.join(editorTestProjectPath(), LEVEL_ONE.replaceAll('/', path.sep))
   await expect
-    .poll(
-      () => {
-        const scene = JSON.parse(fs.readFileSync(file, 'utf8')) as { entities: unknown[] }
-        return scene.entities.length
-      },
-      { timeout: WITHIN_A_SECOND + 1_000 },
-    )
+    .poll(() => parsedWhenWhole<{ entities: unknown[] }>(file)?.entities.length ?? -1, {
+      timeout: WITHIN_A_SECOND + 1_000,
+    })
     .toBe(entities)
 
   const scene = JSON.parse(fs.readFileSync(file, 'utf8')) as {
@@ -180,9 +138,9 @@ async function levelOnDisk(entities: number): Promise<{ name: string; transform:
 // --- acceptance: the snap ---------------------------------------------------
 
 test('with the snap set to 16, a drag lands on a multiple of 16', async ({ page }) => {
-  await openScene(page)
+  await openScene(page, LEVEL_ONE)
   await setSnap(page, 16, 0)
-  await row(page, 'Slime').click()
+  await outlinerRow(page, 'Slime').click()
 
   const before = await position(page)
   const scale = await cameraScale(page)
@@ -202,9 +160,9 @@ test('with the snap set to 16, a drag lands on a multiple of 16', async ({ page 
  * tile half a cell away from the ones already drawn.
  */
 test('an offset moves the grid, so 16 from 8 reaches 8, 24 and 40', async ({ page }) => {
-  await openScene(page)
+  await openScene(page, LEVEL_ONE)
   await setSnap(page, 16, 8)
-  await row(page, 'Slime').click()
+  await outlinerRow(page, 'Slime').click()
 
   const scale = await cameraScale(page)
   await dragFrom(page, await outlineCentre(page), 20 * scale, 0)
@@ -226,10 +184,10 @@ async function zoomInHard(page: Page): Promise<void> {
 }
 
 test('Ctrl places it anywhere while snapping is on', async ({ page }) => {
-  await openScene(page)
+  await openScene(page, LEVEL_ONE)
   await setSnapping(page, true)
   await setSnap(page, 16, 8)
-  await row(page, 'Slime').click()
+  await outlinerRow(page, 'Slime').click()
   await zoomInHard(page)
 
   await dragFrom(page, await outlineCentre(page), 13, 0, { ctrl: true })
@@ -238,9 +196,9 @@ test('Ctrl places it anywhere while snapping is on', async ({ page }) => {
 })
 
 test('the switch turns the grid off, and a drag then lands anywhere', async ({ page }) => {
-  await openScene(page)
+  await openScene(page, LEVEL_ONE)
   await setSnap(page, 16, 8)
-  await row(page, 'Slime').click()
+  await outlinerRow(page, 'Slime').click()
   await zoomInHard(page)
 
   await setSnapping(page, false)
@@ -257,9 +215,9 @@ test('the switch turns the grid off, and a drag then lands anywhere', async ({ p
  * silently: the entity lands where it would have landed anyway.
  */
 test('Ctrl lands it on the grid while snapping is off', async ({ page }) => {
-  await openScene(page)
+  await openScene(page, LEVEL_ONE)
   await setSnap(page, 16, 8)
-  await row(page, 'Slime').click()
+  await outlinerRow(page, 'Slime').click()
   await zoomInHard(page)
   await setSnapping(page, false)
 
@@ -276,7 +234,7 @@ test('Ctrl lands it on the grid while snapping is off', async ({ page }) => {
 /** Switching off must not throw the grid away, or setting one up is two steps
  *  that undo each other. */
 test('the spacing survives being switched off and on again', async ({ page }) => {
-  await openScene(page)
+  await openScene(page, LEVEL_ONE)
   await setSnap(page, 16, 8)
 
   await setSnapping(page, false)
@@ -292,7 +250,7 @@ test('the spacing survives being switched off and on again', async ({ page }) =>
  * V31).
  */
 test('leaves a picture of the snap controls, on and off', async ({ page }, testInfo) => {
-  await openScene(page)
+  await openScene(page, LEVEL_ONE)
   await setSnap(page, 16, 8)
 
   await setSnapping(page, true)
@@ -304,7 +262,7 @@ test('leaves a picture of the snap controls, on and off', async ({ page }, testI
 
 /** The interval offers a list and still takes anything typed over it. */
 test('the interval has presets to pick from, and accepts a number that is not one', async ({ page }) => {
-  await openScene(page)
+  await openScene(page, LEVEL_ONE)
 
   const presets = page.getByTestId('scene-snap-step-presets').locator('option')
   // Read as an attribute rather than through `HTMLOptionElement`, which the
@@ -321,7 +279,7 @@ test('the interval has presets to pick from, and accepts a number that is not on
   ])
 
   await setSnap(page, 24, 0)
-  await row(page, 'Slime').click()
+  await outlinerRow(page, 'Slime').click()
   const scale = await cameraScale(page)
   await dragFrom(page, await outlineCentre(page), 30 * scale, 0)
 
@@ -334,7 +292,7 @@ test('the interval has presets to pick from, and accepts a number that is not on
  * form of it: nothing anywhere on disk remembers.
  */
 test('the snap is not saved into the level, and a reload puts it back', async ({ page }) => {
-  await openScene(page)
+  await openScene(page, LEVEL_ONE)
   await setSnap(page, 16, 8)
   // The switch is part of the same window state, so it has to be moved off its
   // default too — otherwise this only proves the two numbers reset.
@@ -342,7 +300,7 @@ test('the snap is not saved into the level, and a reload puts it back', async ({
 
   await page.reload()
   await expect(page.getByTestId('viewport-stage').locator('canvas')).toBeVisible()
-  await openScene(page)
+  await openScene(page, LEVEL_ONE)
 
   await expect(page.getByTestId('scene-snap')).toHaveAttribute('data-snap-on', 'true')
   await expect(page.getByTestId('scene-snap')).toHaveAttribute('data-snap-step', '1')
@@ -359,7 +317,7 @@ test('the snap is not saved into the level, and a reload puts it back', async ({
 const grid = (page: Page): Locator => page.getByTestId('scene-grid')
 
 test('the grid is drawn while snapping is on, and goes when the switch goes off', async ({ page }) => {
-  await openScene(page)
+  await openScene(page, LEVEL_ONE)
   await setSnap(page, 16, 0)
 
   await setSnapping(page, true)
@@ -370,7 +328,7 @@ test('the grid is drawn while snapping is on, and goes when the switch goes off'
 })
 
 test('the cells are the interval, so the grid changes size with the number typed', async ({ page }) => {
-  await openScene(page)
+  await openScene(page, LEVEL_ONE)
   await setSnapping(page, true)
   const scale = await cameraScale(page)
 
@@ -388,7 +346,7 @@ test('the cells are the interval, so the grid changes size with the number typed
  * otherwise indistinguishable from the feature being broken.
  */
 test('a grid too fine to see is not drawn, and a wider interval brings it back', async ({ page }) => {
-  await openScene(page)
+  await openScene(page, LEVEL_ONE)
   await setSnapping(page, true)
 
   await setSnap(page, 0.001, 0)
@@ -399,7 +357,7 @@ test('a grid too fine to see is not drawn, and a wider interval brings it back',
 })
 
 test('leaves a picture of the level on its grid', async ({ page }, testInfo) => {
-  await openScene(page)
+  await openScene(page, LEVEL_ONE)
   await setSnapping(page, true)
   await setSnap(page, 16, 8)
   await expect(grid(page)).toBeVisible()
@@ -410,8 +368,8 @@ test('leaves a picture of the level on its grid', async ({ page }, testInfo) => 
 // --- acceptance: placing by clicking ----------------------------------------
 
 test('with it on, every click in the level puts another one down', async ({ page }) => {
-  await openScene(page)
-  const before = await rows(page).count()
+  await openScene(page, LEVEL_ONE)
+  const before = await outlinerRows(page).count()
   await placeByClicking(page)
 
   const canvas = await canvasBox(page)
@@ -419,7 +377,7 @@ test('with it on, every click in the level puts another one down', async ({ page
     await page.mouse.click(canvas.x + canvas.width * across, canvas.y + canvas.height / 2)
   }
 
-  await expect(rows(page)).toHaveCount(before + 3)
+  await expect(outlinerRows(page)).toHaveCount(before + 3)
 })
 
 /**
@@ -429,7 +387,7 @@ test('with it on, every click in the level puts another one down', async ({ page
  * first click and leave the second one with nothing to press.
  */
 test('three clicks in a row change nothing about what is selected', async ({ page }) => {
-  await openScene(page)
+  await openScene(page, LEVEL_ONE)
   await placeByClicking(page)
 
   const canvas = await canvasBox(page)
@@ -448,49 +406,49 @@ test('three clicks in a row change nothing about what is selected', async ({ pag
  * where the level was empty would place nothing at all.
  */
 test('a click on top of an existing sprite places rather than selects it', async ({ page }) => {
-  await openScene(page)
-  await row(page, 'Slime').click()
+  await openScene(page, LEVEL_ONE)
+  await outlinerRow(page, 'Slime').click()
   const onTheSlime = await outlineCentre(page)
-  const before = await rows(page).count()
+  const before = await outlinerRows(page).count()
 
   await placeByClicking(page)
   await page.mouse.click(onTheSlime.x, onTheSlime.y)
 
-  await expect(rows(page)).toHaveCount(before + 1)
+  await expect(outlinerRows(page)).toHaveCount(before + 1)
   await expect(page.getByTestId('prefab-name-control')).toBeVisible()
 })
 
 test('each click is its own press of Ctrl-Z', async ({ page }) => {
-  await openScene(page)
-  const before = await rows(page).count()
+  await openScene(page, LEVEL_ONE)
+  const before = await outlinerRows(page).count()
   await placeByClicking(page)
 
   const canvas = await canvasBox(page)
   for (const across of [0.3, 0.5, 0.7]) {
     await page.mouse.click(canvas.x + canvas.width * across, canvas.y + canvas.height / 2)
   }
-  await expect(rows(page)).toHaveCount(before + 3)
+  await expect(outlinerRows(page)).toHaveCount(before + 3)
 
   await page.keyboard.press('ControlOrMeta+z')
-  await expect(rows(page)).toHaveCount(before + 2)
+  await expect(outlinerRows(page)).toHaveCount(before + 2)
   await page.keyboard.press('ControlOrMeta+z')
-  await expect(rows(page)).toHaveCount(before + 1)
+  await expect(outlinerRows(page)).toHaveCount(before + 1)
 })
 
 test('Esc stops it, and the next click selects again', async ({ page }) => {
-  await openScene(page)
+  await openScene(page, LEVEL_ONE)
   await placeByClicking(page)
 
   const canvas = await canvasBox(page)
   await page.mouse.click(canvas.x + canvas.width * 0.3, canvas.y + canvas.height / 2)
-  const placed = await rows(page).count()
+  const placed = await outlinerRows(page).count()
 
   await page.keyboard.press('Escape')
   await expect(page.getByTestId('viewport-stamping')).toHaveCount(0)
   await expect(page.getByTestId('prefab-place-by-clicking')).toHaveAttribute('aria-pressed', 'false')
 
   await page.mouse.click(canvas.x + canvas.width * 0.3, canvas.y + canvas.height / 2)
-  await expect(rows(page)).toHaveCount(placed)
+  await expect(outlinerRows(page)).toHaveCount(placed)
 })
 
 /**
@@ -498,24 +456,24 @@ test('Esc stops it, and the next click selects again', async ({ page }) => {
  * showing — which is the whole reason it can be used twenty times.
  */
 test('it keeps placing the same prefab after something else is selected', async ({ page }) => {
-  await openScene(page)
-  const before = await rows(page).count()
+  await openScene(page, LEVEL_ONE)
+  const before = await outlinerRows(page).count()
   await placeByClicking(page)
 
-  await row(page, 'Knight').click()
+  await outlinerRow(page, 'Knight').click()
   await expect(page.getByTestId('entity-name-control')).toHaveValue('Knight')
 
   const canvas = await canvasBox(page)
   await page.mouse.click(canvas.x + canvas.width * 0.3, canvas.y + canvas.height / 2)
 
-  await expect(rows(page)).toHaveCount(before + 1)
+  await expect(outlinerRows(page)).toHaveCount(before + 1)
   // The click placed; it did not move the Knight and did not select what it made.
   await expect(page.getByTestId('entity-name-control')).toHaveValue('Knight')
 })
 
 test('what a click puts down lands on the snap', async ({ page }) => {
-  await openScene(page)
-  const before = await rows(page).count()
+  await openScene(page, LEVEL_ONE)
+  const before = await outlinerRows(page).count()
   await setSnap(page, 16, 8)
   await placeByClicking(page)
 
@@ -540,15 +498,15 @@ test('what a click puts down lands on the snap', async ({ page }) => {
  * here and everything elsewhere in the file.
  */
 test('a click lands where the camera says it landed, at any zoom', async ({ page }) => {
-  await openScene(page)
-  const before = await rows(page).count()
+  await openScene(page, LEVEL_ONE)
+  const before = await outlinerRows(page).count()
   await setSnap(page, 16, 8)
   await placeByClicking(page)
 
   const near = await focus(page)
   const first = await canvasBox(page)
   await page.mouse.click(first.x + first.width / 2, first.y + first.height / 2)
-  await expect(rows(page)).toHaveCount(before + 1)
+  await expect(outlinerRows(page)).toHaveCount(before + 1)
 
   // Much closer, and looking somewhere else: the middle of the canvas is now a
   // different point in the level, and one screen pixel is a fraction of a unit.
@@ -622,7 +580,7 @@ async function cellPixels(page: Page): Promise<number> {
 
 /** Arm the mode on a 16-from-8 grid, and answer where a stroke can start. */
 async function readyToPaint(page: Page): Promise<{ x: number; y: number }> {
-  await openScene(page)
+  await openScene(page, LEVEL_ONE)
   await setSnapping(page, true)
   await setSnap(page, STEP, 8)
   await placeByClicking(page)
@@ -632,7 +590,7 @@ async function readyToPaint(page: Page): Promise<{ x: number; y: number }> {
 
 test('a drag across five cells with the snap on places six, one in each cell', async ({ page }) => {
   const from = await readyToPaint(page)
-  const before = await rows(page).count()
+  const before = await outlinerRows(page).count()
   const cell = await cellPixels(page)
 
   await page.mouse.move(from.x, from.y)
@@ -640,7 +598,7 @@ test('a drag across five cells with the snap on places six, one in each cell', a
   await page.mouse.move(from.x + 5 * cell, from.y, { steps: 10 })
   await page.mouse.up()
 
-  await expect(rows(page)).toHaveCount(before + 6)
+  await expect(outlinerRows(page)).toHaveCount(before + 6)
   const level = await levelOnDisk(before + 6)
   const placed = level.slice(-6)
   // Six different cells, every one on the grid, all in one row.
@@ -653,28 +611,28 @@ test('a drag across five cells with the snap on places six, one in each cell', a
 
 test('one Ctrl-Z takes the whole stroke back, and one Ctrl-Y puts it all back', async ({ page }) => {
   const from = await readyToPaint(page)
-  const before = await rows(page).count()
+  const before = await outlinerRows(page).count()
   const cell = await cellPixels(page)
 
   await page.mouse.move(from.x, from.y)
   await page.mouse.down()
   await page.mouse.move(from.x + 4 * cell, from.y, { steps: 6 })
   await page.mouse.up()
-  await expect(rows(page)).toHaveCount(before + 5)
+  await expect(outlinerRows(page)).toHaveCount(before + 5)
 
   await page.keyboard.press('ControlOrMeta+z')
-  await expect(rows(page)).toHaveCount(before)
+  await expect(outlinerRows(page)).toHaveCount(before)
   await page.keyboard.press('ControlOrMeta+y')
-  await expect(rows(page)).toHaveCount(before + 5)
+  await expect(outlinerRows(page)).toHaveCount(before + 5)
   // And a stroke is one step however slowly it was drawn: undo again is the
   // whole thing, not the last cell.
   await page.keyboard.press('ControlOrMeta+z')
-  await expect(rows(page)).toHaveCount(before)
+  await expect(outlinerRows(page)).toHaveCount(before)
 })
 
 test('a fast sweep fills the cells in between, with no gaps', async ({ page }) => {
   const from = await readyToPaint(page)
-  const before = await rows(page).count()
+  const before = await outlinerRows(page).count()
   const cell = await cellPixels(page)
 
   // One sample at each end and nothing between: every cell along the way is
@@ -684,14 +642,14 @@ test('a fast sweep fills the cells in between, with no gaps', async ({ page }) =
   await page.mouse.move(from.x + 8 * cell, from.y, { steps: 1 })
   await page.mouse.up()
 
-  await expect(rows(page)).toHaveCount(before + 9)
+  await expect(outlinerRows(page)).toHaveCount(before + 9)
 })
 
 test('painting over the same row again adds nothing, and a slow stroke does not double a cell', async ({
   page,
 }) => {
   const from = await readyToPaint(page)
-  const before = await rows(page).count()
+  const before = await outlinerRows(page).count()
   const cell = await cellPixels(page)
 
   // Back and forth within one stroke: a cell crossed twice gets one copy.
@@ -700,7 +658,7 @@ test('painting over the same row again adds nothing, and a slow stroke does not 
   await page.mouse.move(from.x + 3 * cell, from.y, { steps: 6 })
   await page.mouse.move(from.x, from.y, { steps: 6 })
   await page.mouse.up()
-  await expect(rows(page)).toHaveCount(before + 4)
+  await expect(outlinerRows(page)).toHaveCount(before + 4)
 
   // The same row again, as a second stroke: nothing new, and nothing to undo but
   // the first stroke.
@@ -708,28 +666,28 @@ test('painting over the same row again adds nothing, and a slow stroke does not 
   await page.mouse.down()
   await page.mouse.move(from.x + 3 * cell, from.y, { steps: 6 })
   await page.mouse.up()
-  await expect(rows(page)).toHaveCount(before + 4)
+  await expect(outlinerRows(page)).toHaveCount(before + 4)
   await page.keyboard.press('ControlOrMeta+z')
-  await expect(rows(page)).toHaveCount(before)
+  await expect(outlinerRows(page)).toHaveCount(before)
 })
 
 test('the Outliner fills as the stroke goes, not only when the button comes up', async ({ page }) => {
   const from = await readyToPaint(page)
-  const before = await rows(page).count()
+  const before = await outlinerRows(page).count()
   const cell = await cellPixels(page)
 
   await page.mouse.move(from.x, from.y)
   await page.mouse.down()
-  await expect(rows(page)).toHaveCount(before + 1)
+  await expect(outlinerRows(page)).toHaveCount(before + 1)
   await page.mouse.move(from.x + 2 * cell, from.y, { steps: 4 })
-  await expect(rows(page)).toHaveCount(before + 3)
+  await expect(outlinerRows(page)).toHaveCount(before + 3)
   await page.mouse.up()
-  await expect(rows(page)).toHaveCount(before + 3)
+  await expect(outlinerRows(page)).toHaveCount(before + 3)
 })
 
 test('Esc mid-stroke ends it and keeps what was placed, as one step', async ({ page }) => {
   const from = await readyToPaint(page)
-  const before = await rows(page).count()
+  const before = await outlinerRows(page).count()
   const cell = await cellPixels(page)
 
   await page.mouse.move(from.x, from.y)
@@ -741,25 +699,25 @@ test('Esc mid-stroke ends it and keeps what was placed, as one step', async ({ p
   await page.mouse.move(from.x + 5 * cell, from.y, { steps: 4 })
   await page.mouse.up()
 
-  await expect(rows(page)).toHaveCount(before + 3)
+  await expect(outlinerRows(page)).toHaveCount(before + 3)
   await page.keyboard.press('ControlOrMeta+z')
-  await expect(rows(page)).toHaveCount(before)
+  await expect(outlinerRows(page)).toHaveCount(before)
 })
 
 test('with the snap off a press places one, and a drag is answered with a sentence', async ({ page }) => {
-  await openScene(page)
+  await openScene(page, LEVEL_ONE)
   await setSnapping(page, false)
   await placeByClicking(page)
   const canvas = await canvasBox(page)
   const from = { x: canvas.x + canvas.width * 0.25, y: canvas.y + canvas.height * 0.5 }
-  const before = await rows(page).count()
+  const before = await outlinerRows(page).count()
 
   await page.mouse.move(from.x, from.y)
   await page.mouse.down()
   await page.mouse.move(from.x + 120, from.y, { steps: 6 })
   await page.mouse.up()
 
-  await expect(rows(page)).toHaveCount(before + 1)
+  await expect(outlinerRows(page)).toHaveCount(before + 1)
   await expect(page.getByTestId('viewport-stamping-note')).toContainText('Turn Snap on to paint')
   // The sentence is about that attempt; the next press on the grid clears it.
   await setSnapping(page, true)

@@ -3,6 +3,7 @@ import path from 'node:path'
 
 import { expect, test, type Page } from '@playwright/test'
 
+import { parsedWhenWhole } from './parse-when-whole.js'
 import { restoreProjectAfterEach } from './restore-project.js'
 import { openNewDocument, selectAsset, showTree } from './select-asset.js'
 import { editorTestProjectPath } from './test-project.js'
@@ -178,12 +179,9 @@ test('a new level can be built in straight away, and the file gets it', async ({
 
   await expect
     .poll(
-      () => {
-        const scene = JSON.parse(fs.readFileSync(fileFor('scenes/level-03.json'), 'utf8')) as {
-          entities: { components: Record<string, unknown> }[]
-        }
-        return scene.entities.length
-      },
+      () =>
+        parsedWhenWhole<{ entities: unknown[] }>(fileFor('scenes/level-03.json'))?.entities
+          .length ?? -1,
       { timeout: WITHIN_A_SECOND + 1_000 },
     )
     .toBe(1)

@@ -1,5 +1,6 @@
 import { messageOf } from '../runtime/message-of.js'
 import { resolveConfig } from '../sidecar/config.js'
+import { stopOnSignal } from '../sidecar/stop-on-signal.js'
 import { shouldOpenBrowser } from './editor-server.js'
 import { startEditor, type RunningEditor } from './editor/start.js'
 
@@ -33,14 +34,4 @@ try {
   process.exit(1)
 }
 
-let shuttingDown = false
-const shutdown = async (): Promise<void> => {
-  if (shuttingDown) return
-  shuttingDown = true
-  console.log('\nkernel-2d editor stopped.')
-  await editor.close()
-  process.exit(0)
-}
-
-process.on('SIGINT', () => void shutdown())
-process.on('SIGTERM', () => void shutdown())
+stopOnSignal(() => editor.close(), 'kernel-2d editor stopped.')

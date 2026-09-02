@@ -1,5 +1,6 @@
-import { expect, test, type Locator, type Page } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
 
+import { viewport } from './scene-view.js'
 import { selectAsset } from './select-asset.js'
 
 /**
@@ -58,8 +59,6 @@ test('editing is silent, and a running level is heard', async ({ page }) => {
   await page.getByTestId('play-stop').click()
   await expect(viewport(page)).toHaveAttribute('data-play-sound', '')
 })
-
-const viewport = (page: Page): Locator => page.getByTestId('viewport-panel')
 
 /** Waits for the viewport to be reading back this sound state, checked every frame. */
 async function waitForSound(page: Page, state: string, timeout: number): Promise<void> {

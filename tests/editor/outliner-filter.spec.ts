@@ -1,6 +1,7 @@
 import { expect, test, type Locator, type Page } from '@playwright/test'
 
 import { restoreProjectAfterEach } from './restore-project.js'
+import { outlinerRow, outlinerRows } from './scene-view.js'
 import { selectAsset } from './select-asset.js'
 
 /**
@@ -22,11 +23,8 @@ test.beforeEach(async ({ page }) => {
 })
 
 const box = (page: Page): Locator => page.getByTestId('entity-filter')
-const rows = (page: Page): Locator => page.getByTestId('outliner-panel').locator('[data-entity-id]')
-const row = (page: Page, name: string): Locator => rows(page).filter({ hasText: name }).first()
-
 async function names(page: Page): Promise<string[]> {
-  return rows(page).evaluateAll((buttons) =>
+  return outlinerRows(page).evaluateAll((buttons) =>
     buttons.map((button) => button.querySelector('.entity-row__name')?.textContent ?? ''),
   )
 }
@@ -65,7 +63,7 @@ test('clearing brings every row back, and Esc clears it', async ({ page }) => {
 })
 
 test('a hidden row is still selected, still in the level, and still where it was', async ({ page }) => {
-  await row(page, 'Slime').click()
+  await outlinerRow(page, 'Slime').click()
   await expect(page.getByTestId('inspector-name')).toHaveText('Slime')
 
   await box(page).fill('knight')
@@ -75,18 +73,18 @@ test('a hidden row is still selected, still in the level, and still where it was
   await expect(page.getByTestId('viewport-panel')).toHaveAttribute('data-scene-selected-count', '1')
 
   await box(page).fill('')
-  await expect(row(page, 'Slime')).toHaveAttribute('data-selected', 'true')
+  await expect(outlinerRow(page, 'Slime')).toHaveAttribute('data-selected', 'true')
   expect(await names(page)).toEqual(['Ground', 'Knight', 'Slime', 'Knight running', 'Health icon'])
 })
 
 test('a row cannot be dragged while a filter is on, and can again once it is cleared', async ({ page }) => {
-  await expect(row(page, 'Knight')).toHaveAttribute('draggable', 'true')
+  await expect(outlinerRow(page, 'Knight')).toHaveAttribute('draggable', 'true')
 
   await box(page).fill('knight')
-  await expect(row(page, 'Knight')).toHaveAttribute('draggable', 'false')
+  await expect(outlinerRow(page, 'Knight')).toHaveAttribute('draggable', 'false')
 
   await box(page).fill('')
-  await expect(row(page, 'Knight')).toHaveAttribute('draggable', 'true')
+  await expect(outlinerRow(page, 'Knight')).toHaveAttribute('draggable', 'true')
 })
 
 test('the filter survives dragging the panel somewhere else', async ({ page }) => {
