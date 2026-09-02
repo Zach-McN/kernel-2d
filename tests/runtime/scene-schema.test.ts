@@ -9,6 +9,7 @@ import {
   defaultEntity,
   defaultScene,
   defaultTransform,
+  descendantsOf,
   isKnownComponentType,
   screenOf,
   serializeScene,
@@ -86,8 +87,34 @@ describe('a scene survives a round trip', () => {
       'a level with music',
       { ...scene, music: { id: 'theme00deadbeef0', path: 'assets/audio/music/theme.mp3' } },
     ],
+    ['an entity attached to another', { ...scene, entities: [knight, { ...slime, parent: knight.id }] }],
   ])('reads back identical for %s', (_description, value) => {
     expect(SceneSchema.parse(JSON.parse(JSON.stringify(value)))).toEqual(value)
+  })
+
+  it('writes no parent for a level nothing is nested in, so a level saved before nesting existed is byte-identical', () => {
+    const text = serializeScene(scene)
+    expect(text).not.toContain('"parent"')
+    expect(serializeScene(SceneSchema.parse(JSON.parse(text)))).toBe(text)
+  })
+
+  it('writes a parent only on the entity that has one', () => {
+    const nested = SceneSchema.parse(
+      JSON.parse(serializeScene({ ...scene, entities: [knight, { ...slime, parent: knight.id }] })),
+    )
+    expect(nested.entities[1]?.parent).toBe(knight.id)
+    expect(JSON.stringify(nested.entities[0])).not.toContain('parent')
+  })
+
+  it('opens a level whose parent is not in it, or loops — those are reported, never refused', () => {
+    expect(() => SceneSchema.parse({ ...scene, entities: [{ ...knight, parent: 'nobody-here' }] })).not.toThrow()
+    expect(() =>
+      SceneSchema.parse({ ...scene, entities: [{ ...knight, parent: slime.id }, { ...slime, parent: knight.id }] }),
+    ).not.toThrow()
+  })
+
+  it('refuses an empty parent, which names nothing', () => {
+    expect(() => SceneSchema.parse({ ...scene, entities: [{ ...knight, parent: '' }] })).toThrow()
   })
 
   it('survives the trip through the text that is actually written to disk', () => {
@@ -350,6 +377,37 @@ describe('copying an entity', () => {
     const parsed = SceneSchema.safeParse({ ...scene, entities: [...scene.entities, same] })
 
     expect(parsed.success).toBe(false)
+  })
+})
+
+/**
+ * What goes with an entity: everything under it, in the order the list has it,
+ * so a delete, a duplicate and a dragged row all agree about the group.
+ */
+describe('what is attached to an entity', () => {
+  const block: Entity = defaultEntity('block', 'Block')
+  const arm: Entity = { ...defaultEntity('arm', 'Arm'), parent: 'block' }
+  const fire: Entity = { ...defaultEntity('fire', 'Fire'), parent: 'arm' }
+  const other: Entity = { ...defaultEntity('other', 'Other'), parent: 'block' }
+  const alone: Entity = defaultEntity('alone', 'Alone')
+
+  it('lists children and their children, in list order, without the entity itself', () => {
+    expect(descendantsOf([alone, block, fire, arm, other], 'block').map((one) => one.id)).toEqual([
+      'fire',
+      'arm',
+      'other',
+    ])
+  })
+
+  it('lists nothing for an entity nothing is attached to', () => {
+    expect(descendantsOf([alone, block, arm], 'alone')).toEqual([])
+    expect(descendantsOf([alone, block, arm], 'arm')).toEqual([])
+  })
+
+  it('walks a loop once rather than forever', () => {
+    const a: Entity = { ...defaultEntity('a', 'A'), parent: 'b' }
+    const b: Entity = { ...defaultEntity('b', 'B'), parent: 'a' }
+    expect(descendantsOf([a, b], 'a').map((one) => one.id)).toEqual(['b'])
   })
 })
 

@@ -7,7 +7,7 @@ import {
   type AssetRef,
   type Entity,
 } from '../../runtime/formats/scene-schema'
-import type { Point } from '../../runtime/scene/coordinates'
+import { worldTransformOf, type Point } from '../../runtime/scene/coordinates'
 import type { Document, EditRun } from '../store/documents'
 import { editDocument } from '../store/open-documents'
 import { mintId } from '../store/ids'
@@ -68,7 +68,9 @@ export function alreadyPlacedAt(
   what: { prefab: AssetRef } | { texture: AssetRef },
 ): boolean {
   return entities.some((entity) => {
-    if (entity.transform.x !== at.x || entity.transform.y !== at.y) return false
+    // Where it is in the level, not its stored numbers: a child's are an offset.
+    const world = worldTransformOf(entity, entities)
+    if (world.x !== at.x || world.y !== at.y) return false
     if ('prefab' in what) return prefabRefOf(entity)?.path === what.prefab.path
     // A plain sprite: draws this texture and is not an instance of anything.
     return prefabRefOf(entity) === null && spriteOf(entity)?.texture.path === what.texture.path

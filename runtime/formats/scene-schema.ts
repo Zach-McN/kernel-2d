@@ -27,10 +27,13 @@ import { z } from 'zod'
  *      arrives as a `z` *within* the sprite component, sorted inside list order,
  *      and nothing existing has to start writing it.
  *
- *      Nesting is not here either. Flat is the shape parenting can be added to
- *      later — a `parent` field defaulting to null, no migration — where nested
- *      is not a shape parenting can be taken out of. The field lands with the
- *      feature that can set it, not before.
+ *      Nesting is a *field on the flat list*, not a tree: an entity may name a
+ *      `parent`, and its transform then means an offset from that parent
+ *      (`runtime/scene/coordinates.ts`, `worldTransformOf`). The list stays the
+ *      draw order — a child is drawn where its row sits, never in front of its
+ *      parent *because* it is a child. Flat with a parent field was chosen over a
+ *      nested shape because it can be added without a migration and a level with
+ *      nothing nested in it is byte-for-byte what it was (editor-kernel D37).
  *
  *   2. **The transform is a field, not a component.** Every entity in a 2D
  *      scene has a position; making it removable would mean every tool forever
@@ -195,7 +198,28 @@ export interface Entity {
   id: string
   /** What the human calls it. Not unique, not an identifier. */
   name: string
+  /**
+   * The position, rotation and scale — **of the entity in the level when it has
+   * no parent, and relative to its parent when it has one.** Anything that
+   * needs to know where the entity actually is asks `worldTransformOf` in
+   * `runtime/scene/coordinates.ts` rather than reading this (editor-kernel
+   * D37); the Inspector's fields edit this directly, because an offset from the
+   * parent is what a designer typing there means.
+   */
   transform: Transform
+  /**
+   * The id of the entity this one is attached to, when it is attached to one.
+   *
+   * Optional and absent at the root rather than `null`: a level with nothing
+   * nested in it never mentions the field, so nothing written before it existed
+   * changes by a byte (text-formats T21). An id alone rather than the id-and-
+   * path pair a file reference carries (D5), because the parent is in this
+   * same file and an entity's id is already the stable name for it. A parent
+   * that is not in the list, or a chain that loops, does not stop the level
+   * opening: the entity is placed by its own numbers and the problem is reported
+   * (`parentProblemsIn` in `runtime/scene/load-scene.ts`).
+   */
+  parent?: string | undefined
   /**
    * Components keyed by type. Values are `unknown` here because the schema is
    * open: a type in the registry below is validated against its own schema, and
@@ -331,6 +355,7 @@ export const EntitySchema: z.ZodType<Entity> = z
     id: z.string().min(1),
     name: z.string(),
     transform: TransformSchema,
+    parent: z.string().min(1).optional(),
     components: z.record(z.string(), z.unknown()),
   })
   // Known components are *checked*, never replaced. Replacing them would run
@@ -607,6 +632,39 @@ export function defaultScene(): Scene {
  */
 export function copyEntity(entity: Entity, id: string, name: string): Entity {
   return { ...(JSON.parse(JSON.stringify(entity)) as Entity), id, name }
+}
+
+/**
+ * Everything attached to this entity, directly or through other entities, in
+ * list order — and not the entity itself.
+ *
+ * The one answer to "what goes with it": deleting an entity takes these too,
+ * duplicating it copies these too, and dragging its row in the Outliner carries
+ * these rows. A chain that loops back on itself is walked once and no further,
+ * so a hand-edited file with a cycle in it cannot make this run forever.
+ */
+export function descendantsOf(entities: readonly Entity[], id: string): Entity[] {
+  const children = new Map<string, Entity[]>()
+  for (const entity of entities) {
+    if (entity.parent === undefined) continue
+    const siblings = children.get(entity.parent)
+    if (siblings === undefined) children.set(entity.parent, [entity])
+    else siblings.push(entity)
+  }
+
+  const found = new Set<string>([id])
+  const pending = [id]
+  while (pending.length > 0) {
+    const next = pending.shift() as string
+    for (const child of children.get(next) ?? []) {
+      if (found.has(child.id)) continue
+      found.add(child.id)
+      pending.push(child.id)
+    }
+  }
+  found.delete(id)
+
+  return entities.filter((entity) => found.has(entity.id))
 }
 
 /**

@@ -20,7 +20,15 @@
  *
  * No Phaser import here, on purpose. This is arithmetic, and arithmetic is
  * testable without a browser, a canvas or a renderer.
+ *
+ * The other crossing that lives here is local-to-world: an entity attached to a
+ * parent stores an offset, and `worldTransformOf` at the bottom of this file is
+ * the one function that turns that into where the entity is. Same reason, same
+ * file: two pieces of code composing a parent onto a child is two that can
+ * disagree, and the symptom is a gizmo bug three files from the cause.
  */
+
+import type { Transform } from '../formats/scene-schema.js'
 
 export interface Point {
   x: number
@@ -302,4 +310,173 @@ export function toScreenRadians(degreesCounterClockwise: number): number {
   // today, and everything that compares angles with `Object.is` or writes one
   // to JSON would be.
   return 0 - (degreesCounterClockwise * Math.PI) / 180
+}
+
+// --- where an entity is, when it has a parent ------------------------------
+
+/**
+ * The part of an entity this module needs to place it: its id, the id of what
+ * it is attached to, and its stored transform. An `Entity` satisfies it; the
+ * type is structural so this arithmetic never imports the format.
+ */
+export interface Placed {
+  id: string
+  parent?: string | undefined
+  transform: Transform
+}
+
+/**
+ * A child's stored transform put onto its parent's, giving the child's own.
+ *
+ * Translate, rotate, scale — the offset is scaled by the parent, turned by the
+ * parent's rotation (counter-clockwise, y-up, the same matrix a group turn
+ * uses), then added to the parent's position; rotations add; scales multiply
+ * per axis. **The one place a parent is composed onto a child** (editor-kernel
+ * D37); `localTransformOf` is its inverse and nothing else may do either.
+ *
+ * Three things this deliberately approximates, stated so nobody looks for a bug
+ * in them. A rotated child of a parent scaled unevenly would need a shear that
+ * neither a transform nor a drawn image can hold, so it is drawn as the nearest
+ * rotate-and-scale. A mirrored parent (a negative scale) does not reverse the
+ * direction its children turn. And a parent scaled to zero on an axis collapses
+ * its children on that axis, which is honest — the inverse cannot undo it,
+ * because the information is gone.
+ */
+export function composeTransform(parent: Transform, local: Transform): Transform {
+  const radians = (parent.rotation * Math.PI) / 180
+  const cos = Math.cos(radians)
+  const sin = Math.sin(radians)
+  const dx = local.x * parent.scaleX
+  const dy = local.y * parent.scaleY
+
+  return {
+    x: parent.x + dx * cos - dy * sin,
+    y: parent.y + dx * sin + dy * cos,
+    rotation: parent.rotation + local.rotation,
+    scaleX: parent.scaleX * local.scaleX,
+    scaleY: parent.scaleY * local.scaleY,
+  }
+}
+
+/**
+ * The stored transform that would put an entity *here* under *this* parent —
+ * the inverse of `composeTransform`, for attaching something without moving it
+ * and for a gesture that works in the level's space and writes a child's.
+ *
+ * A parent scale of zero on an axis is divided by as if it were one: the
+ * forward composition has already collapsed that axis, so there is no offset
+ * that lands anywhere in particular, and writing `Infinity` or `NaN` into a
+ * level would make the file unreadable on its next open (`.finite()`).
+ */
+export function localTransformOf(world: Transform, parentWorld: Transform): Transform {
+  const radians = (parentWorld.rotation * Math.PI) / 180
+  const cos = Math.cos(radians)
+  const sin = Math.sin(radians)
+  const dx = world.x - parentWorld.x
+  const dy = world.y - parentWorld.y
+  const scaleX = parentWorld.scaleX === 0 ? 1 : parentWorld.scaleX
+  const scaleY = parentWorld.scaleY === 0 ? 1 : parentWorld.scaleY
+
+  return {
+    x: (dx * cos + dy * sin) / scaleX,
+    y: (dy * cos - dx * sin) / scaleY,
+    rotation: world.rotation - parentWorld.rotation,
+    scaleX: world.scaleX / scaleX,
+    scaleY: world.scaleY / scaleY,
+  }
+}
+
+/**
+ * The entity, then its parent, then that one's parent, up to the root.
+ *
+ * Stops at a parent that is not in the list — the entity below it is then the
+ * root, placed by its own numbers. **A chain that loops answers with the entity
+ * alone**, whichever member of the loop is asked about, so every entity in a
+ * cycle (and everything hanging off one) is placed by its own numbers rather
+ * than some of them composing onto others depending on where the walk began.
+ */
+export function lineageOf<T extends Placed>(entity: T, entities: readonly T[]): T[] {
+  return lineageIn(entity, byIdOf(entities))
+}
+
+function byIdOf<T extends Placed>(entities: readonly T[]): Map<string, T> {
+  const byId = new Map<string, T>()
+  for (const entity of entities) byId.set(entity.id, entity)
+  return byId
+}
+
+function lineageIn<T extends Placed>(entity: T, byId: ReadonlyMap<string, T>): T[] {
+  const chain = [entity]
+  const seen = new Set([entity.id])
+  let current = entity
+  while (current.parent !== undefined) {
+    const parent = byId.get(current.parent)
+    if (parent === undefined) break
+    if (seen.has(parent.id)) return [entity]
+    seen.add(parent.id)
+    chain.push(parent)
+    current = parent
+  }
+  return chain
+}
+
+/**
+ * Where an entity actually is: its stored transform composed onto its parent's,
+ * and that onto its parent's, up to the root.
+ *
+ * **The one question every reader asks instead of reading `entity.transform`**
+ * (editor-kernel D37). For an entity with no parent the answer is its own
+ * transform and a reader can tell no difference; for a child it is the only
+ * right answer, and a system judging contact with something riding a turning
+ * arm is right for the same reason and on the same day the arm learned to
+ * carry it. Exported to a game's own code through `runtime/game/api.ts`.
+ */
+export function worldTransformOf<T extends Placed>(entity: T, entities: readonly T[]): Transform {
+  return worldAlong(lineageOf(entity, entities))
+}
+
+/**
+ * The same answer for every entity in one pass, for the renderer — each
+ * ancestor is composed once and remembered, rather than walked again for every
+ * entity below it on every frame.
+ */
+export function worldTransformsOf<T extends Placed>(entities: readonly T[]): Map<string, Transform> {
+  const byId = byIdOf(entities)
+  const worlds = new Map<string, Transform>()
+
+  for (const entity of entities) {
+    if (worlds.has(entity.id)) continue
+    const lineage = lineageIn(entity, byId)
+    // Root first, composing downward; anything already answered is taken as
+    // it stands, and everything below it is answered on the way past.
+    let world: Transform | null = null
+    for (let at = lineage.length - 1; at >= 0; at -= 1) {
+      const one = lineage[at] as T
+      const known = worlds.get(one.id)
+      world = known ?? (world === null ? { ...one.transform } : composeTransform(world, one.transform))
+      worlds.set(one.id, world)
+    }
+  }
+
+  return worlds
+}
+
+/**
+ * How far below the top level each entity sits — 0 for a root, 1 for its child
+ * — for the list that indents its rows. An entity in a loop answers 0, because
+ * that is where it is placed.
+ */
+export function depthsOf<T extends Placed>(entities: readonly T[]): Map<string, number> {
+  const byId = byIdOf(entities)
+  const depths = new Map<string, number>()
+  for (const entity of entities) depths.set(entity.id, lineageIn(entity, byId).length - 1)
+  return depths
+}
+
+function worldAlong(lineage: readonly Placed[]): Transform {
+  let world: Transform = { ...(lineage[lineage.length - 1] as Placed).transform }
+  for (let at = lineage.length - 2; at >= 0; at -= 1) {
+    world = composeTransform(world, (lineage[at] as Placed).transform)
+  }
+  return world
 }

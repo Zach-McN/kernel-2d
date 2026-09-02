@@ -402,8 +402,10 @@ pivot drawn over it, so you can see what the settings actually did.
 
 ### Levels
 
-A level is a flat, ordered list of entities. **List order is draw order** — the
-last row is drawn in front.
+A level is an ordered list of entities. **List order is draw order** — the
+last row is drawn in front. An entity can be attached to another, and its row
+then sits indented under that one (see *Attaching one entity to another*
+below); it is still drawn where its row sits.
 
 - **Assets panel** → the `+` in the bar, or a right-click on the empty space, for
   *New scene* / *New prefab*. Also **drag a file onto the level** — see below.
@@ -423,6 +425,8 @@ last row is drawn in front.
   enemy's speed, say — the same fields the Inspector shows, typed in either
   place. One `Ctrl-Z` takes a change back whichever window it was typed in.
 - **Inspector** → name, position, rotation, scale, spin, and which texture it draws.
+  For an attached entity the position, rotation and scale are offsets from the
+  entity it is attached to, and the section's title says so.
 
 #### Selecting more than one
 
@@ -471,6 +475,58 @@ It works from either view of the Assets panel, and folders cannot be picked up.
 it cannot be placed in a level", "jump.wav is a sound" — rather than quietly doing
 nothing. Dragging a file in from Explorer does nothing at all; put it in the
 project folder and it appears in the panel like any other.
+
+### Attaching one entity to another
+
+**Drop a row onto the middle of another row in the Outliner, and it becomes that
+entity's child.** The row indents under its parent, and from then on the child
+goes wherever the parent goes: move the parent in the picture and the child moves
+with it, turn the parent and the child swings round it, resize the parent and the
+child grows with it — in the picture and in Play. Nothing moves when you attach:
+the child stays exactly where it was on screen, and only the numbers describing it
+change.
+
+- **The top and bottom edges of a row still reorder.** Drop on the upper part of a
+  row to land before it, the lower part to land after it, the middle to attach to
+  it. A row's rows come with it: drag a parent and its children travel as one
+  block, keeping their order among themselves.
+- **Where a row lands decides what it belongs to.** Let a child go between two
+  top-level rows and it is back at the top level, where it appeared; let a
+  top-level row go between two children and it becomes a child of the same
+  parent. An indented row is always directly under the row it is attached to.
+- **The Inspector shows offsets.** Select a child and the section reads *Transform
+  — offset from Block*: position, rotation and scale are measured from the parent.
+  Type `0`, `20` and the child sits twenty units above its parent, wherever the
+  parent is. The right-click window's *Position* becomes *Offset* for the same
+  reason.
+- **The snap snaps the offset.** Dragging a child onto the grid puts its *offset*
+  on the grid, so a flame eight units along an arm is eight, not 7.071. When the
+  parent is itself on the grid, unturned and unscaled — the usual case — that is
+  the same grid you see.
+- **Duplicate brings the children.** `Shift-D` or the Duplicate button on a parent
+  copies it with everything attached, the copies attached to the copy. **Delete
+  takes them too**, and the button counts them: *Delete 3* is three rows going.
+  One `Ctrl-Z` brings the whole group back.
+- **Every attach, detach and move is one press of `Ctrl-Z`.**
+- **The `↑` `↓` arrows move a child among its parent's children**, never out of
+  them; a child that is already first has nowhere up to go.
+- **A child is drawn where its row sits** — in front of its parent, because that is
+  where a child's row goes. To put something *behind* the thing it rides, make the
+  parent an empty entity (Add, with no texture) and attach both the body and the
+  thing behind it to that, in whichever order you want them drawn.
+- **A level nothing is attached in is untouched.** Attaching writes one `parent`
+  line onto that entity and nothing else; a level saved before this existed opens
+  and re-saves byte for byte.
+- **A parent that is not there is said, not refused.** A level that names a parent
+  the level does not contain — or a loop, where following the parents comes back
+  round — still opens; the entity is placed by its own numbers, its row wears a
+  *missing parent* badge, and the same sentence appears under the picture that a
+  missing texture would. An export warns about it and carries on, because the
+  entity still draws.
+
+What this deliberately does not do yet: a prefab still holds one entity's
+components, so an instance cannot bring children of its own — that is the next
+session's, with the platformer's fire bar to justify it.
 
 ### Your game's own code
 
@@ -1222,7 +1278,9 @@ the editor takes the change.
   disappearance with an appearance, so a file moved outside the editor loses its
   import settings at the next start and leaves its references pointing at where it
   was. Doing it inside the editor is what avoids both.
-- **Parenting or nesting.** The entity list is flat.
+- **A prefab with children in it.** An entity can be attached to another in a
+  level, but a prefab still describes one entity, so placing an instance never
+  brings children with it.
 - **Duplicate or reorder several at once.** Moving, turning and deleting all
   work on the whole selection now; Duplicate, the `↑` `↓` arrows and `F` still act
   on the last one you clicked. There is also no editing six positions in one

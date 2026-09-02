@@ -1,8 +1,16 @@
 import * as Phaser from 'phaser'
 
 import type { Pivot } from '../formats/meta-schema'
-import { screenOf, spriteOf, type Entity } from '../formats/scene-schema'
-import { toPinnedScreenPoint, toScreenPoint, toScreenRadians, type Camera, type Size } from './coordinates'
+import { screenOf, spriteOf, type Entity, type ScreenComponent } from '../formats/scene-schema'
+import {
+  lineageOf,
+  toPinnedScreenPoint,
+  toScreenPoint,
+  toScreenRadians,
+  worldTransformsOf,
+  type Camera,
+  type Size,
+} from './coordinates'
 
 /**
  * The entity layer: a set of drawn objects kept in step with a list of
@@ -19,7 +27,10 @@ import { toPinnedScreenPoint, toScreenPoint, toScreenRadians, type Camera, type 
  *
  * Where a sprite sits is decided in exactly two places, both of them elsewhere:
  * the camera and the y-up flip in `coordinates.ts`, and the pivot in the
- * texture's `.meta`. This file reads both and invents neither.
+ * texture's `.meta`. This file reads both and invents neither. Where an
+ * *entity* is — its own transform composed onto its parent's, when it has one —
+ * is the same module's `worldTransformsOf` (editor-kernel D37); nothing here
+ * reads `entity.transform` to decide where to draw.
  */
 
 /** What an entity should draw, once its texture has been resolved. */
@@ -45,7 +56,7 @@ export type ResolveSprite = (entity: Entity) => ResolvedSprite | null
  */
 export interface DrawnEntity {
   id: string
-  /** Where the entity's transform position landed. Always reported. */
+  /** Where the entity's position in the level — composed onto its parent's, when it has one — landed. Always reported. */
   origin: { x: number; y: number }
   /** The rectangle it covers, or null when it draws nothing at all. */
   bounds: { x: number; y: number; width: number; height: number } | null
@@ -97,6 +108,21 @@ function opacityOf(entity: Entity): number {
   return Math.min(1, Math.max(0, wanted))
 }
 
+/**
+ * Whether this entity is pinned to the screen, and to which corner: its own
+ * `screen` component, or the nearest one above it. A child of a pinned counter
+ * rides the counter — its composed transform is then the offset from the
+ * counter's corner — and an entity pinned itself with no parent is exactly what
+ * it always was.
+ */
+function pinOf(entity: Entity, entities: readonly Entity[]): ScreenComponent | null {
+  for (const one of lineageOf(entity, entities)) {
+    const pin = screenOf(one)
+    if (pin !== null) return pin
+  }
+  return null
+}
+
 export function createEntityLayer(scene: Phaser.Scene): EntityLayer {
   const drawn = new Map<string, Phaser.GameObjects.Image>()
 
@@ -116,6 +142,11 @@ export function createEntityLayer(scene: Phaser.Scene): EntityLayer {
         drawn.delete(id)
       }
 
+      // Every entity's place in the level, answered once for the whole list
+      // (editor-kernel D37): a child's stored transform is an offset from its
+      // parent, and this is the one place that turns it into a position.
+      const worlds = worldTransformsOf(entities)
+
       return entities.map((entity, index) => {
         // The camera arrives already sitting on the device's pixel grid, so
         // nothing is rounded here. Rounding each sprite individually would keep
@@ -124,11 +155,12 @@ export function createEntityLayer(scene: Phaser.Scene): EntityLayer {
         // (see `snapCamera`).
         // A pinned entity is placed against the canvas and ignores where the
         // camera is looking; everything else is placed through the camera.
-        const pin = screenOf(entity)
+        const pin = pinOf(entity, entities)
+        const world = worlds.get(entity.id) ?? entity.transform
         const position =
           pin === null
-            ? toScreenPoint(entity.transform, camera, canvas)
-            : toPinnedScreenPoint(entity.transform, pin.anchor, camera, canvas)
+            ? toScreenPoint(world, camera, canvas)
+            : toPinnedScreenPoint(world, pin.anchor, camera, canvas)
         const sprite = resolve(entity)
 
         if (sprite === null) {
@@ -157,13 +189,10 @@ export function createEntityLayer(scene: Phaser.Scene): EntityLayer {
         image
           .setOrigin(sprite.pivot.x, sprite.pivot.y)
           .setPosition(position.x * pixelRatio, position.y * pixelRatio)
-          .setRotation(toScreenRadians(entity.transform.rotation))
+          .setRotation(toScreenRadians(world.rotation))
           // The entity's own scale times the camera's: how big the designer
           // made it, and how close the viewport is standing.
-          .setScale(
-            entity.transform.scaleX * camera.scale * pixelRatio,
-            entity.transform.scaleY * camera.scale * pixelRatio,
-          )
+          .setScale(world.scaleX * camera.scale * pixelRatio, world.scaleY * camera.scale * pixelRatio)
           .setDepth(index)
           // Clamped here rather than refused by the schema: an opacity outside
           // 0..1 is a typo, and a failed component parse would take the whole

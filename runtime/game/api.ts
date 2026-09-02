@@ -22,6 +22,7 @@
 
 export {
   copyEntity,
+  descendantsOf,
   screenOf,
   type AssetRef,
   type ComponentHolder,
@@ -29,6 +30,15 @@ export {
   type ScreenComponent,
   type Transform,
 } from '../formats/scene-schema.js'
+
+export {
+  composeTransform,
+  lineageOf,
+  localTransformOf,
+  worldTransformOf,
+  worldTransformsOf,
+  type Placed,
+} from '../scene/coordinates.js'
 
 export { stepSystems, type System } from './system.js'
 

@@ -182,6 +182,24 @@ describe('what a swapped file does instead', () => {
     expect(planned.plan.warnings.join(' ')).toContain('slime.png')
     expect(planned.plan.files).toContain(SLIME)
   })
+
+  it('warns and carries on when an entity is attached to a parent that is not in the level', async () => {
+    // The entity still draws, by its own numbers, so this is information rather
+    // than a shipped defect — the same footing as a swapped file.
+    const scene = JSON.parse(fs.readFileSync(project.file(LEVEL_ONE), 'utf8')) as {
+      entities: { name: string; parent?: string }[]
+    }
+    const first = scene.entities[0]
+    if (first === undefined) throw new Error('the sample level is empty')
+    first.parent = 'ffffffffffffffff'
+    fs.writeFileSync(project.file(LEVEL_ONE), JSON.stringify(scene, null, 2))
+
+    const planned = await planExport(project.root)
+    expect(planned.ok).toBe(true)
+    if (!planned.ok) return
+
+    expect(planned.plan.warnings.join(' ')).toContain(first.name)
+  })
 })
 
 // --- what goes in the folder ----------------------------------------------

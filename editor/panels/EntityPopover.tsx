@@ -200,10 +200,15 @@ export function EntityPopover({
       </div>
 
       <div className="entity-popover__row">
-        <span className="entity-popover__label">Position</span>
+        {/* A child's numbers are an offset from its parent, and the label says
+            which it is showing rather than letting "Position" quietly mean two
+            things (`editor-ui` U44's rule: legible from the worse door). */}
+        <span className="entity-popover__label" data-testid="popover-position-label">
+          {entity.parent === undefined ? 'Position' : 'Offset'}
+        </span>
         <NumberField
           testId="popover-x-control"
-          title="Across, in scene units"
+          title={entity.parent === undefined ? 'Across, in scene units' : 'Across from its parent, in scene units'}
           value={entity.transform.x}
           step={1}
           autoFocus
@@ -215,7 +220,7 @@ export function EntityPopover({
         />
         <NumberField
           testId="popover-y-control"
-          title="Up from the bottom, in scene units"
+          title={entity.parent === undefined ? 'Up from the bottom, in scene units' : 'Up from its parent, in scene units'}
           value={entity.transform.y}
           step={1}
           onCommit={(y) =>

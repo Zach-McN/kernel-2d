@@ -2023,12 +2023,25 @@ body {
   bottom: -1px;
 }
 
+/* Onto a row rather than between two: the row is outlined instead of underlined,
+   because the promise is "this becomes that one's child", not "this goes here". */
+.entity-row[data-drop-line='into']::after {
+  display: none;
+}
+
+.entity-row[data-drop-line='into'] > .entity-row__button {
+  box-shadow: inset 0 0 0 1px var(--shell-accent);
+}
+
+/* A child's row is indented under its parent's — one step per level — and
+   stays where it is in the list. The indent is the whole of the tree: nothing
+   collapses, nothing is re-sorted, the order on screen is the draw order. */
 .entity-row__button {
   display: flex;
   align-items: center;
   gap: 8px;
   width: 100%;
-  padding: 2px 10px;
+  padding: 2px 10px 2px calc(10px + var(--depth, 0) * 14px);
   border: 0;
   background: none;
   color: inherit;

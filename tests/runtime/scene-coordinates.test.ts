@@ -3,7 +3,12 @@ import { describe, expect, it } from 'vitest'
 import {
   DEFAULT_CAMERA,
   clampFocus,
+  composeTransform,
   framing,
+  lineageOf,
+  localTransformOf,
+  worldTransformOf,
+  worldTransformsOf,
   toPinnedOffset,
   toPinnedScreenPoint,
   isOnScreen,
@@ -16,8 +21,10 @@ import {
   union,
   zoomAbout,
   type Camera,
+  type Placed,
   type Size,
 } from '../../runtime/scene/coordinates'
+import type { Transform } from '../../runtime/formats/scene-schema'
 
 /**
  * Scene space held to the promise the whole convention exists for: y counts
@@ -342,5 +349,127 @@ describe('pinning to the screen', () => {
     const back = toPinnedOffset(there, anchor, zoomed, canvas)
     expect(back.x).toBeCloseTo(offset.x, 10)
     expect(back.y).toBeCloseTo(offset.y, 10)
+  })
+})
+
+/**
+ * Where an entity is when it is attached to another (editor-kernel D37): the
+ * stored transform is an offset, and one function turns it into a place. Held
+ * to geometry a designer can picture — a child ten units to the right of a
+ * parent turned a quarter turn is ten units *above* it — and to the round trip
+ * that attaching without moving depends on.
+ */
+describe('where an entity is, when it has a parent', () => {
+  const at = (x: number, y: number, rotation = 0, scaleX = 1, scaleY = 1): Transform => ({
+    x,
+    y,
+    rotation,
+    scaleX,
+    scaleY,
+  })
+  const placed = (id: string, transform: Transform, parent?: string): Placed =>
+    parent === undefined ? { id, transform } : { id, parent, transform }
+
+  it('adds an offset onto an unrotated, unscaled parent', () => {
+    expect(composeTransform(at(100, 50), at(10, -5))).toEqual(at(110, 45))
+  })
+
+  it('turns the offset with the parent, counter-clockwise in a y-up level', () => {
+    const world = composeTransform(at(100, 50, 90), at(10, 0))
+    expect(world.x).toBeCloseTo(100)
+    expect(world.y).toBeCloseTo(60)
+    expect(world.rotation).toBe(90)
+  })
+
+  it('scales the offset by the parent, and the sizes multiply', () => {
+    expect(composeTransform(at(0, 0, 0, 2, 3), at(10, 10, 0, 2, 2))).toEqual(at(20, 30, 0, 4, 6))
+  })
+
+  it('adds rotations', () => {
+    expect(composeTransform(at(0, 0, 30), at(0, 0, 15)).rotation).toBe(45)
+  })
+
+  it('goes back to the offset it came from, at any parent', () => {
+    const parents = [at(0, 0), at(100, 50, 90), at(-30, 12.5, 37, 2, 0.5), at(3, 4, -200, -1, 3)]
+    const local = at(10, -7, 25, 1.5, 0.75)
+    for (const parent of parents) {
+      const back = localTransformOf(composeTransform(parent, local), parent)
+      expect(back.x).toBeCloseTo(local.x, 9)
+      expect(back.y).toBeCloseTo(local.y, 9)
+      expect(back.rotation).toBeCloseTo(local.rotation, 9)
+      expect(back.scaleX).toBeCloseTo(local.scaleX, 9)
+      expect(back.scaleY).toBeCloseTo(local.scaleY, 9)
+    }
+  })
+
+  it('finds the offset that keeps an entity where it appears when it is attached', () => {
+    const parent = at(100, 50, 90)
+    const world = at(100, 60)
+    const local = localTransformOf(world, parent)
+    expect(local.x).toBeCloseTo(10)
+    expect(local.y).toBeCloseTo(0)
+    expect(local.rotation).toBe(-90)
+  })
+
+  it('never writes a number a level could not read back, even under a zero scale', () => {
+    const local = localTransformOf(at(10, 10, 0, 2, 2), at(0, 0, 0, 0, 2))
+    expect(Number.isFinite(local.x)).toBe(true)
+    expect(Number.isFinite(local.scaleX)).toBe(true)
+    expect(local.y).toBe(5)
+    expect(local.scaleY).toBe(1)
+  })
+
+  it('answers an entity with no parent with its own transform', () => {
+    const only = placed('a', at(5, 6, 7, 8, 9))
+    expect(worldTransformOf(only, [only])).toEqual(at(5, 6, 7, 8, 9))
+  })
+
+  it('composes a chain of three, root first', () => {
+    const block = placed('block', at(100, 100, 90))
+    const arm = placed('arm', at(0, 0, 0, 2, 2), 'block')
+    const fire = placed('fire', at(10, 0), 'arm')
+    const world = worldTransformOf(fire, [fire, arm, block])
+    expect(world.x).toBeCloseTo(100)
+    expect(world.y).toBeCloseTo(120)
+    expect(world.scaleX).toBe(2)
+  })
+
+  it('places an entity whose parent is not in the list by its own numbers', () => {
+    const lost = placed('lost', at(7, 8), 'nobody')
+    expect(worldTransformOf(lost, [lost])).toEqual(at(7, 8))
+    expect(lineageOf(lost, [lost])).toEqual([lost])
+  })
+
+  it('places every entity in a loop by its own numbers, whichever is asked about', () => {
+    const a = placed('a', at(1, 0), 'b')
+    const b = placed('b', at(0, 1), 'a')
+    const c = placed('c', at(5, 5), 'a')
+    const list = [a, b, c]
+    expect(worldTransformOf(a, list)).toEqual(at(1, 0))
+    expect(worldTransformOf(b, list)).toEqual(at(0, 1))
+    expect(worldTransformOf(c, list)).toEqual(at(5, 5))
+  })
+
+  it('does not run forever on an entity that names itself', () => {
+    const self = placed('me', at(1, 2), 'me')
+    expect(worldTransformOf(self, [self])).toEqual(at(1, 2))
+  })
+
+  it('answers the whole list in one pass exactly as it answers one at a time', () => {
+    const list = [
+      placed('root', at(10, 20, 45, 2, 2)),
+      placed('child', at(3, 4, 10), 'root'),
+      placed('grandchild', at(1, 1, -5, 0.5, 0.5), 'child'),
+      placed('other', at(-8, 0), 'root'),
+      placed('lost', at(9, 9), 'gone'),
+      placed('loopA', at(1, 1), 'loopB'),
+      placed('loopB', at(2, 2), 'loopA'),
+      placed('alone', at(0, 0)),
+    ]
+    // Listed child-before-parent on purpose: the pass must not depend on order.
+    const shuffled = [...list].reverse()
+    const all = worldTransformsOf(shuffled)
+    expect(all.size).toBe(list.length)
+    for (const one of list) expect(all.get(one.id)).toEqual(worldTransformOf(one, list))
   })
 })

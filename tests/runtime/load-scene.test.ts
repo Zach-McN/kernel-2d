@@ -481,4 +481,79 @@ describe('what it says out loud', () => {
       expect(sentence.endsWith('.')).toBe(true)
     }
   })
+
+  it('gives a parent problem a sentence naming the entity, since there is no file to name', () => {
+    const missing = describeLoadProblem({ kind: 'parent-missing', entity: 'Fire', id: 'f1', parent: 'abc123' })
+    expect(missing).toContain('Fire')
+    expect(missing).toContain('abc123')
+    expect(missing.endsWith('.')).toBe(true)
+
+    const loop = describeLoadProblem({ kind: 'parent-cycle', entity: 'Arm', id: 'a1' })
+    expect(loop).toContain('Arm')
+    expect(loop.endsWith('.')).toBe(true)
+  })
+})
+
+/**
+ * An entity attached to another (editor-kernel D37). The loader carries the
+ * field through, and a parent that cannot be followed is reported the way a
+ * missing texture is — named, never a reason to refuse the level.
+ */
+describe('an entity attached to another', () => {
+  it('carries the parent through to the request', async () => {
+    const reader = readerOver({
+      'scenes/one.json': scene(entity('block', 'Block'), { ...entity('fire', 'Fire'), parent: 'block' }),
+    })
+
+    const result = await loadScene(reader, 'scenes/one.json')
+    if (!result.ok) throw new Error(result.problem)
+
+    expect(result.problems).toEqual([])
+    expect(result.request.scene.entities[1]?.parent).toBe('block')
+  })
+
+  it('opens a level whose parent is not in it, and names the entity', async () => {
+    const reader = readerOver({
+      'scenes/one.json': scene({ ...entity('fire', 'Fire'), parent: 'nobody' }),
+    })
+
+    const result = await loadScene(reader, 'scenes/one.json')
+    if (!result.ok) throw new Error(result.problem)
+
+    expect(result.problems).toEqual([{ kind: 'parent-missing', entity: 'Fire', id: 'fire', parent: 'nobody' }])
+    expect(result.request.scene.entities).toHaveLength(1)
+  })
+
+  it('opens a level whose parents loop, and names every entity in the loop', async () => {
+    const reader = readerOver({
+      'scenes/one.json': scene(
+        { ...entity('a', 'Arm'), parent: 'b' },
+        { ...entity('b', 'Block'), parent: 'a' },
+        { ...entity('c', 'Fire'), parent: 'a' },
+      ),
+    })
+
+    const result = await loadScene(reader, 'scenes/one.json')
+    if (!result.ok) throw new Error(result.problem)
+
+    expect(result.problems.map((problem) => problem.kind)).toEqual(['parent-cycle', 'parent-cycle', 'parent-cycle'])
+  })
+
+  it('names a missing prefab before a missing parent, and a missing texture between them', async () => {
+    const reader = readerOver({
+      'scenes/one.json': scene(
+        { ...entity('e1', 'Knight', sprite(knightTexture, KNIGHT_META_ID)), parent: 'nobody' },
+        entity('i1', 'Slime', { prefab: { source: { id: SLIME_PREFAB_ID, path: 'prefabs/slime.json' } } }),
+      ),
+    })
+
+    const result = await loadScene(reader, 'scenes/one.json')
+    if (!result.ok) throw new Error(result.problem)
+
+    expect(result.problems.map((problem) => problem.kind)).toEqual([
+      'prefab-missing',
+      'texture-unannotated',
+      'parent-missing',
+    ])
+  })
 })

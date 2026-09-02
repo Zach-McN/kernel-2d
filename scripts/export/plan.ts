@@ -175,14 +175,18 @@ export async function planExport(projectPath: string): Promise<ExportPlanResult>
 }
 
 /**
- * The two problems that mean "this is a different file from the one the level was
- * written against". They draw, so they warn rather than refuse.
+ * The problems that do not stop anything being drawn: "this is a different file
+ * from the one the level was written against", and an entity attached to a
+ * parent that cannot be followed (it is placed by its own numbers). They draw, so
+ * they warn rather than refuse.
  */
 function isWitnessOnly(problem: LoadProblem): boolean {
   return (
     problem.kind === 'prefab-different-file' ||
     problem.kind === 'texture-different-file' ||
-    problem.kind === 'music-different-file'
+    problem.kind === 'music-different-file' ||
+    problem.kind === 'parent-missing' ||
+    problem.kind === 'parent-cycle'
   )
 }
 

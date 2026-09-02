@@ -118,8 +118,10 @@ export { inSceneUnits, type DrawnInScene } from './scene/drawn-in-scene'
 
 export {
   describeLoadProblem,
+  parentProblemsIn,
   loadScene,
   type LoadProblem,
+  type ParentProblem,
   type ProjectReader,
   type SceneLoadResult,
 } from './scene/load-scene'

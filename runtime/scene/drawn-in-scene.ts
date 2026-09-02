@@ -33,7 +33,7 @@ import type { ShownScene } from './scene-view'
 
 export interface DrawnInScene {
   id: string
-  /** Where the entity is, in level units. Its transform's position, round-tripped. */
+  /** Where the entity is, in level units — its position in the level (composed onto its parent's, when it has one), round-tripped. */
   x: number
   y: number
   /**

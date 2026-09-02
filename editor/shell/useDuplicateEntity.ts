@@ -1,8 +1,9 @@
-import { SCENE_FORMAT, copyEntity, type Entity } from '../../runtime/formats/scene-schema'
+import { SCENE_FORMAT, copyEntity } from '../../runtime/formats/scene-schema'
 import { mintId } from '../store/ids'
 import { editDocument } from '../store/open-documents'
 import { freeName, namesIn, stemOfName } from './entity-names'
 import { useOpenScene } from './open-scene'
+import { blockOf } from './reparent'
 import { useSelection } from './selection'
 
 /**
@@ -30,6 +31,13 @@ import { useSelection } from './selection'
  * of "another one, over there". Any offset would be a number this editor
  * invented.
  *
+ * **A copy brings everything attached to the original.** The whole block — the
+ * entity and its descendants, in list order — is copied under fresh ids, every
+ * `parent` inside the block is pointed at the corresponding copy, and the copy
+ * of the root keeps the original's own parent, so a duplicated child is a child
+ * of the same thing. A copy that left the children behind would be a duplicate
+ * of half an entity.
+ *
  * Selecting the copy happens outside the transaction, because what is selected
  * afterwards is not part of the edit (`editor-ui` U8) — otherwise Ctrl-Z would
  * restore a selection as well as a document.
@@ -56,10 +64,29 @@ export function useDuplicateEntity(): {
         // index: between the press and the recipe, a text editor may have
         // changed the file, and an index into a list that has moved on is how
         // the wrong thing gets copied.
-        const at = document.entities.findIndex((entity) => entity.id === entityId)
-        const source = document.entities[at]
-        if (source === undefined) return
-        document.entities.splice(at + 1, 0, copyEntity(source, copyId, nextCopyName(document.entities, source.name)))
+        const block = blockOf(document.entities, entityId)
+        const last = block[block.length - 1]
+        if (last === undefined) return
+
+        // Fresh ids for the whole block, minted here so the parents inside it
+        // can be pointed at the copies before anything is written.
+        const ids = new Map(block.map((entity) => [entity.id, entity.id === entityId ? copyId : mintId()]))
+        // Names are claimed as they are minted: two children both called
+        // "Fire" must not both become "Fire 2".
+        const taken = new Set(namesIn(document.entities))
+        const copies = block.map((original) => {
+          const name = freeName(taken, stemOfName(original.name))
+          taken.add(name)
+          const copy = copyEntity(original, ids.get(original.id) as string, name)
+          const parent = copy.parent
+          if (parent !== undefined && ids.has(parent)) copy.parent = ids.get(parent) as string
+          return copy
+        })
+
+        // Directly after the original's block, so the copy sits just in front of
+        // it and the children keep their order among themselves.
+        const at = document.entities.findIndex((entity) => entity.id === last.id)
+        document.entities.splice(at + 1, 0, ...copies)
       })
 
       selection.selectEntity(scenePath, copyId)
@@ -67,14 +94,3 @@ export function useDuplicateEntity(): {
   }
 }
 
-/**
- * What a copy is called: the original's name with a number after it.
- *
- * A duplicate that kept the name exactly would give the list two identical rows
- * — legal in the format, and useless to read. Counting up from the original's
- * stem rather than from the list's length keeps "Slime 2, Slime 3" in order
- * however much else is in the scene.
- */
-function nextCopyName(entities: readonly Entity[], original: string): string {
-  return freeName(namesIn(entities), stemOfName(original))
-}

@@ -13,12 +13,13 @@ import {
   type ScreenComponent,
   type SpriteComponent,
 } from '../../runtime/formats/scene-schema'
-import { toPinnedOffset, toScenePoint } from '../../runtime/scene/coordinates'
+import { lineageOf, toPinnedOffset, toScenePoint, worldTransformOf } from '../../runtime/scene/coordinates'
 import type { ProjectTree } from '../../sidecar/tree-schema'
 import { basename } from '../shell/asset-kinds'
 import { useComponentTypes } from '../shell/component-types'
 import { useSceneView } from '../shell/scene-view-context'
 import { describeProblem, type SceneAssets } from '../shell/scene-assets'
+import { parentWorldOf, storedFor } from '../shell/reparent'
 import { describePrefabProblem, instancesOf, useResolvedScene, type PrefabProblem } from '../shell/scene-prefabs'
 import { useSelection } from '../shell/selection'
 import { usePlacePrefab } from '../shell/usePlacePrefab'
@@ -150,6 +151,12 @@ export function EntityInspector({
   const pin = screenOf(entity)
   const inheritedPin = pin === null ? screenOf(resolved) : null
 
+  // What it is attached to, if anything: the Transform section's numbers are
+  // then an offset from that entity, and the section says so in its title.
+  const parent = entity.parent === undefined ? null : (scene.entities.find((one) => one.id === entity.parent) ?? null)
+  const attachedTo =
+    entity.parent === undefined ? null : parent === null ? 'an entity that is not in this level' : parent.name
+
   return (
     <>
       <Section title="Entity">
@@ -176,7 +183,13 @@ export function EntityInspector({
         />
       </Section>
 
-      <Section title="Transform">
+      <Section title={attachedTo === null ? 'Transform' : `Transform — offset from ${attachedTo}`}>
+        {attachedTo !== null && (
+          <Note data-testid="entity-transform-offset">
+            Relative to <strong>{attachedTo}</strong>: position, rotation and scale here are measured
+            from it, and moving it moves this too.
+          </Note>
+        )}
         <Row label="Position">
           <NumberField
             testId="entity-x-control"
@@ -292,6 +305,17 @@ export function EntityInspector({
               // rather than the sprite leaping to a corner-relative spot.
               const shown = view.state === 'ready' ? view.shown : null
               const there = shown?.entities.find((one) => one.id === entity.id)?.origin ?? null
+              // The corner in force *after* the change: this entity's own, else
+              // the nearest one above it — a child of a pinned counter stays
+              // pinned by the counter when its own pin is taken off.
+              const inherited =
+                lineageOf(entity, scene.entities)
+                  .slice(1)
+                  .map((one) => screenOf(one)?.anchor ?? null)
+                  .find((one) => one !== null) ?? null
+              const effective = anchor ?? inherited
+              const world = worldTransformOf(entity, scene.entities)
+              const parentWorld = parentWorldOf(entity, scene.entities)
               change('screen', 'Pin to screen', (target) => {
                 // "Not pinned" is the absence of the component, not a component
                 // saying so — a level stays a description of what is in it.
@@ -300,11 +324,14 @@ export function EntityInspector({
 
                 if (there === null || shown === null) return
                 const kept =
-                  anchor === null
+                  effective === null
                     ? toScenePoint(there, shown.drawnWith, shown.canvasSize)
-                    : toPinnedOffset(there, anchor, shown.drawnWith, shown.canvasSize)
-                target.transform.x = kept.x
-                target.transform.y = kept.y
+                    : toPinnedOffset(there, effective, shown.drawnWith, shown.canvasSize)
+                // In the level's terms for a root; as the offset under its
+                // parent for a child, so it stays where it appears either way.
+                const stored = storedFor({ ...world, x: kept.x, y: kept.y }, parentWorld)
+                target.transform.x = stored.x
+                target.transform.y = stored.y
               })
             }}
           >

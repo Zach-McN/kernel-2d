@@ -2,6 +2,7 @@ import {
   useEffect,
   useRef,
   useState,
+  type CSSProperties,
   type DragEvent,
   type MouseEvent,
   type ReactElement,
@@ -15,6 +16,8 @@ import {
   spriteOf,
   type Entity,
 } from '../../runtime/formats/scene-schema'
+import { depthsOf } from '../../runtime/scene/coordinates'
+import { parentProblemsIn } from '../../runtime/scene/load-scene'
 import { basename } from '../shell/asset-kinds'
 import { useEntityPopover, popoverSpot } from '../shell/entity-popover'
 import { nameMatches, useOutlinerFilter } from '../shell/outliner-filter'
@@ -22,6 +25,7 @@ import { freeName, namesIn } from '../shell/entity-names'
 import { useDeleteEntities } from '../shell/useDeleteEntities'
 import { useDuplicateEntity } from '../shell/useDuplicateEntity'
 import { useOpenScene } from '../shell/open-scene'
+import { blockOf, labelOf, moveAmongSiblings, moveBlock, outcomeOf, siblingOf, type Slot } from '../shell/reparent'
 import { useSceneAssets, type SceneAssets } from '../shell/scene-assets'
 import { useResolvedScene, type ResolvedScene } from '../shell/scene-prefabs'
 import { useSelection } from '../shell/selection'
@@ -81,6 +85,14 @@ import { EntityPopover } from './EntityPopover'
  * carried out of the Assets panel is not mistaken for a row (`editor-ui` U35);
  * the row's id rides in a ref rather than in state, because what is being
  * dragged never needs to be *drawn* — only where it would land does.
+ *
+ * **A row let go on the middle of another becomes its child**, and the list
+ * shows it indented under it; let go between two rows it becomes a sibling of
+ * the row below the line, attached to whatever that row is attached to. The
+ * rows stay in list order — an indented row is drawn where its row sits, in
+ * front of its parent because that is where a child's row is allowed to be —
+ * and every one of those moves is `../shell/reparent.ts`, where the arithmetic
+ * lives on its own and is tested without a browser.
  */
 export function OutlinerPanel(): ReactElement {
   const open = useOpenScene()
@@ -99,7 +111,7 @@ export function OutlinerPanel(): ReactElement {
   const draggingRow = useRef<string | null>(null)
   // Where the carried row would land, for the line between rows — or null when
   // there is no drag, or when letting go here would change nothing.
-  const [dropAt, setDropAt] = useState<number | null>(null)
+  const [dropAt, setDropAt] = useState<Slot | null>(null)
   // Counted rather than compared against `relatedTarget`: `dragleave` fires
   // when the pointer crosses onto a child row (`editor-ui` U35).
   const dragDepth = useRef(0)
@@ -253,26 +265,23 @@ export function OutlinerPanel(): ReactElement {
     list.current?.querySelector<HTMLElement>(`[data-entity-id="${CSS.escape(id)}"]`)?.focus()
   }
 
-  const move = (id: string, by: number): void => {
+  /** An arrow: the row's block past its sibling's, never across a parent. */
+  const move = (id: string, by: -1 | 1): void => {
     change('Reorder entity', (list) => {
-      const at = list.findIndex((entity) => entity.id === id)
-      const to = at + by
-      if (at < 0 || to < 0 || to >= list.length) return
-      const [moved] = list.splice(at, 1)
-      if (moved !== undefined) list.splice(to, 0, moved)
+      moveAmongSiblings(list, id, by)
     })
   }
 
-  /** The drag's answer: put the row at slot `to` of the list as shown now. */
-  const reorderTo = (id: string, to: number): void => {
-    change('Reorder entity', (list) => {
-      const at = list.findIndex((entity) => entity.id === id)
-      if (at < 0) return
-      const [moved] = list.splice(at, 1)
-      if (moved === undefined) return
-      // The slot was counted with the row still in place, so everything past
-      // it is one nearer the front once the row is out.
-      list.splice(Math.min(to > at ? to - 1 : to, list.length), 0, moved)
+  /**
+   * The drag's answer: the row's block to this slot. Judged on the list as
+   * shown, so the label says what the drop is about to do — attach, detach or
+   * reorder — and the recipe does that same thing to the document.
+   */
+  const dropOn = (id: string, slot: Slot): void => {
+    const outcome = outcomeOf(entities, id, slot)
+    if (outcome === null) return
+    change(labelOf(outcome), (list) => {
+      moveBlock(list, id, slot)
     })
   }
 
@@ -280,21 +289,38 @@ export function OutlinerPanel(): ReactElement {
    * Which slot letting go here would fill, or null for "none, or nothing would
    * change". Asked twice — on every `dragover` for the line, and again on the
    * drop for the edit — so the two cannot disagree about where "here" is.
-   * A row is divided at its middle: the top half means before it, the bottom
-   * half after; below the last row means the end.
+   *
+   * A row is divided in **thirds**: the top means before it, the bottom after
+   * it (and its children), and the middle means *onto* it — attached, as its
+   * last child. Thirds rather than quarters so that a pointer a quarter of the
+   * way down a row is well inside a zone rather than on the line between two
+   * (`editor-ui` UG11). Below the last row means the end of the list.
    */
-  const slotUnder = (event: DragEvent<HTMLElement>): number | null => {
+  const slotUnder = (event: DragEvent<HTMLElement>): Slot | null => {
     const id = draggingRow.current
     if (id === null) return null
-    const from = entities.findIndex((entity) => entity.id === id)
-    if (from < 0) return null
     const row = event.target instanceof HTMLElement ? event.target.closest('[data-row-index]') : null
-    const slot =
-      row instanceof HTMLElement
-        ? Number(row.getAttribute('data-row-index')) +
-          (event.clientY < middleOf(row.getBoundingClientRect()) ? 0 : 1)
-        : entities.length
-    return slot === from || slot === from + 1 ? null : slot
+    let slot: Slot
+    if (row instanceof HTMLElement) {
+      const target = entities[Number(row.getAttribute('data-row-index'))]
+      if (target === undefined) return null
+      const box = row.getBoundingClientRect()
+      const third = box.height / 3
+      slot =
+        event.clientY < box.top + third
+          ? { kind: 'before', id: target.id }
+          : event.clientY >= box.bottom - third
+            ? { kind: 'after', id: target.id }
+            : { kind: 'into', id: target.id }
+    } else {
+      slot = { kind: 'end' }
+    }
+    return outcomeOf(entities, id, slot) === null ? null : slot
+  }
+
+  /** The line moves only when the slot does, or every pixel of a drag would redraw the list. */
+  const showSlot = (slot: Slot | null): void => {
+    setDropAt((shown) => (sameSlot(shown, slot) ? shown : slot))
   }
 
   const dragDone = (): void => {
@@ -303,7 +329,13 @@ export function OutlinerPanel(): ReactElement {
     setDropAt(null)
   }
 
-  const at = entities.findIndex((entity) => entity.id === selected)
+  // How far in each row is drawn, and which row wears the drop mark — both
+  // answered once per render rather than once per row.
+  const depths = depthsOf(entities)
+  const dropMark = markOf(entities, dropAt)
+  // Entities attached to something that cannot be followed, by id, so the row
+  // can say so the way it says "missing texture" (`runtime/scene/load-scene.ts`).
+  const parentProblems = new Map(parentProblemsIn(entities).map((problem) => [problem.id, problem.kind]))
   const shownCount = filtering ? entities.filter((entity) => nameMatches(entity.name, filter)).length : entities.length
   // The file's entity, never the resolved one: everything the window changes
   // goes to the document (`editor-ui` U23). Null is also how the window closes
@@ -338,23 +370,23 @@ export function OutlinerPanel(): ReactElement {
           type="button"
           className="control control--action"
           data-testid="entity-delete"
-          data-delete-count={removal.entities.length}
+          data-delete-count={removal.count}
           title={
-            removal.entities.length > 1
-              ? `Remove all ${removal.entities.length} selected entities. One press of Ctrl-Z brings them all back.`
+            removal.count > 1
+              ? `Remove all ${removal.count} entities — the selected ones and everything attached to them. One press of Ctrl-Z brings them all back.`
               : 'Remove the selected entity. Ctrl-Z brings it back. Delete or Backspace does the same.'
           }
           disabled={!removal.canDelete}
           onClick={removal.deleteSelected}
         >
-          {removal.entities.length > 1 ? `Delete ${removal.entities.length}` : 'Delete'}
+          {removal.count > 1 ? `Delete ${removal.count}` : 'Delete'}
         </button>
         <button
           type="button"
           className="control control--step"
           data-testid="entity-move-up"
-          title="Move back — drawn behind the one above it"
-          disabled={at <= 0}
+          title="Move back — drawn behind the one above it. A child moves among its parent's children."
+          disabled={selected === null || siblingOf(entities, selected, -1) === null}
           onClick={() => selected !== null && move(selected, -1)}
         >
           ↑
@@ -363,8 +395,8 @@ export function OutlinerPanel(): ReactElement {
           type="button"
           className="control control--step"
           data-testid="entity-move-down"
-          title="Move forward — drawn in front of the one below it"
-          disabled={at < 0 || at >= entities.length - 1}
+          title="Move forward — drawn in front of the one below it. A child moves among its parent's children."
+          disabled={selected === null || siblingOf(entities, selected, 1) === null}
           onClick={() => selected !== null && move(selected, 1)}
         >
           ↓
@@ -445,7 +477,7 @@ export function OutlinerPanel(): ReactElement {
             if (!isRowDrag(event)) return
             event.preventDefault()
             event.dataTransfer.dropEffect = 'move'
-            setDropAt(slotUnder(event))
+            showSlot(slotUnder(event))
           }}
           onDragLeave={() => {
             dragDepth.current -= 1
@@ -459,7 +491,7 @@ export function OutlinerPanel(): ReactElement {
             event.preventDefault()
             const id = draggingRow.current
             const slot = slotUnder(event)
-            if (id !== null && slot !== null) reorderTo(id, slot)
+            if (id !== null && slot !== null) dropOn(id, slot)
             dragDone()
           }}
         >
@@ -476,6 +508,7 @@ export function OutlinerPanel(): ReactElement {
               <Row
                 key={entity.id}
                 index={index}
+                depth={depths.get(entity.id) ?? 0}
                 // A drag reorders by the slot under the pointer, and a slot
                 // between two shown rows may hold any number of hidden ones —
                 // so a row is not picked up at all while a filter is on.
@@ -484,14 +517,8 @@ export function OutlinerPanel(): ReactElement {
                 fromPrefab={prefabRefOf(entity)?.path ?? null}
                 selected={selectedHere.has(entity.id)}
                 primary={entity.id === selected}
-                problem={problemFor(entity, drawn, assets, resolved)}
-                dropLine={
-                  dropAt === index
-                    ? 'above'
-                    : index === entities.length - 1 && dropAt === entities.length
-                      ? 'below'
-                      : null
-                }
+                problem={problemFor(entity, drawn, assets, resolved, parentProblems.get(entity.id))}
+                dropLine={dropMark?.id === entity.id ? dropMark.line : null}
                 onSelect={(event) => clickRow(entity.id, event)}
                 onContext={(event) => openPopover(entity.id, event)}
                 onDragStart={(event) => {
@@ -523,38 +550,91 @@ export function OutlinerPanel(): ReactElement {
           about is a selection gesture nobody uses, and there is nowhere else on
           screen that could mention Shift, Ctrl or the delete keys. */}
       <p className="outliner__note">
-        The last one in the list is drawn in front — drag a row to reorder. Shift-click adds to the
-        selection, Ctrl-click takes away, right-click opens an entity's little window, Delete or
-        Backspace removes what is selected.
+        The last one in the list is drawn in front — drag a row to reorder, or drop it onto another
+        row to attach it to that one. Shift-click adds to the selection, Ctrl-click takes away,
+        right-click opens an entity's little window, Delete or Backspace removes what is selected.
       </p>
     </div>
   )
 }
 
+/** What a row's badge says, and what it means when hovered. */
+interface RowProblem {
+  word: string
+  title: string
+}
+
 /**
- * Why this row cannot be drawn, in a word, or null.
+ * Why this row cannot be drawn — or cannot be placed where its parent is — in
+ * a word, or null.
  *
  * The prefab is asked about first: an instance whose prefab is missing has no
  * texture *because* of that, and "missing texture" would send the human looking
- * at the wrong file.
+ * at the wrong file. A parent that cannot be followed comes last, because the
+ * entity still draws — by its own numbers, as if attached to nothing.
  */
 function problemFor(
   entity: Entity,
   drawn: Entity,
   assets: SceneAssets,
   resolved: ResolvedScene,
-): string | null {
+  parentProblem: 'parent-missing' | 'parent-cycle' | undefined,
+): RowProblem | null {
+  const undrawable = 'This entity cannot be drawn'
   const source = prefabRefOf(entity)
   if (source !== null) {
     const problem = resolved.problems[source.path]
-    if (problem !== undefined) return problem.kind === 'missing' ? 'missing prefab' : 'prefab problem'
+    if (problem !== undefined) {
+      return { word: problem.kind === 'missing' ? 'missing prefab' : 'prefab problem', title: undrawable }
+    }
   }
 
   const sprite = spriteOf(drawn)
-  if (sprite === null) return null
-  const problem = assets.problems[sprite.texture.path]
-  if (problem === undefined) return null
-  return problem.kind === 'missing' ? 'missing texture' : 'texture problem'
+  const problem = sprite === null ? undefined : assets.problems[sprite.texture.path]
+  if (problem !== undefined) {
+    return { word: problem.kind === 'missing' ? 'missing texture' : 'texture problem', title: undrawable }
+  }
+
+  if (parentProblem === 'parent-missing') {
+    return {
+      word: 'missing parent',
+      title: 'This entity is attached to an id that is not in this level. It is placed as if attached to nothing.',
+    }
+  }
+  if (parentProblem === 'parent-cycle') {
+    return {
+      word: 'attached in a loop',
+      title: 'Following what this entity is attached to leads back to itself. It is placed as if attached to nothing.',
+    }
+  }
+  return null
+}
+
+/**
+ * Which row wears the drop mark, and on which edge: above the row a block
+ * would go before, below the *last row of the block* it would go after, and on
+ * the row itself when it would become that row's child.
+ */
+function markOf(
+  entities: readonly Entity[],
+  slot: Slot | null,
+): { id: string; line: 'above' | 'below' | 'into' } | null {
+  if (slot === null) return null
+  if (slot.kind === 'end') {
+    const last = entities[entities.length - 1]
+    return last === undefined ? null : { id: last.id, line: 'below' }
+  }
+  if (slot.kind === 'before') return { id: slot.id, line: 'above' }
+  if (slot.kind === 'into') return { id: slot.id, line: 'into' }
+  const rows = blockOf(entities, slot.id)
+  const last = rows[rows.length - 1]
+  return last === undefined ? null : { id: last.id, line: 'below' }
+}
+
+function sameSlot(a: Slot | null, b: Slot | null): boolean {
+  if (a === null || b === null) return a === b
+  if (a.kind !== b.kind) return false
+  return a.kind === 'end' || b.kind === 'end' || a.id === b.id
 }
 
 /**
@@ -579,13 +659,11 @@ function isRowDrag(event: DragEvent<HTMLElement>): boolean {
   return event.dataTransfer.types.includes(ROW_DRAG_TYPE)
 }
 
-function middleOf(box: DOMRect): number {
-  return box.top + box.height / 2
-}
-
 interface RowProps {
   /** Where this row sits in the list, which is where it sits in the draw order. */
   index: number
+  /** How many entities it is attached under: 0 at the top level. Drawn as an indent. */
+  depth: number
   /** Resolved: the texture shown is the one this row actually draws. */
   entity: Entity
   /** The prefab this is an instance of, or null when it is not one. */
@@ -597,9 +675,9 @@ interface RowProps {
    * selection of six says which of the six the singular buttons mean.
    */
   primary: boolean
-  problem: string | null
-  /** The edge the carried row would land on, for the line, or null. */
-  dropLine: 'above' | 'below' | null
+  problem: RowProblem | null
+  /** The edge the carried row would land on, for the line — or `into`, for a row it would be attached to — or null. */
+  dropLine: 'above' | 'below' | 'into' | null
   onSelect: (event: MouseEvent<HTMLElement>) => void
   /** A right-click on the row: the editor's right-click window, on this entity. */
   onContext: (event: MouseEvent<HTMLElement>) => void
@@ -611,6 +689,7 @@ interface RowProps {
 
 function Row({
   index,
+  depth,
   entity,
   fromPrefab,
   selected,
@@ -626,14 +705,20 @@ function Row({
   const sprite = spriteOf(entity)
 
   return (
-    <li className="entity-row" data-row-index={index} data-drop-line={dropLine ?? undefined}>
+    <li
+      className="entity-row"
+      data-row-index={index}
+      data-depth={depth}
+      data-drop-line={dropLine ?? undefined}
+      style={{ '--depth': depth } as CSSProperties}
+    >
       <button
         type="button"
         className="entity-row__button"
         data-entity-id={entity.id}
         data-selected={selected}
         data-primary={primary}
-        data-entity-problem={problem ?? ''}
+        data-entity-problem={problem?.word ?? ''}
         data-entity-prefab={fromPrefab ?? ''}
         draggable={draggable}
         onClick={onSelect}
@@ -656,8 +741,8 @@ function Row({
           </span>
         )}
         {problem !== null && (
-          <span className="entity-row__badge" title="This entity cannot be drawn">
-            {problem}
+          <span className="entity-row__badge" title={problem.title}>
+            {problem.word}
           </span>
         )}
       </button>

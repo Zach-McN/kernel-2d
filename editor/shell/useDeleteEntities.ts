@@ -1,4 +1,4 @@
-import { SCENE_FORMAT } from '../../runtime/formats/scene-schema'
+import { SCENE_FORMAT, descendantsOf, type Entity } from '../../runtime/formats/scene-schema'
 import { editDocument } from '../store/open-documents'
 import { entitiesLabel } from './entity-count'
 import { useOpenScene } from './open-scene'
@@ -31,10 +31,18 @@ import { useSelection } from './selection'
  * (`editor-ui` U8) — the same placement `useDuplicateEntity` uses for selecting
  * its copy. It lands on the scene file rather than on nothing, so the Inspector
  * still has something to describe and the level stays open.
+ *
+ * **Deleting an entity deletes everything attached to it**, in the same step. A
+ * child left behind would be attached to nothing and placed by numbers that
+ * meant an offset a moment ago; and Ctrl-Z bringing back the parent without its
+ * children would be half an undo. The count the button shows is that whole set,
+ * so "Delete 3" is the number of rows that will go.
  */
 export function useDeleteEntities(): {
-  /** The entities a delete key and the Delete button would remove, in order. */
+  /** The selected entities a delete key and the Delete button act on, in order. */
   entities: readonly string[]
+  /** How many entities would go: the selected ones and everything attached to them. */
+  count: number
   /** True when there is anything to delete, for a button's disabled state. */
   canDelete: boolean
   /** Removes the selected entities. Does nothing when there are none. */
@@ -52,15 +60,20 @@ export function useDeleteEntities(): {
       ? selection.selectedEntities
       : []
 
+  const count = open.state === 'open' ? withAttached(open.scene.entities, entities).size : entities.length
+
   return {
     entities,
+    count,
     canDelete: entities.length > 0,
     deleteSelected: () => {
       if (scenePath === null || entities.length === 0) return
-      const going = new Set(entities)
 
-      editDocument(scenePath, { label: entitiesLabel('Delete', entities.length) }, (document) => {
+      editDocument(scenePath, { label: entitiesLabel('Delete', count) }, (document) => {
         if (document.format !== SCENE_FORMAT) return
+        // Worked out inside the recipe, from the document as it is now, for the
+        // same reason each entity is re-found by id (`editor-ui` U23).
+        const going = withAttached(document.entities, entities)
         for (let at = document.entities.length - 1; at >= 0; at -= 1) {
           const entity = document.entities[at]
           if (entity !== undefined && going.has(entity.id)) document.entities.splice(at, 1)
@@ -72,3 +85,10 @@ export function useDeleteEntities(): {
   }
 }
 
+
+/** The ids given, plus every entity attached to any of them, however deep. */
+function withAttached(entities: readonly Entity[], ids: readonly string[]): Set<string> {
+  const going = new Set(ids)
+  for (const id of ids) for (const below of descendantsOf(entities, id)) going.add(below.id)
+  return going
+}

@@ -11,6 +11,7 @@ import {
   type Scene,
 } from '../formats/scene-schema.js'
 import { messageOf } from '../message-of.js'
+import { lineageOf } from './coordinates.js'
 import type { SceneMusic, SceneRequest, SceneTexture } from './scene-request.js'
 
 /**
@@ -109,6 +110,13 @@ export type LoadProblem =
   | { kind: 'music-not-audio'; path: string; type: string }
   /** The `.meta` is fine and belongs to a different file than the one referenced. */
   | { kind: 'music-different-file'; path: string; expected: string; found: string }
+  /** The entity is attached to an id that is not in this level. It is placed by its own numbers. */
+  | { kind: 'parent-missing'; entity: string; id: string; parent: string }
+  /** Following the entity's parents leads back to itself. Everything in the loop is placed by its own numbers. */
+  | { kind: 'parent-cycle'; entity: string; id: string }
+
+/** The two problems about an entity's parent, which name an entity rather than a file. */
+export type ParentProblem = Extract<LoadProblem, { kind: 'parent-missing' | 'parent-cycle' }>
 
 export type SceneLoadResult =
   | {
@@ -138,6 +146,7 @@ export async function loadScene(reader: ProjectReader, path: string): Promise<Sc
   const entities = resolveEntities(scene.entities, prefabs)
   const textures = await readTextures(reader, entities, problems)
   const music = await readMusic(reader, scene, problems)
+  problems.push(...parentProblemsIn(scene.entities))
 
   return {
     ok: true,
@@ -367,6 +376,31 @@ function firstIssueIn(error: z.ZodError): string {
   return `${issue.message}${where}`
 }
 
+/**
+ * Every parent this level names that cannot be followed: an id that is not in
+ * the list, or a chain that comes back to where it started. Neither stops the
+ * level — the renderer places such an entity by its own numbers — and both are
+ * said out loud, the same way a missing texture is. Shared by the loader and the
+ * editor's own resolution, so there is one sentence for it rather than two.
+ */
+export function parentProblemsIn(entities: readonly Entity[]): ParentProblem[] {
+  const ids = new Set(entities.map((entity) => entity.id))
+  const problems: ParentProblem[] = []
+  for (const entity of entities) {
+    if (entity.parent === undefined) continue
+    if (!ids.has(entity.parent)) {
+      problems.push({ kind: 'parent-missing', entity: entity.name, id: entity.id, parent: entity.parent })
+      continue
+    }
+    // The lineage answers with the entity alone when the chain loops — and only
+    // then, for an entity whose parent exists.
+    if (lineageOf(entity, entities).length === 1) {
+      problems.push({ kind: 'parent-cycle', entity: entity.name, id: entity.id })
+    }
+  }
+  return problems
+}
+
 // --- saying what went wrong ------------------------------------------------
 
 /**
@@ -377,6 +411,13 @@ function firstIssueIn(error: z.ZodError): string {
  * runtime describing its own trouble, not editor chrome.
  */
 export function describeLoadProblem(problem: LoadProblem): string {
+  if (problem.kind === 'parent-missing') {
+    return `${problem.entity} is attached to an entity that is not in this level (id ${problem.parent}). It is placed as if it were attached to nothing.`
+  }
+  if (problem.kind === 'parent-cycle') {
+    return `${problem.entity} is attached, through other entities, to itself. Everything in that loop is placed as if it were attached to nothing.`
+  }
+
   const name = nameOf(problem.path)
 
   switch (problem.kind) {
@@ -413,8 +454,14 @@ export function describeLoadProblem(problem: LoadProblem): string {
  * looking at the wrong file.
  */
 function byUsefulness(a: LoadProblem, b: LoadProblem): number {
-  const rank = (problem: LoadProblem): number => (problem.kind.startsWith('prefab-') ? 0 : 1)
-  return rank(a) - rank(b) || a.path.localeCompare(b.path)
+  const rank = (problem: LoadProblem): number =>
+    problem.kind.startsWith('prefab-') ? 0 : problem.kind.startsWith('parent-') ? 2 : 1
+  return rank(a) - rank(b) || keyOf(a).localeCompare(keyOf(b))
+}
+
+/** What a problem is about, for ordering: the file for most, the entity for a parent. */
+function keyOf(problem: LoadProblem): string {
+  return 'path' in problem ? problem.path : problem.entity
 }
 
 function nameOf(path: string): string {

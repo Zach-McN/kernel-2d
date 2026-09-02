@@ -3,13 +3,16 @@ import { useEffect, useMemo, useRef, type ReactElement, type ReactNode, type Ref
 import {
   describeLoadProblem,
   inSceneUnits,
+  parentProblemsIn,
   storyStore,
   toScenePoint,
+  type ParentProblem,
   type Point,
   type SceneRequest,
   type ShownScene,
 } from '../../runtime'
-import { SCENE_FORMAT, type Entity } from '../../runtime/formats/scene-schema'
+import { SCENE_FORMAT, type Entity, type Transform } from '../../runtime/formats/scene-schema'
+import { composeTransform, lineageOf, worldTransformOf } from '../../runtime/scene/coordinates'
 import { entitiesLabel } from '../shell/entity-count'
 import { basename } from '../shell/asset-kinds'
 import { entityAt, onScreen } from '../shell/drawn-entities'
@@ -23,9 +26,10 @@ import { gridOnScreen } from '../shell/grid'
 import { describeProblem, problemsIn, useSceneAssets } from '../shell/scene-assets'
 import { describePrefabProblem, prefabProblemsIn, useResolvedScene } from '../shell/scene-prefabs'
 import { useDrawScene, useSceneView, type SceneViewState } from '../shell/scene-view-context'
+import { parentWorldOf, storedFor, writtenOf } from '../shell/reparent'
 import { pivotOf, shortestTurn, turnAbout, type Moved, type Turned } from '../shell/rotate'
 import { scaleAbout, writeFactor, type Scaled } from '../shell/scale'
-import { ANGLE_STEP, SCALE_STEP, SNAP_INTERVALS, freely, placeOn, scaleOn, turnOn } from '../shell/snap'
+import { ANGLE_STEP, SCALE_STEP, SNAP_INTERVALS, placeOn, scaleOn, turnOn } from '../shell/snap'
 import { useSceneDropTarget, type SceneDropTarget } from '../shell/useSceneDropTarget'
 import { useSceneGestures, type Grab, type Scale, type ScenePlacement, type Turn } from '../shell/useSceneGestures'
 import { useEntityPopover, popoverSpot } from '../shell/entity-popover'
@@ -407,6 +411,7 @@ export function ViewportPanel(): ReactElement {
           view={view}
           problems={problemsIn(assets)}
           prefabProblems={prefabProblemsIn(resolved)}
+          parentProblems={open.state === 'open' ? parentProblemsIn(open.scene.entities) : []}
           selected={selected}
           offScreen={offScreenIn(open, current, selected)}
           moving={beingMoved}
@@ -551,8 +556,31 @@ function usePlacement(
    * entity gets that same travel. Snapping each one to the grid independently
    * would pull three sprites three units apart onto one grid position — the same
    * argument a rotation makes about not snapping the positions it orbits.
+   *
+   * **Every remembered position is where the entity is *in the level***
+   * (`worldTransformOf`, editor-kernel D37), and every write goes back through
+   * `storedFor`: a root's numbers are its place, a child's are its offset from
+   * its parent. The gesture's arithmetic never knows which it has. `carried`
+   * holds what the write needs — each entity's full transform in the level when
+   * the gesture began, and its parent's — and a member whose parent is also in
+   * the group is not written at all: it rides (`writtenOf`).
+   *
+   * The snap is applied to the **offset** that is written, not to the place in
+   * the level (decision 4 of the parenting session): the anchor's wanted place
+   * is turned into the stored numbers, those are snapped, and the travel the
+   * group carries is measured from where the snapped numbers put it back. When
+   * the anchor is a child riding a selected parent, the parent's offset is what
+   * is snapped, since that is the entity being written.
    */
-  const from = useRef<{ anchor: string; started: Moved[]; key: string } | null>(null)
+  const from = useRef<{
+    anchor: string
+    anchorWorld: Point
+    /** Whose stored numbers the grid applies to: the anchor, or the ancestor carrying it. */
+    snapped: string
+    started: Moved[]
+    carried: Map<string, Carried>
+    key: string
+  } | null>(null)
   const moves = useRef(0)
 
   /**
@@ -563,11 +591,15 @@ function usePlacement(
    * has got to, so a long turn cannot deform it; and the key is minted per
    * gesture so `Esc` takes back this turn and not the one before it.
    */
-  const turn = useRef<{ started: Turned[]; pivot: Point; key: string } | null>(null)
+  const turn = useRef<{ started: Turned[]; carried: Map<string, Carried>; pivot: Point; key: string } | null>(
+    null,
+  )
   const turns = useRef(0)
 
   /** The same again for a scale, which is a turn with a different number. */
-  const sizing = useRef<{ started: Scaled[]; pivot: Point; key: string } | null>(null)
+  const sizing = useRef<{ started: Scaled[]; carried: Map<string, Carried>; pivot: Point; key: string } | null>(
+    null,
+  )
   const sizings = useRef(0)
 
   const entities = open.state === 'open' ? open.scene.entities : null
@@ -596,19 +628,27 @@ function usePlacement(
         ? selection.selectedEntities
         : [anchorId]
 
-      const started: Moved[] = []
-      for (const id of group) {
-        const entity = entities?.find((one) => one.id === id)
-        if (entity !== undefined) started.push({ id, x: entity.transform.x, y: entity.transform.y })
-      }
-      // The anchor itself has to be in there, or there is nothing to measure the
-      // travel against — an id that has gone since the selection was made.
-      if (!started.some((one) => one.id === anchorId)) return false
+      // The anchor itself has to be in the level, or there is nothing to
+      // measure the travel against — an id that has gone since the selection
+      // was made.
+      const anchor = entities?.find((one) => one.id === anchorId)
+      if (anchor === undefined || entities === null) return false
+
+      const carried = carriedOf(entities, group)
+      const started: Moved[] = [...carried.values()].map((one) => ({ id: one.id, x: one.world.x, y: one.world.y }))
+      if (started.length === 0) return false
+
+      // The grid goes onto the anchor's own numbers when it is written, and onto
+      // the numbers of whatever is carrying it when it is not.
+      const snapped = lineageOf(anchor, entities).find((one) => carried.has(one.id))?.id ?? anchorId
 
       moves.current += 1
       from.current = {
         anchor: anchorId,
+        anchorWorld: worldTransformOf(anchor, entities),
+        snapped,
         started,
+        carried,
         key: `${scenePath}#${anchorId}#move${moves.current}`,
       }
       return true
@@ -653,40 +693,56 @@ function usePlacement(
         if (start === null || start.anchor !== entityId) return
         if (scenePath === null || scale === null) return
 
-        const anchor = start.started.find((one) => one.id === entityId)
-        if (anchor === undefined) return
+        const snapped = start.carried.get(start.snapped)
+        if (snapped === undefined) return
 
         // Screen y counts down and the level's counts up, so the vertical
         // travel is subtracted. The scale is the only part of the camera that
         // matters here: a drag is a distance, not a place.
-        const wanted = { x: anchor.x + screenDx / scale, y: anchor.y - screenDy / scale }
-        // The toggle and the held modifier are combined in one place, and this
-        // is not it (`editor/shell/snap.ts`).
-        const at = placeOn(wanted, placing.snap, invert)
+        const asked = { x: screenDx / scale, y: 0 - screenDy / scale }
+
+        // The grid goes onto the *stored* numbers of the entity being snapped
+        // — its offset, when it has a parent — and the travel everything
+        // carries is measured from where those numbers put it back in the
+        // level. The toggle and the held modifier are combined in one place,
+        // and this is not it (`editor/shell/snap.ts`).
+        const wantedWorld = { ...snapped.world, x: snapped.world.x + asked.x, y: snapped.world.y + asked.y }
+        const wantedStored = storedFor(wantedWorld, snapped.parentWorld)
+        const at = placeOn(wantedStored, placing.snap, invert)
+        const landed =
+          snapped.parentWorld === null
+            ? { ...wantedStored, x: at.x, y: at.y }
+            : composeTransform(snapped.parentWorld, { ...wantedStored, x: at.x, y: at.y })
 
         // **The snapped travel, taken once and given to everything.** The grid
         // is applied to the entity under the cursor and the rest are carried by
         // the same distance, so a group keeps its shape — snapping each one
         // separately would pull sprites three units apart onto one grid
         // position, which is a formation destroyed by being nudged.
-        const dx = at.x - anchor.x
-        const dy = at.y - anchor.y
+        const dx = landed.x - snapped.world.x
+        const dy = landed.y - snapped.world.y
 
         editDocument(
           scenePath,
           { label: entitiesLabel('Move', start.started.length), merge: start.key },
           (document) => {
             if (document.format !== SCENE_FORMAT) return
-            for (const one of start.started) {
+            for (const one of start.carried.values()) {
               // Re-found by id rather than remembered as an index: between the
               // press and this move, a text editor may have changed the file.
               const target = document.entities.find((entity) => entity.id === one.id)
               if (target === undefined) continue
-              // The anchor lands exactly where the snap put it; everything else
-              // is placed freely, because it is carrying the anchor's travel
-              // rather than being snapped on its own account.
-              target.transform.x = one.id === entityId ? at.x : freely(one.x + dx)
-              target.transform.y = one.id === entityId ? at.y : freely(one.y + dy)
+              // The snapped entity lands exactly where the snap put its numbers;
+              // everything else is placed freely, because it is carrying that
+              // travel rather than being snapped on its own account.
+              if (one.id === snapped.id) {
+                target.transform.x = at.x
+                target.transform.y = at.y
+                continue
+              }
+              const moved = storedFor({ ...one.world, x: one.world.x + dx, y: one.world.y + dy }, one.parentWorld)
+              target.transform.x = moved.x
+              target.transform.y = moved.y
             }
           },
         )
@@ -779,20 +835,17 @@ function usePlacement(
        */
       beginTurn: (entityIds) => {
         turn.current = null
-        if (scenePath === null || current === null) return null
+        if (scenePath === null || current === null || entities === null) return null
 
-        const started: Turned[] = []
-        for (const id of entityIds) {
-          const entity = entities?.find((one) => one.id === id)
-          if (entity !== undefined) {
-            started.push({
-              id,
-              x: entity.transform.x,
-              y: entity.transform.y,
-              rotation: entity.transform.rotation,
-            })
-          }
-        }
+        // Where each written member is *in the level*; a member riding a
+        // selected parent is not here, and turns because its parent does.
+        const carried = carriedOf(entities, entityIds)
+        const started: Turned[] = [...carried.values()].map((one) => ({
+          id: one.id,
+          x: one.world.x,
+          y: one.world.y,
+          rotation: one.world.rotation,
+        }))
 
         const centre = pivotOf(started)
         if (centre === null) return null
@@ -808,6 +861,7 @@ function usePlacement(
         turns.current += 1
         turn.current = {
           started,
+          carried,
           pivot: centre,
           key: `${scenePath}#turn${turns.current}`,
         }
@@ -845,10 +899,13 @@ function usePlacement(
             // an index: between the keypress and here, a text editor may have
             // changed the file.
             const target = document.entities.find((entity) => entity.id === one.id)
-            if (target === undefined) continue
-            target.transform.x = one.x
-            target.transform.y = one.y
-            target.transform.rotation = one.rotation
+            const was = run.carried.get(one.id)
+            if (target === undefined || was === undefined) continue
+            // Turned in the level, stored as the child's own numbers.
+            const stored = storedFor({ ...was.world, x: one.x, y: one.y, rotation: one.rotation }, was.parentWorld)
+            target.transform.x = stored.x
+            target.transform.y = stored.y
+            target.transform.rotation = stored.rotation
           }
         })
 
@@ -885,21 +942,16 @@ function usePlacement(
        */
       beginScale: (entityIds) => {
         sizing.current = null
-        if (scenePath === null || current === null) return null
+        if (scenePath === null || current === null || entities === null) return null
 
-        const started: Scaled[] = []
-        for (const id of entityIds) {
-          const entity = entities?.find((one) => one.id === id)
-          if (entity !== undefined) {
-            started.push({
-              id,
-              x: entity.transform.x,
-              y: entity.transform.y,
-              scaleX: entity.transform.scaleX,
-              scaleY: entity.transform.scaleY,
-            })
-          }
-        }
+        const carried = carriedOf(entities, entityIds)
+        const started: Scaled[] = [...carried.values()].map((one) => ({
+          id: one.id,
+          x: one.world.x,
+          y: one.world.y,
+          scaleX: one.world.scaleX,
+          scaleY: one.world.scaleY,
+        }))
 
         const centre = pivotOf(started.map((one) => ({ ...one, rotation: 0 })))
         if (centre === null) return null
@@ -915,6 +967,7 @@ function usePlacement(
         sizings.current += 1
         sizing.current = {
           started,
+          carried,
           pivot: centre,
           key: `${scenePath}#scale${sizings.current}`,
         }
@@ -954,11 +1007,17 @@ function usePlacement(
             // Re-found by id inside the transaction, never closed over as an
             // index (`editor-ui` U23).
             const target = document.entities.find((entity) => entity.id === one.id)
-            if (target === undefined) continue
-            target.transform.x = one.x
-            target.transform.y = one.y
-            target.transform.scaleX = one.scaleX
-            target.transform.scaleY = one.scaleY
+            const was = run.carried.get(one.id)
+            if (target === undefined || was === undefined) continue
+            // Sized in the level, stored as the child's own numbers.
+            const stored = storedFor(
+              { ...was.world, x: one.x, y: one.y, scaleX: one.scaleX, scaleY: one.scaleY },
+              was.parentWorld,
+            )
+            target.transform.x = stored.x
+            target.transform.y = stored.y
+            target.transform.scaleX = stored.scaleX
+            target.transform.scaleY = stored.scaleY
           }
         })
 
@@ -1078,6 +1137,8 @@ interface CaptionProps {
   /** Prefabs this level points at that could not be used. Said before textures:
    *  a prefab that is missing is why its texture is missing too. */
   prefabProblems: ReturnType<typeof prefabProblemsIn>
+  /** Entities attached to a parent that cannot be followed. Said last: they still draw. */
+  parentProblems: ParentProblem[]
   selected: string | null
   offScreen: OffScreen
   /** The entity being moved right now, by either gesture, or null. */
@@ -1117,6 +1178,7 @@ function Caption({
   view,
   problems,
   prefabProblems,
+  parentProblems,
   selected,
   offScreen,
   moving,
@@ -1287,10 +1349,11 @@ function Caption({
       ) : moving !== null ? (
         <Note
           testId={grab === null ? 'viewport-dragging' : 'viewport-grabbing'}
-          title={`${movingSubject(moving, movingCount)} — ${moving.transform.x}, ${moving.transform.y}. ${wholeAdvice(grab, placing.snap.on)}`}
+          title={`${movingSubject(moving, movingCount)} — ${moving.transform.x}, ${moving.transform.y}${offsetNote(moving)}. ${wholeAdvice(grab, placing.snap.on)}`}
         >
           <strong>{movingSubject(moving, movingCount)}</strong> — {moving.transform.x},{' '}
-          {moving.transform.y}. {advice(grab, placing.snap.on)}
+          {moving.transform.y}
+          {offsetNote(moving)}. {advice(grab, placing.snap.on)}
         </Note>
       ) : offScreen.kind === 'all' ? (
         <Note bad testId="viewport-offscreen">Everything is off screen — press Home to bring it back.</Note>
@@ -1326,6 +1389,14 @@ function Caption({
       {problems.map((problem) => (
         <Note key={problem.path} bad testId="viewport-problem" title={describeProblem(problem)}>
           {describeProblem(problem)}
+        </Note>
+      ))}
+
+      {/* The runtime's own sentence, not a second one: the loader says exactly
+          this in Play and in an exported game (`runtime/scene/load-scene.ts`). */}
+      {parentProblems.map((problem) => (
+        <Note key={`${problem.kind}:${problem.id}`} bad testId="viewport-problem" title={describeLoadProblem(problem)}>
+          {describeLoadProblem(problem)}
         </Note>
       ))}
 
@@ -1386,6 +1457,35 @@ function advice(grab: Grab | null, snapping: boolean): string {
  * watching — off the end of it. The position stays the *anchor's*, which is the
  * one under the cursor and the only one of the six with a number worth showing.
  */
+/** The caption's numbers are the stored ones, which for a child are an offset — and it says so. */
+function offsetNote(moving: Entity): string {
+  return moving.parent === undefined ? '' : ' from its parent'
+}
+
+/**
+ * What a gesture has to remember about each entity it writes: where it was in
+ * the level when the gesture began, and where its parent is — the pair
+ * `storedFor` turns a new place into the numbers that go in the file.
+ */
+interface Carried {
+  id: string
+  world: Transform
+  parentWorld: Transform | null
+}
+
+/** The written members of a group, keyed by id, in list order (`editor/shell/reparent.ts`). */
+function carriedOf(entities: readonly Entity[], ids: readonly string[]): Map<string, Carried> {
+  const carried = new Map<string, Carried>()
+  for (const entity of writtenOf(entities, ids)) {
+    carried.set(entity.id, {
+      id: entity.id,
+      world: worldTransformOf(entity, entities),
+      parentWorld: parentWorldOf(entity, entities),
+    })
+  }
+  return carried
+}
+
 function movingSubject(moving: Entity, count: number): string {
   return count > 1 ? `${count} entities` : moving.name
 }
@@ -1552,7 +1652,7 @@ function PlayCaption({
 
       {play.problems.map((problem) => (
         <Note
-          key={`${problem.kind}:${problem.path}`}
+          key={`${problem.kind}:${'path' in problem ? problem.path : problem.entity}`}
           bad
           testId="play-problem"
           title={describeLoadProblem(problem)}
