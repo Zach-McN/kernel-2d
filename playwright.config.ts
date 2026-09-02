@@ -3,8 +3,8 @@ import { defineConfig, devices } from '@playwright/test'
 import { EDITOR_HOST, EDITOR_PORT_ENV_VAR, OPEN_BROWSER_ENV_VAR } from './scripts/editor-server.js'
 import { PORT_ENV_VAR, PROJECT_ENV_VAR } from './sidecar/config.js'
 import { GAME_PORT, GAME_URL } from './tests/editor/served-game.js'
-import { buildEditorTestExport } from './tests/editor/test-export.js'
-import { buildEditorTestProject } from './tests/editor/test-project.js'
+import { buildEditorTestExport, editorTestExportPath } from './tests/editor/test-export.js'
+import { buildEditorTestProject, editorTestProjectPath } from './tests/editor/test-project.js'
 
 /**
  * The browser test harness.
@@ -28,8 +28,28 @@ import { buildEditorTestProject } from './tests/editor/test-project.js'
 const EDITOR_PORT = 5273
 const SIDECAR_PORT = 7431
 
-const projectPath = buildEditorTestProject()
-const exportPath = buildEditorTestExport()
+/*
+ * **Built once, in the process that starts the servers — never again in a worker.**
+ *
+ * Playwright evaluates this file in the runner *and* in every worker it starts, and it
+ * starts a fresh worker after every failed test. Building at the top level therefore
+ * meant that any one failure — a load flake in an unrelated spec — deleted and rewrote
+ * the whole project folder *underneath the running dev server*. The sidecar's watcher
+ * copes; Vite's does not: it had been told to watch `src/` by path, and a folder that
+ * is removed and recreated is a folder chokidar has stopped watching. From that moment
+ * every edit to a system went unnoticed, and the one test that needs an edit noticed
+ * failed in every full run for a month while passing alone (`editor-verification` W26,
+ * V33). The rebuild is what the sidecar log shows as "removed assets/ (folder)" right
+ * after a failure — the whole project going, then coming back.
+ *
+ * The flag rides on the environment, which a worker inherits from the runner, so the
+ * first evaluation builds and every later one only names the folders.
+ */
+const FIXTURES_BUILT = 'KERNEL_BROWSER_FIXTURES_BUILT'
+const firstEvaluation = process.env[FIXTURES_BUILT] !== '1'
+const projectPath = firstEvaluation ? buildEditorTestProject() : editorTestProjectPath()
+const exportPath = firstEvaluation ? buildEditorTestExport() : editorTestExportPath()
+process.env[FIXTURES_BUILT] = '1'
 
 export default defineConfig({
   testDir: './tests/editor',
