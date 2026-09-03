@@ -1,6 +1,6 @@
 # CLAUDE.md — kernel-2d
 
-This repo is the reusable 2D game-editor kernel. The methodology: **AI writes all code; the human (Zach) authors the art, levels, and game design that ship — and never reads code.**
+This repo is the reusable game-editor kernel — **one kernel for 2D and 3D games alike** (`editor-kernel` D38; the `-2d` in the folder name is historical, see "One kernel, two dimensions" below). The methodology: **AI writes all code; the human (Zach) authors the art, levels, and game design that ship — and never reads code.**
 Full architecture and rationale: `docs/ai-game-tooling-report.md`. Read it if anything below is unclear.
 
 ## The division of labor
@@ -30,11 +30,24 @@ AI may create assets, scenes, prefabs, and data — including content produced v
 
 ## Architecture (three layers, all text)
 
-1. **Runtime** — ships with the game. Phaser 4 + TypeScript strict. Loads the text formats and plays the game. Zero editor code.
-2. **Editor** — never ships. Vite web app (React + docking layout + Zustand/immer) embedding the actual runtime as its viewport. Node sidecar (chokidar + REST + WebSocket) owns the filesystem.
+1. **Runtime** — ships with the game. TypeScript strict over a renderer chosen by the project's dimension: Phaser 4 for 2D, Three.js/WebGPU for 3D (not yet begun). Loads the text formats and plays the game. Zero editor code. An exported game carries the one renderer it uses, never both.
+2. **Editor** — never ships. Vite web app (React + docking layout + Zustand/immer) embedding the actual runtime as its viewport. The viewport is the one panel that knows which dimension the project is. Node sidecar (chokidar + REST + WebSocket) owns the filesystem.
 3. **Data** — the game itself as human-readable JSON. Sidecar `.meta` files next to binary assets, Unity-style. Stable IDs paired with human-readable paths in all references. Every format defined as a Zod schema — the schema file is the single source of truth.
 
 All editor mutations go through the transaction API (document-level undo via immer patches). Never implement per-tool undo. Never create a second serialization path.
+
+## One kernel, two dimensions
+
+Decided 2026-09-03 (`editor-kernel` D38), superseding the report's "build this once per dimension" (§5) and its separate "Kernel 3D" (§14). A 3D game opens in this editor, in the same window with the same panels. The rules that follow:
+
+- **Dimension is a project property**, declared in `project.json` beside the starting level. Nothing infers it from the assets or the scenes.
+- **The shell is dimension-blind.** Assets, Outliner, Inspector, undo, saving, prefabs, the sidecar — none of it may branch on dimension. A panel that finds it needs to has found a viewport concern that leaked, and the fix is in the viewport.
+- **The viewport and the runtime it embeds are what differ.** Neither dimension's renderer loads into a project of the other, and an export carries exactly one.
+- **A panel that serves one dimension says so**, and is not offered to a project of the other — a tilemap painter does not appear in a 3D project.
+- **The one shared format the dimension reaches into is the transform.** Today it is `x, y, rotation, scaleX, scaleY`; 3D needs three of each. That is the file every level is written in, so the change is made once, deliberately, with its round-trip tests — never by accretion.
+- **Knowledge splits the same way:** `phaser4-runtime` for the 2D side, `threejs-runtime` for the 3D side, `editor-kernel` for what is shared.
+
+The folder is still `kernel-2d`, the alias games import is still `kernel-2d`, and the launcher writes that name into every game. Renaming is its own session, with the browser suite and both games re-verified; until then the name is a label.
 
 ## Folder map
 
@@ -44,7 +57,7 @@ Two distinct structures are in play. **This repo** is the editor software. A **g
 
 | Folder | What it is |
 |---|---|
-| `runtime/` | The engine: Phaser 4 setup, render loop, entity/component layer, input, and the loaders that turn project JSON into a running game. **The only part that ships inside an exported game.** Contains zero editor code — that separation is what keeps exports clean. |
+| `runtime/` | The engine: renderer setup (Phaser 4 today; Three.js once the first 3D project exists), render loop, entity/component layer, input, and the loaders that turn project JSON into a running game. **The only part that ships inside an exported game.** Contains zero editor code — that separation is what keeps exports clean. |
 | `editor/` | The editor web app: React panels, docking layout, asset browser, inspector, viewport wrapper, gizmos, transaction/undo system. Imports `runtime/` as a library and embeds it as the viewport, so the editor preview is the actual game. Never ships. |
 | `sidecar/` | The Node background process that owns the disk: chokidar file watching, `.meta` generation, JSON read/write API, static asset serving. Development-only, never ships. |
 | `scripts/` | Development entry points and their settings — `npm run editor` lives here, along with the editor window's host/port knobs. Never ships. |

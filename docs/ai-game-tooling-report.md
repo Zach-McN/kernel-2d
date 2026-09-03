@@ -121,6 +121,8 @@ You said each genre build should be "relatively from scratch... although I want 
 
 **The kernel persists (a template repo you own and evolve).** Roughly 60% of any editor is genre-agnostic: the Vite + TypeScript scaffold, the filesystem sidecar, the asset browser, the meta-file system, the scene/prefab serialization core, undo/redo, the inspector framework, the play-in-editor harness, and the test setup. Build this once per dimension — a `kernel-2d` (Phaser) and a `kernel-3d` (Three.js) template repo — with heavy AI help, then stop regenerating it *casually*: undo/redo and serialization are exactly the systems you never want rewritten ad hoc, because they're where subtle bugs live. (Deliberate, test-gated regeneration is a different matter — see "Option C" below.)
 
+> **Correction, 2026-09-03, before any 3D work.** There is one kernel, not one per dimension. Two 2D games showed that nearly everything in the editor — panels, Outliner, Inspector, undo, saving, prefabs, sidecar — is dimension-blind, so a `kernel-3d` would be a second copy of all of it with every later fix made twice. The dimension is a property of the project; the viewport and the runtime it embeds are what differ. `editor-kernel` D38 records the decision, its cost (the transform format) and the rules that follow, and supersedes this paragraph's "once per dimension" together with §14's separate "Kernel 3D". The folder is still named `kernel-2d`; the name is historical.
+
 **The genre layer regenerates (this is the fun part).** Each new game starts by forking the kernel, then prompting the genre-specific tooling into existence: for a tower defense, a path-spline editor, a wave-table designer, a tower placement grid; for a metroidvania, a room-graph editor, an ability-gate annotator, a camera-zone tool; for a tactics game, a hex/grid editor with elevation painting and a unit-stat database UI. This layer genuinely benefits from being purpose-built each time — a bespoke wave designer beats a generic timeline for a TD game — and it's small enough (each tool is a panel + a data format + a system) that Claude produces it quickly and reliably against the kernel's established patterns.
 
 **The skills encode the *knowledge* of both layers** (Section 10), so even when code is written fresh, the architecture, conventions, and hard-won gotchas carry forward. Skills are how "from scratch" gets faster every time instead of resetting to zero.
@@ -374,6 +376,8 @@ For content purposes, note that steps 1–5 are inherently filmable — "I built
 **Weeks 3–4 — First genre, 2D.** Pick something tool-rich but runtime-simple (tower defense is ideal: spline tool, wave designer, grid placement, economy table). Ship a small complete game with hand-made art. Write `phaser4-runtime` and `genre-towerdefense` skills.
 
 **Weeks 5–7 — Kernel 3D.** Port the kernel around a Three.js WebGPU viewport: editor camera, selection/raycast, transform gizmos, glTF import path, ECS runtime contract. This is the hardest stretch; the 2D kernel patterns derisk it.
+
+> **Correction, 2026-09-03.** Not a port to a second kernel — the 3D viewport and runtime are added to the one kernel (`editor-kernel` D38, and the §5 correction above). The hard problems listed here are unchanged; where they land is not.
 
 **Week 8+ — First 3D genre** (e.g. a lane-based action game or third-person arena — genres where Blender assets shine and level tooling is bounded), then alternate genres as content/interest dictates, upstreaming kernel improvements each cycle.
 

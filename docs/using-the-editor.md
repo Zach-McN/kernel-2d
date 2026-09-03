@@ -1312,6 +1312,9 @@ the editor takes the change.
   and nothing in the editor will create it.
 - **Any project setting but the starting level.** No window title, no icon, no
   input map, no window size.
+- **Open a 3D game.** The editor is meant to hold 3D games as well as flat ones,
+  in the same window with the same panels — and that is the plan rather than the
+  present. Today every project is 2D, and nothing in the editor offers otherwise.
 - **A desktop or double-clickable build.** Web only, and served.
 - **A small export.** Nothing is minified, packed or turned into an atlas.
 - **Rename or delete `project.json`.** It is the name an export looks for, and
