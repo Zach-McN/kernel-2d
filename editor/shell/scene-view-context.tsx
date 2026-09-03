@@ -14,7 +14,9 @@ import {
   createSceneView,
   framing,
   panBy,
+  partOf,
   toSceneRect,
+  union,
   zoomAbout,
   type Camera,
   type Entity,
@@ -387,7 +389,11 @@ export function SceneViewProvider({ children }: { children: ReactNode }): ReactE
 
         // Inverted from what was drawn, so this frames the rectangle the human
         // can see an outline around rather than one worked out a second way.
-        const screen = entity.bounds ?? { x: entity.origin.x, y: entity.origin.y, width: 0, height: 0 }
+        // A placed prefab's parts are drawn under it, so they are framed with it.
+        const group = [entity, ...current.entities.filter((one) => partOf(one.id)?.placement === entityId)]
+        const screen = group
+          .map((one) => one.bounds ?? { x: one.origin.x, y: one.origin.y, width: 0, height: 0 })
+          .reduce((whole, one) => union(whole, one))
         const content = toSceneRect(screen, current.camera, current.canvasSize)
         return frameOn(content, current.canvasSize, camera.scale)
       })

@@ -40,6 +40,8 @@ export {
   type Placed,
 } from '../scene/coordinates.js'
 
+export { partOf } from '../formats/prefab-schema.js'
+
 export { stepSystems, type System } from './system.js'
 
 export { BUILT_IN_SYSTEMS, spinSystem } from './systems/index.js'

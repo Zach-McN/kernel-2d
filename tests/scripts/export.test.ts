@@ -202,6 +202,49 @@ describe('what a swapped file does instead', () => {
   })
 })
 
+describe('a prefab with parts', () => {
+  it('ships the texture a part draws, which nothing else in the level names', async () => {
+    // A prefab whose only picture of the button is on a part, placed once in
+    // the starting level: the closure walks the *resolved* level, so the part's
+    // texture and its settings come along without the export knowing what a
+    // part is.
+    const BUTTON = 'assets/textures/ui/button-idle.png'
+    const buttonMeta = AssetMetaSchema.parse(JSON.parse(fs.readFileSync(project.file(`${BUTTON}.meta`), 'utf8')))
+    const prefab = {
+      format: 'kernel2d.prefab',
+      version: 1,
+      id: 'ba7ba7ba7ba7ba70',
+      name: 'Post',
+      components: {},
+      children: [
+        {
+          id: 'sign',
+          name: 'Sign',
+          transform: { x: 0, y: 16, rotation: 0, scaleX: 1, scaleY: 1 },
+          components: { sprite: { texture: { id: buttonMeta.id, path: BUTTON } } },
+        },
+      ],
+    }
+    fs.writeFileSync(project.file('prefabs/post.json'), JSON.stringify(prefab, null, 2))
+    const scene = JSON.parse(fs.readFileSync(project.file(LEVEL_ONE), 'utf8')) as { entities: unknown[] }
+    scene.entities.push({
+      id: 'p05tp05tp05tp05t',
+      name: 'Post',
+      transform: { x: 40, y: 40, rotation: 0, scaleX: 1, scaleY: 1 },
+      components: { prefab: { source: { id: prefab.id, path: 'prefabs/post.json' } } },
+    })
+    fs.writeFileSync(project.file(LEVEL_ONE), JSON.stringify(scene, null, 2))
+
+    const planned = await planExport(project.root)
+    expect(planned.ok).toBe(true)
+    if (!planned.ok) return
+
+    expect(planned.plan.files).toContain('prefabs/post.json')
+    expect(planned.plan.files).toContain(BUTTON)
+    expect(planned.plan.files).toContain(`${BUTTON}.meta`)
+  })
+})
+
 // --- what goes in the folder ----------------------------------------------
 
 describe('what the folder holds', () => {

@@ -27,7 +27,9 @@ import { editDocument, sealEdits } from '../store/open-documents'
 import { ComponentFields } from './ComponentFields'
 import { Field, Note, Row, Section } from './fields'
 import { NumberField } from './NumberField'
+import type { Prefab } from '../../runtime/formats/prefab-schema'
 import { PlaceByClicking } from './PlaceByClicking'
+import { PlacementParts } from './PlacementParts'
 import { TexturePicker } from './TexturePicker'
 
 /**
@@ -398,6 +400,17 @@ export function EntityInspector({
         />
       )}
 
+      {/* The parts this placement draws, when its prefab has any: seen and tuned
+          here, under the placement, because a part is not an entity in the
+          level and has no row of its own. */}
+      {source !== null && resolvedScene.prefabs[source.path] !== undefined && (
+        <PlacementParts
+          scenePath={scenePath}
+          placement={entity}
+          prefab={resolvedScene.prefabs[source.path] as Prefab}
+        />
+      )}
+
       {/* The game's own nouns, drawn from the game's own description of them —
           after the picture, because what an entity *is* comes before what it
           does, and before the note about the ones nobody has described. */}
@@ -532,8 +545,8 @@ function FromPrefab({
       )}
 
       <Note>
-        Its picture is decided in the prefab, for every instance at once. Where it stands, how big it is and
-        how far it is turned are this one&apos;s alone.
+        Its picture is decided in the prefab, for every instance at once — and so is where each of its parts
+        sits. Where it stands, how big it is and how far it is turned are this one&apos;s alone.
       </Note>
     </Section>
   )

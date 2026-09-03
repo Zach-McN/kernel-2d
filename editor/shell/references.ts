@@ -103,7 +103,13 @@ export function usesOf(document: EditorDocument, target: string, described: Desc
     return document.startupScene !== null && pointsAt(document.startupScene, target) ? 1 : 0
   }
 
-  if (document.format === PREFAB_FORMAT) return usesIn(document, target, described)
+  if (document.format === PREFAB_FORMAT) {
+    // The prefab's own components, and every part's.
+    return (document.children ?? []).reduce(
+      (total, part) => total + usesIn(part, target, described),
+      usesIn(document, target, described),
+    )
+  }
 
   if (document.format === SCENE_FORMAT) {
     // The level's own music, plus every reference its entities carry.
@@ -182,7 +188,13 @@ export function rewriteReferences(
     return copy
   }
 
-  if (copy.format === PREFAB_FORMAT) return rewriteHolder(copy.components, from, to, described) ? copy : null
+  if (copy.format === PREFAB_FORMAT) {
+    let changed = rewriteHolder(copy.components, from, to, described)
+    for (const part of copy.children ?? []) {
+      if (rewriteHolder(part.components, from, to, described)) changed = true
+    }
+    return changed ? copy : null
+  }
 
   if (copy.format === SCENE_FORMAT) {
     let changed = false

@@ -141,6 +141,16 @@ export interface SpriteComponent {
  */
 export interface PrefabComponent {
   source: AssetRef
+  /**
+   * This placement's own say over the prefab's *parts* (`prefab-schema.ts`):
+   * for a part's id, the components this placement gives it, each winning
+   * whole over the prefab's — the same rule the entity's own components follow
+   * against the prefab's. Optional and absent until something is overridden,
+   * so a placement that takes the prefab as it is carries a reference and
+   * nothing else. This is how a fire bar's arm turns at a rate set per
+   * placement while the prefab says what an arm is.
+   */
+  parts?: Record<string, Record<string, unknown>> | undefined
 }
 
 /**
@@ -283,9 +293,24 @@ export const SpriteComponentSchema: z.ZodType<SpriteComponent> = z.looseObject({
   opacity: z.number().finite().optional(),
 })
 
-export const PrefabComponentSchema: z.ZodType<PrefabComponent> = z.looseObject({
-  source: AssetRefSchema,
-})
+export const PrefabComponentSchema: z.ZodType<PrefabComponent> = z
+  .looseObject({
+    source: AssetRefSchema,
+    parts: z.record(z.string(), z.record(z.string(), z.unknown())).optional(),
+  })
+  .superRefine((component, ctx) => {
+    // An override cannot make a part an instance of something: a prefab may
+    // not contain a prefab, and a placement may not smuggle one in either.
+    for (const [part, components] of Object.entries(component.parts ?? {})) {
+      if (!Object.hasOwn(components, 'prefab')) continue
+      ctx.addIssue({
+        code: 'custom',
+        message: 'a part of a prefab cannot be an instance of another prefab',
+        path: ['parts', part, 'prefab'],
+        input: components['prefab'],
+      })
+    }
+  })
 
 export const SpinComponentSchema: z.ZodType<SpinComponent> = z.looseObject({
   // Finite rather than merely a number: a rate of `Infinity` or `NaN` reaches

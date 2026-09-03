@@ -12,6 +12,7 @@ import { editDocument, sealEdits } from '../store/open-documents'
 import { ComponentFields } from './ComponentFields'
 import { Field, Note, Section } from './fields'
 import { PlaceByClicking } from './PlaceByClicking'
+import { PrefabParts } from './PrefabParts'
 import { TexturePicker } from './TexturePicker'
 
 /**
@@ -27,6 +28,11 @@ import { TexturePicker } from './TexturePicker'
  * afterwards reach every instance. An entity that copied the prefab's components
  * at placement time would look identical on the day it was placed and be dead
  * weight the next.
+ *
+ * **A prefab may carry parts** — entities that come attached to every instance,
+ * each at an offset from what it rides (`PrefabParts.tsx`). They are authored
+ * here and never written into a level: a placement is one entity, and its parts
+ * come into being when the prefab is resolved (`runtime/formats/prefab-schema.ts`).
  *
  * **The game's own components are edited here too, through the same fields the
  * entity panel draws** (`ComponentFields.tsx`, aimed at the prefab document).
@@ -116,6 +122,11 @@ export function PrefabInspector({
           it has been given its own. After the picture, before the placing, for
           the entity panel's reason — what a thing is before where it goes. */}
       <ComponentFields target={{ kind: 'prefab', path, prefab }} />
+
+      {/* What comes attached to every instance: an arm, the fire on it. After
+          the prefab's own components and before the placing, because a part
+          is part of what the thing *is*. */}
+      <PrefabParts path={path} prefab={prefab} tree={tree} />
 
       <Section title="In a level">
         {placing.scenePath === null ? (

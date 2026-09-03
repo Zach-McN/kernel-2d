@@ -2,10 +2,12 @@ import { z } from 'zod'
 
 import {
   checkKnownComponents,
+  componentOf,
   defaultTransform,
   prefabRefOf,
   type AssetRef,
   type Entity,
+  type Transform,
 } from './scene-schema.js'
 
 /**
@@ -38,14 +40,47 @@ import {
  *      stands, how big it is and how far it is turned belong to each placement.
  *      A transform sitting here that instances ignored would be a field that
  *      looked authoritative and did nothing, which is worse than not having one.
+ *      A *part* of a prefab (below) does carry one, and it means something
+ *      different: an offset from whatever the part rides, which is the
+ *      prefab's business exactly as the part's picture is.
  *
  *   3. **A prefab may not contain a `prefab` component.** Refused by the schema
  *      rather than guarded against at every reader, which is what makes a cycle
- *      unwritable instead of merely unlikely.
+ *      unwritable instead of merely unlikely. The same refusal covers every
+ *      part, and every override a placement gives a part.
+ *
+ *   4. **A prefab may hold parts, and a placement is still one entity.** The
+ *      `children` list (optional, absent on a prefab with none — text-formats
+ *      T21) names the entities that come *attached* to every instance: an arm
+ *      that turns, and the fire that rides the arm. They are not written into
+ *      the level. `resolveEntities` brings them into being beside their
+ *      placement with derived ids and `parent` links (`partsOf`), so the level
+ *      holds one reference per placement, a placement moves, copies and deletes
+ *      as one thing with no code knowing about parts, and editing the prefab
+ *      changes every placed group at once (editor-kernel D25, D37).
  */
 
 export const PREFAB_FORMAT = 'kernel2d.prefab'
 export const PREFAB_VERSION = 1
+
+/**
+ * One thing that comes attached to every instance of a prefab.
+ *
+ * The shape of a scene entity minus what a placement decides (its place in the
+ * level, its own id): an id stable *within the prefab*, which is what a
+ * placement's override names and what a derived id is built from; a transform
+ * that is an offset from what it rides; an optional `parent` naming another
+ * part, absent for one attached to the placement itself; and components.
+ */
+export interface PrefabPart {
+  id: string
+  name: string
+  /** Where it sits relative to its parent — the prefab's own entity, or another part. */
+  transform: Transform
+  /** Another part's id. Absent means attached to the placement itself. */
+  parent?: string | undefined
+  components: Record<string, unknown>
+}
 
 export interface Prefab {
   format: typeof PREFAB_FORMAT
@@ -56,6 +91,12 @@ export interface Prefab {
   name: string
   /** What every instance of it draws. Same shape as an entity's. */
   components: Record<string, unknown>
+  /**
+   * What comes attached to every instance, in draw order after the placement
+   * itself. Optional and absent for a prefab that is one entity, so every
+   * prefab written before parts existed is byte-for-byte what it was.
+   */
+  children?: PrefabPart[] | undefined
   /** Present only on prefabs an AI produced. Read, preserved, never invented. */
   generatedBy?: string | undefined
   /** `YYYY-MM-DD`, alongside `generatedBy`. */
@@ -67,6 +108,20 @@ export interface Prefab {
  * file from the object it parsed, so a key the parse drops is a key deleted out
  * of a file a human wrote (text-formats T9).
  */
+const PrefabPartSchema: z.ZodType<PrefabPart> = z.looseObject({
+  id: z.string().min(1),
+  name: z.string(),
+  transform: z.looseObject({
+    x: z.number().finite(),
+    y: z.number().finite(),
+    rotation: z.number().finite(),
+    scaleX: z.number().finite(),
+    scaleY: z.number().finite(),
+  }),
+  parent: z.string().min(1).optional(),
+  components: z.record(z.string(), z.unknown()),
+})
+
 export const PrefabSchema: z.ZodType<Prefab> = z
   .looseObject({
     format: z.literal(PREFAB_FORMAT),
@@ -74,6 +129,7 @@ export const PrefabSchema: z.ZodType<Prefab> = z
     id: z.string().min(1),
     name: z.string(),
     components: z.record(z.string(), z.unknown()),
+    children: z.array(PrefabPartSchema).optional(),
     generatedBy: z.string().min(1).optional(),
     generatedAt: z.string().min(1).optional(),
   })
@@ -95,6 +151,32 @@ export const PrefabSchema: z.ZodType<Prefab> = z
     // rather than written twice, or a prefab would start accepting something a
     // scene rejects — which reads as the file being fine until it is placed.
     checkKnownComponents(prefab, ctx)
+
+    // Every part is held to the same two rules, and to one more: its id is
+    // what a placement's override names, so two parts sharing one would make
+    // an override mean two things.
+    const seen = new Set<string>()
+    prefab.children?.forEach((part, index) => {
+      if (Object.hasOwn(part.components, 'prefab')) {
+        ctx.addIssue({
+          code: 'custom',
+          message: 'a part of a prefab cannot be an instance of another prefab',
+          path: ['children', index, 'components', 'prefab'],
+          input: part.components['prefab'],
+        })
+        return
+      }
+      if (seen.has(part.id)) {
+        ctx.addIssue({
+          code: 'custom',
+          message: `two parts share the id ${part.id}`,
+          path: ['children', index, 'id'],
+          input: part.id,
+        })
+      }
+      seen.add(part.id)
+      checkKnownComponents(part, ctx)
+    })
   })
 
 // --- resolving an instance ------------------------------------------------
@@ -135,17 +217,89 @@ export function resolveEntity(entity: Entity, prefab: Prefab | null): Entity {
   return { ...entity, components: { ...prefab.components, ...entity.components } }
 }
 
-/** Every entity in a scene, resolved against the prefabs found by path. */
+/**
+ * Every entity in a scene, resolved against the prefabs found by path — and,
+ * for a placement of a prefab with parts, the parts right behind it.
+ *
+ * The list can therefore be longer than the file's. Everything that reads it
+ * (the renderer, the loader's texture walk, the play comparison) wants every
+ * drawn thing; everything that *writes* re-finds its entity in the file by id,
+ * and a part's id is never in the file. Between the two, the parts are drawn
+ * and never saved, which is what "placed by reference" continues to mean.
+ */
 export function resolveEntities(
   entities: readonly Entity[],
   prefabs: Readonly<Record<string, Prefab>>,
 ): Entity[] {
-  return entities.map((entity) => {
+  return entities.flatMap((entity) => {
     const source = prefabRefOf(entity)
+    if (source === null) return [entity]
     // Resolved by path, per D5. A prefab that is missing leaves the entity
     // exactly as the file has it, which is what lets a panel say so.
-    return source === null ? entity : resolveEntity(entity, prefabs[source.path] ?? null)
+    const prefab = prefabs[source.path] ?? null
+    if (prefab === null) return [entity]
+    return [resolveEntity(entity, prefab), ...partsOf(entity, prefab)]
   })
+}
+
+// --- parts ------------------------------------------------------------------
+
+/** Between a placement's id and a part's id in a derived id. Neither half can hold one. */
+export const PART_SEPARATOR = ':'
+
+/** The id a part is drawn under when this placement is resolved. */
+export function partIdOf(placementId: string, partId: string): string {
+  return `${placementId}${PART_SEPARATOR}${partId}`
+}
+
+/**
+ * Which placement a drawn entity belongs to, and which part it is — or null
+ * for an entity that is in the level in its own right.
+ *
+ * The derived id is not a format id: it is never written to a file and no
+ * schema validates it. It exists so the viewport, the overlay and the play
+ * comparison can agree about a part without a side table.
+ */
+export function partOf(id: string): { placement: string; part: string } | null {
+  const at = id.indexOf(PART_SEPARATOR)
+  if (at <= 0 || at === id.length - 1) return null
+  return { placement: id.slice(0, at), part: id.slice(at + 1) }
+}
+
+/**
+ * The parts of a prefab, as the entities that come attached to this placement.
+ *
+ * Each is an ordinary entity: a derived id, a name that says whose part it is,
+ * the part's transform as its offset, a `parent` that is the placement (or the
+ * derived id of the part it rides), and the part's components with this
+ * placement's overrides winning whole per type. A part whose `parent` names
+ * nothing in the prefab is attached to the placement rather than lost.
+ *
+ * Fresh objects every time, deliberately: nothing may write to these, and
+ * nothing may keep them — the next resolution answers again.
+ */
+export function partsOf(placement: Entity, prefab: Prefab): Entity[] {
+  const children = prefab.children ?? []
+  if (children.length === 0) return []
+
+  const ids = new Set(children.map((part) => part.id))
+  const overrides = componentOf(placement, 'prefab')?.parts ?? {}
+
+  return children.map((part) => {
+    const rides = part.parent !== undefined && part.parent !== part.id && ids.has(part.parent)
+    return {
+      id: partIdOf(placement.id, part.id),
+      name: `${placement.name} › ${part.name}`,
+      transform: { ...part.transform },
+      parent: rides ? partIdOf(placement.id, part.parent as string) : placement.id,
+      components: { ...part.components, ...(overrides[part.id] ?? {}) },
+    }
+  })
+}
+
+/** A new part: named, at the placement's own spot, drawing nothing yet. */
+export function defaultPart(id: string, name: string): PrefabPart {
+  return { id, name, transform: defaultTransform(), components: {} }
 }
 
 // --- what a fresh one looks like ------------------------------------------

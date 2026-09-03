@@ -11,6 +11,7 @@ import {
   type SceneRequest,
   type ShownScene,
 } from '../../runtime'
+import { partOf } from '../../runtime/formats/prefab-schema'
 import { SCENE_FORMAT, type Entity, type Transform } from '../../runtime/formats/scene-schema'
 import { composeTransform, lineageOf, worldTransformOf } from '../../runtime/scene/coordinates'
 import { entitiesLabel } from '../shell/entity-count'
@@ -130,7 +131,7 @@ export function ViewportPanel(): ReactElement {
   // path cannot tell them apart. Identity can.
   const playing =
     running !== null && view.state === 'ready' && view.shownFor === running.request ? current : null
-  const comparison = usePlayComparison(running, playing, open)
+  const comparison = usePlayComparison(running, playing, open, resolved.entities)
 
   // The game's two ways out of its own entity list: a door asks play mode to
   // travel, and the story sleeps in the browser's storage under the project's
@@ -387,7 +388,7 @@ export function ViewportPanel(): ReactElement {
           <SceneOverlay
             shown={current}
             grid={grid}
-            selected={removal.entities}
+            selected={withParts(removal.entities, view.state === 'ready' ? view.shown?.entities ?? [] : [])}
             axis={gestures.grabbing?.axis ?? null}
             turning={gestures.turning}
             scaling={gestures.scaling}
@@ -409,6 +410,7 @@ export function ViewportPanel(): ReactElement {
         <Caption
           open={open}
           view={view}
+          resolvedCount={resolved.entities.length}
           problems={problemsIn(assets)}
           prefabProblems={prefabProblemsIn(resolved)}
           parentProblems={open.state === 'open' ? parentProblemsIn(open.scene.entities) : []}
@@ -475,8 +477,11 @@ function usePlayComparison(
   running: Extract<PlayState, { state: 'running' }> | null,
   playing: ShownScene | null,
   open: OpenSceneState,
+  resolved: readonly Entity[],
 ): PlayComparison | null {
-  const entities = open.state === 'open' ? open.scene.entities : null
+  // The resolved list rather than the file's: a part of a placed prefab is
+  // drawn under a derived id, and it has a name only here.
+  const entities = open.state === 'open' ? resolved : null
 
   return useMemo(() => {
     if (running === null || playing === null) return null
@@ -655,7 +660,14 @@ function usePlacement(
     }
 
     return {
-      pick: (at) => (current === null ? null : entityAt(current, at)),
+      // A part of a placed prefab belongs to its placement: pressing a flame
+      // picks the fire bar. Mapped here, once, so everything a pick feeds —
+      // select, a drag's start, the right-click, the hover — sees a file id.
+      pick: (at) => {
+        if (current === null) return null
+        const picked = entityAt(current, at)
+        return picked === null ? null : (partOf(picked)?.placement ?? picked)
+      },
 
       select: (entityId, mode) => {
         from.current = null
@@ -1133,6 +1145,8 @@ function offScreenIn(open: OpenSceneState, current: ShownScene | null, selected:
 interface CaptionProps {
   open: OpenSceneState
   view: SceneViewState
+  /** How many entities the picture holds once prefabs are resolved — parts included. */
+  resolvedCount: number
   problems: ReturnType<typeof problemsIn>
   /** Prefabs this level points at that could not be used. Said before textures:
    *  a prefab that is missing is why its texture is missing too. */
@@ -1176,6 +1190,7 @@ interface CaptionProps {
 function Caption({
   open,
   view,
+  resolvedCount,
   problems,
   prefabProblems,
   parentProblems,
@@ -1362,7 +1377,7 @@ function Caption({
           <strong>{offScreen.name}</strong> is off screen — press F to go to it.
         </Note>
       ) : (
-        <Note>{view.shown === null ? 'Opening…' : describeScene(view.shown, open.scene.entities.length)}</Note>
+        <Note>{view.shown === null ? 'Opening…' : describeScene(view.shown, resolvedCount)}</Note>
       )}
 
       {/*
@@ -1471,6 +1486,18 @@ interface Carried {
   id: string
   world: Transform
   parentWorld: Transform | null
+}
+
+/**
+ * The selection, with the drawn parts of every selected placement in front of
+ * it — so a placed group is outlined whole. The parts go *first*: the overlay
+ * takes the last id as the primary one, and that has to stay the placement.
+ */
+function withParts(selected: readonly string[], drawn: readonly { id: string }[]): readonly string[] {
+  if (selected.length === 0) return selected
+  const placements = new Set(selected)
+  const parts = drawn.map((one) => one.id).filter((id) => placements.has(partOf(id)?.placement ?? ''))
+  return parts.length === 0 ? selected : [...parts, ...selected]
 }
 
 /** The written members of a group, keyed by id, in list order (`editor/shell/reparent.ts`). */

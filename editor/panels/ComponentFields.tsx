@@ -16,6 +16,8 @@ import { SCENE_FORMAT, type Entity } from '../../runtime/formats/scene-schema'
 import type { ProjectTree } from '../../sidecar/tree-schema'
 import { useComponentTypes } from '../shell/component-types'
 import { useProject } from '../shell/project-context'
+import { editPartOverride, overridesOf } from '../shell/part-overrides'
+import type { EditIntent } from '../store/documents'
 import { editDocument, sealEdits } from '../store/open-documents'
 import { AssetRefPicker } from './AssetRefPicker'
 import { Field, Note, Row, Section } from './fields'
@@ -92,6 +94,114 @@ export type ComponentTarget =
       path: string
       prefab: Prefab
     }
+  | {
+      /** One part of a prefab, edited in the prefab's own document. Inherits from nothing. */
+      kind: 'prefab-part'
+      path: string
+      prefab: Prefab
+      partId: string
+    }
+  | {
+      /**
+       * One part of a *placed* prefab: what this placement gives the part is
+       * written on the placement (`editor/shell/part-overrides.ts`), and what
+       * the part has otherwise comes from the prefab.
+       */
+      kind: 'placement-part'
+      scenePath: string
+      placement: Entity
+      partId: string
+      /** The part as resolved for this placement — overrides applied. Read, never written. */
+      resolved: Entity
+    }
+
+/**
+ * The four carriers, answered once: what the carrier holds itself, what it
+ * inherits, which document a write goes to and how, and how the section names
+ * itself. One switch here rather than a dozen ternaries below, so a fifth
+ * carrier is one more arm rather than a hunt.
+ */
+interface Carrier {
+  own: Components
+  /** What the carrier follows when it has nothing of its own, or null when it inherits from nothing. */
+  inherited: Components | null
+  /** Test-id prefix and the word a sentence uses for it. */
+  prefix: string
+  word: string
+  /** A prefab (or its part) is offered every described component; an entity only what it can be given. */
+  alwaysOffered: boolean
+  /** True for a prefab or a prefab's part: a change reaches every instance. */
+  shared: boolean
+  /** Names the carrier in a merge key, so the same speed typed on two carriers is two edits. */
+  who: string
+  edit: (intent: EditIntent, recipe: (components: Components) => void) => void
+}
+
+function carrierOf(target: ComponentTarget): Carrier {
+  switch (target.kind) {
+    case 'entity':
+      return {
+        own: target.entity.components,
+        inherited: target.resolved.components,
+        prefix: 'entity-component',
+        word: 'entity',
+        alwaysOffered: false,
+        shared: false,
+        who: `${target.scenePath}#${target.entity.id}`,
+        edit: (intent, recipe) =>
+          editDocument(target.scenePath, intent, (document) => {
+            if (document.format !== SCENE_FORMAT) return
+            // Re-found by id inside the transaction, never closed over (`editor-ui` U23).
+            const found = document.entities.find((candidate) => candidate.id === target.entity.id)
+            if (found !== undefined) recipe(found.components)
+          }),
+      }
+    case 'prefab':
+      return {
+        own: target.prefab.components,
+        inherited: null,
+        prefix: 'prefab-component',
+        word: 'prefab',
+        alwaysOffered: true,
+        shared: true,
+        who: target.path,
+        edit: (intent, recipe) =>
+          editDocument(target.path, intent, (document) => {
+            if (document.format === PREFAB_FORMAT) recipe(document.components)
+          }),
+      }
+    case 'prefab-part': {
+      const part = target.prefab.children?.find((one) => one.id === target.partId)
+      return {
+        own: part?.components ?? {},
+        inherited: null,
+        prefix: `prefab-part-${target.partId}`,
+        word: 'part',
+        alwaysOffered: true,
+        shared: true,
+        who: `${target.path}#${target.partId}`,
+        edit: (intent, recipe) =>
+          editDocument(target.path, intent, (document) => {
+            if (document.format !== PREFAB_FORMAT) return
+            const found = document.children?.find((one) => one.id === target.partId)
+            if (found !== undefined) recipe(found.components)
+          }),
+      }
+    }
+    case 'placement-part':
+      return {
+        own: overridesOf(target.placement, target.partId),
+        inherited: target.resolved.components,
+        prefix: `entity-part-${target.partId}`,
+        word: 'part',
+        alwaysOffered: false,
+        shared: false,
+        who: `${target.scenePath}#${target.placement.id}#${target.partId}`,
+        edit: (intent, recipe) =>
+          editPartOverride(target.scenePath, target.placement.id, target.partId, intent, recipe),
+      }
+  }
+}
 
 export function ComponentFields({ target }: { target: ComponentTarget }): ReactElement | null {
   const types = useComponentTypes()
@@ -138,40 +248,26 @@ function DescribedComponent({
   tree: ProjectTree | null
 }): ReactElement | null {
   const type = description.type
-  const onPrefab = target.kind === 'prefab'
-  const carrier: Components = onPrefab ? target.prefab.components : target.entity.components
-  const carried = carrier[type]
+  const carrier = carrierOf(target)
+  const onPrefab = carrier.shared
+  const carried = carrier.own[type]
   const has = carried !== undefined
-  // Only worth asking about when the entity has none of its own: what an entity
-  // carries wins over its prefab per component type, whole, so an own component
-  // means nothing is inherited (`runtime/formats/prefab-schema.ts`). A prefab
-  // inherits from nothing.
-  const inherited = has || onPrefab ? undefined : target.resolved.components[type]
+  // Only worth asking about when the carrier has none of its own: what it
+  // carries wins over what it inherits per component type, whole, so an own
+  // component means nothing is inherited (`runtime/formats/prefab-schema.ts`).
+  // A prefab, and a prefab's part, inherit from nothing.
+  const inherited = has || carrier.inherited === null ? undefined : carrier.inherited[type]
 
   // Nothing to say about a component this entity is not and cannot be given.
   // Checked before any of the reading below, so a hidden section costs nothing.
-  if (!onPrefab && !has && inherited === undefined && !isAddableByHand(description)) return null
+  if (!carrier.alwaysOffered && !has && inherited === undefined && !isAddableByHand(description)) return null
 
-  const prefix = onPrefab ? 'prefab-component' : 'entity-component'
-  const documentPath = onPrefab ? target.path : target.scenePath
-  const carrierWord = onPrefab ? 'prefab' : 'entity'
+  const prefix = carrier.prefix
+  const carrierWord = carrier.word
 
-  /**
-   * One edit to whichever document holds the carrier. The entity is re-found by
-   * id inside the transaction, never closed over (`editor-ui` U23); the prefab
-   * *is* the document.
-   */
+  /** One edit to whichever document holds the carrier, however it is held. */
   const edit = (label: string, merge: string | undefined, recipe: (components: Components) => void): void => {
-    editDocument(documentPath, merge === undefined ? { label } : { label, merge }, (document) => {
-      if (target.kind === 'prefab') {
-        if (document.format !== PREFAB_FORMAT) return
-        recipe(document.components)
-        return
-      }
-      if (document.format !== SCENE_FORMAT) return
-      const found = document.entities.find((candidate) => candidate.id === target.entity.id)
-      if (found !== undefined) recipe(found.components)
-    })
+    carrier.edit(merge === undefined ? { label } : { label, merge }, recipe)
   }
 
   /**
@@ -182,8 +278,7 @@ function DescribedComponent({
    */
   const write = (field: KnownComponentField, value: FieldValue): void => {
     const typed = field.kind === 'number' || field.kind === 'text'
-    const who = target.kind === 'prefab' ? target.path : `${target.scenePath}#${target.entity.id}`
-    const merge = typed ? `${who}#${type}.${field.key}` : undefined
+    const merge = typed ? `${carrier.who}#${type}.${field.key}` : undefined
     edit(description.title, merge, (components) => {
       const standing = components[type]
       // Spread rather than replace: the description names the fields it knows,

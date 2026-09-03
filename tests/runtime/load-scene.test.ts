@@ -449,6 +449,56 @@ describe('textures', () => {
   })
 })
 
+/**
+ * A prefab with parts (editor-kernel D25, amended): one placement in the file,
+ * a block of entities in the request. The loader's texture walk runs over the
+ * resolved list, so a part's picture is asked for like any other.
+ */
+describe('a placement of a prefab with parts', () => {
+  const FIRE = 'assets/textures/tiles/fire.png'
+  const FIRE_META_ID = 'f1e0f1e0f1e0f1e0'
+  const firePrefab = {
+    ...defaultPrefab('bar00000000000001', 'Fire bar'),
+    components: sprite(knightTexture, KNIGHT_META_ID),
+    children: [
+      { id: 'arm', name: 'Arm', transform: defaultTransform(), components: { spin: { degreesPerSecond: 90 } } },
+      {
+        id: 'fire',
+        name: 'Fire',
+        transform: { ...defaultTransform(), x: 16 },
+        parent: 'arm',
+        components: { ...sprite(FIRE, FIRE_META_ID), deadly: {} },
+      },
+    ],
+  }
+  const files = {
+    'scenes/one.json': scene(
+      entity('bar', 'Fire bar', { prefab: { source: { id: firePrefab.id, path: 'prefabs/fire-bar.json' } } }),
+    ),
+    'prefabs/fire-bar.json': firePrefab,
+    [`${knightTexture}.meta`]: textureMeta(KNIGHT_META_ID),
+    [`${FIRE}.meta`]: textureMeta(FIRE_META_ID),
+  }
+
+  it('hands the runner the placement and its parts, attached', async () => {
+    const result = await loadScene(readerOver(files), 'scenes/one.json')
+    if (!result.ok) throw new Error(result.problem)
+
+    expect(result.problems).toEqual([])
+    expect(result.request.scene.entities.map((one) => one.id)).toEqual(['bar', 'bar:arm', 'bar:fire'])
+    expect(result.request.scene.entities[1]?.parent).toBe('bar')
+    expect(result.request.scene.entities[2]?.parent).toBe('bar:arm')
+    expect(result.request.scene.entities[2]?.transform.x).toBe(16)
+  })
+
+  it('asks for the texture a part draws, so the picture and the export both have it', async () => {
+    const result = await loadScene(readerOver(files), 'scenes/one.json')
+    if (!result.ok) throw new Error(result.problem)
+
+    expect(Object.keys(result.request.textures).sort()).toEqual([knightTexture, FIRE].sort())
+  })
+})
+
 describe('what it says out loud', () => {
   it('names the prefab before the texture, because the prefab is the cause', async () => {
     const reader = readerOver({

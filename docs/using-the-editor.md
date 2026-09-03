@@ -524,9 +524,8 @@ change.
   missing texture would. An export warns about it and carries on, because the
   entity still draws.
 
-What this deliberately does not do yet: a prefab still holds one entity's
-components, so an instance cannot bring children of its own — that is the next
-session's, with the platformer's fire bar to justify it.
+A prefab can bring attached entities of its own — see *A prefab can hold
+parts*, under *Prefabs*.
 
 ### Your game's own code
 
@@ -811,6 +810,39 @@ wheel still zooms.
 
 There is no brush size, no rectangle fill and no eraser: painting is the click
 you already had, held down. Taking things away is still select-and-`Delete`.
+
+#### A prefab can hold parts
+
+**A prefab can carry other entities that come attached to every instance** — a
+fire bar is a block with an arm that turns and three flames riding the arm, and
+it is one prefab. Click the prefab in the Assets panel and the Inspector has a
+*Parts* section: **Add part** makes one, and each part has a name, what it
+*rides* (the prefab itself or another part), an offset from that, a rotation and
+scale, a texture, a spin rate, and your game's own fields. Remove takes it off
+every instance; anything that rode it rides what it rode.
+
+- **Placing the prefab puts one entity in the level.** The Outliner shows one
+  row; the picture shows the whole group. Move, turn, resize, duplicate or delete
+  the placement and the group goes with it. One `Ctrl-Z` after placing takes the
+  whole group away.
+- **Click any part in the picture and the placement is selected**, with an
+  outline around every piece of it. `F` frames the whole group.
+- **Editing a part in the prefab changes every placed group at once**, and the
+  level file is not touched — a placement is still a reference and nothing else.
+  Make the arm longer once and every fire bar is longer.
+- **A placement can give a part its own settings.** Select the placement: its
+  *Parts* section lists each part with where it sits (read-only — that is the
+  prefab's) and what it carries. The arm's *Spin* shows the prefab's rate as
+  inherited; type a rate and this placement's arm turns at that rate, written
+  into the level on this one entity. *Use the prefab's* drops it again. Your
+  game's own fields work the same way, with Add and Remove.
+- **A part is not a row in the Outliner and is not moved on its own.** Where a
+  part sits is decided in the prefab, for every instance; the placement is what
+  you move. A part cannot be another prefab — a prefab still cannot contain a
+  prefab.
+- **A prefab with no parts is exactly what it was.** Nothing is written into a
+  prefab file until you add a part, and nothing into a level until you give a
+  placement's part its own setting.
 
 ### The viewport
 
@@ -1278,9 +1310,11 @@ the editor takes the change.
   disappearance with an appearance, so a file moved outside the editor loses its
   import settings at the next start and leaves its references pointing at where it
   was. Doing it inside the editor is what avoids both.
-- **A prefab with children in it.** An entity can be attached to another in a
-  level, but a prefab still describes one entity, so placing an instance never
-  brings children with it.
+- **A prefab inside a prefab.** A prefab's parts are plain entities; none of them
+  can be an instance of another prefab.
+- **Moving one part of a placed group on its own.** Where a part sits is the
+  prefab's, for every instance; a placement can change what a part carries, not
+  where it is.
 - **Duplicate or reorder several at once.** Moving, turning and deleting all
   work on the whole selection now; Duplicate, the `↑` `↓` arrows and `F` still act
   on the last one you clicked. There is also no editing six positions in one

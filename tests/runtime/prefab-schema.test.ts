@@ -2,8 +2,12 @@ import { describe, expect, it } from 'vitest'
 
 import {
   PrefabSchema,
+  defaultPart,
   defaultPrefab,
   instanceOfPrefab,
+  partIdOf,
+  partOf,
+  partsOf,
   resolveEntities,
   resolveEntity,
   serializePrefab,
@@ -65,12 +69,38 @@ const placedSlime: Entity = {
   components: { prefab: { source: { id: slimePrefab.id, path: SLIME_PREFAB_PATH } } },
 }
 
+/** A block with an arm that turns and two flames riding the arm. */
+const FIRE = { id: 'f1e0f1e0f1e0f1e0', path: 'assets/textures/tiles/fire.png' }
+const fireBar: Prefab = {
+  format: 'kernel2d.prefab',
+  version: 1,
+  id: 'ba7ba7ba7ba7ba70',
+  name: 'Fire bar',
+  components: {
+    sprite: { texture: { id: 'b10cb10cb10cb10c', path: 'assets/textures/tiles/used-block.png' } },
+    solid: {},
+  },
+  children: [
+    { id: 'arm', name: 'Arm', transform: defaultTransform(), components: { spin: { degreesPerSecond: 90 } } },
+    { id: 'fire1', name: 'Fire 1', transform: { ...defaultTransform(), x: 16 }, parent: 'arm', components: { sprite: { texture: FIRE }, deadly: {} } },
+    { id: 'fire2', name: 'Fire 2', transform: { ...defaultTransform(), x: 32 }, parent: 'arm', components: { sprite: { texture: FIRE }, deadly: {} } },
+  ],
+}
+const FIRE_BAR_PATH = 'prefabs/fire-bar.json'
+const placedBar: Entity = {
+  id: 'p1acedp1acedp1ac',
+  name: 'Fire bar',
+  transform: { x: 264, y: 88, rotation: 0, scaleX: 1, scaleY: 1 },
+  components: { prefab: { source: { id: fireBar.id, path: FIRE_BAR_PATH } } },
+}
+
 describe('a prefab survives a round trip', () => {
   const generated: Prefab = { ...slimePrefab, generatedBy: 'claude-opus-5', generatedAt: '2026-08-12' }
 
   it.each([
     ['one with a sprite in it', slimePrefab],
     ['an empty one', defaultPrefab('abc123', 'New prefab')],
+    ['one with parts', fireBar],
     ['one an AI produced', generated],
   ])('reads back identical for %s', (_description, value) => {
     expect(PrefabSchema.parse(JSON.parse(JSON.stringify(value)))).toEqual(value)
@@ -88,6 +118,148 @@ describe('a prefab survives a round trip', () => {
     }
 
     expect(PrefabSchema.parse(JSON.parse(serializePrefab(handEdited as Prefab)))).toEqual(handEdited)
+  })
+})
+
+describe('a prefab with parts', () => {
+  it('writes no children key for a prefab that is one entity, so every older prefab is byte-identical', () => {
+    const text = serializePrefab(slimePrefab)
+    expect(text).not.toContain('"children"')
+    expect(serializePrefab(PrefabSchema.parse(JSON.parse(text)))).toBe(text)
+  })
+
+  it('refuses a part that is an instance of a prefab — a prefab still cannot contain one', () => {
+    const nested: Prefab = {
+      ...fireBar,
+      children: [{ ...defaultPart('x', 'X'), components: { prefab: { source: { id: 'a', path: 'prefabs/a.json' } } } }],
+    }
+    expect(PrefabSchema.safeParse(nested).success).toBe(false)
+  })
+
+  it('refuses two parts sharing an id, because an override names a part by it', () => {
+    const twins: Prefab = { ...fireBar, children: [defaultPart('same', 'A'), defaultPart('same', 'B')] }
+    expect(PrefabSchema.safeParse(twins).success).toBe(false)
+  })
+
+  it('holds a part to the same component schemas an entity is held to', () => {
+    const broken: Prefab = {
+      ...fireBar,
+      children: [{ ...defaultPart('x', 'X'), components: { sprite: { texture: { path: 'no-id.png' } } } }],
+    }
+    expect(PrefabSchema.safeParse(broken).success).toBe(false)
+  })
+
+  it('starts a new part at the placement itself, drawing nothing', () => {
+    expect(defaultPart('arm', 'Arm')).toEqual({ id: 'arm', name: 'Arm', transform: defaultTransform(), components: {} })
+  })
+})
+
+describe('resolving a placement of a prefab with parts', () => {
+  const prefabs = { [FIRE_BAR_PATH]: fireBar }
+
+  it('brings the parts into the list right behind the placement, in the prefab’s order', () => {
+    const resolved = resolveEntities([knight, placedBar], prefabs)
+    expect(resolved.map((entity) => entity.id)).toEqual([
+      knight.id,
+      placedBar.id,
+      partIdOf(placedBar.id, 'arm'),
+      partIdOf(placedBar.id, 'fire1'),
+      partIdOf(placedBar.id, 'fire2'),
+    ])
+  })
+
+  it('attaches a part to the placement, and a part riding another to that part', () => {
+    const [, , arm, fire1] = resolveEntities([knight, placedBar], prefabs)
+    expect(arm?.parent).toBe(placedBar.id)
+    expect(fire1?.parent).toBe(partIdOf(placedBar.id, 'arm'))
+  })
+
+  it('gives a part its offset as its transform and its components as they are', () => {
+    const [, , arm, fire1] = resolveEntities([knight, placedBar], prefabs)
+    expect(arm?.transform).toEqual(defaultTransform())
+    expect(fire1?.transform).toEqual({ ...defaultTransform(), x: 16 })
+    expect(arm?.components).toEqual({ spin: { degreesPerSecond: 90 } })
+    expect(fire1?.components['deadly']).toEqual({})
+  })
+
+  it('names a part after its placement, so a difference can be read', () => {
+    const [, , arm] = resolveEntities([knight, placedBar], prefabs)
+    expect(arm?.name).toBe('Fire bar › Arm')
+  })
+
+  it('lets a placement override a part’s component, whole, and leaves the others alone', () => {
+    const faster: Entity = {
+      ...placedBar,
+      components: {
+        prefab: { source: { id: fireBar.id, path: FIRE_BAR_PATH }, parts: { arm: { spin: { degreesPerSecond: 180 } } } },
+      },
+    }
+    const [, arm, fire1] = resolveEntities([faster], prefabs)
+    expect(arm?.components['spin']).toEqual({ degreesPerSecond: 180 })
+    expect(fire1?.components['deadly']).toEqual({})
+    // The prefab itself was not touched.
+    expect(fireBar.children?.[0]?.components['spin']).toEqual({ degreesPerSecond: 90 })
+  })
+
+  it('attaches a part whose parent names nothing in the prefab to the placement itself', () => {
+    const orphaned: Prefab = { ...fireBar, children: [{ ...defaultPart('lost', 'Lost'), parent: 'nobody' }] }
+    const [, lost] = resolveEntities([placedBar], { [FIRE_BAR_PATH]: orphaned })
+    expect(lost?.parent).toBe(placedBar.id)
+  })
+
+  it('leaves the placement itself exactly as resolveEntity has always answered it', () => {
+    const [root] = resolveEntities([placedBar], prefabs)
+    expect(root).toEqual(resolveEntity(placedBar, fireBar))
+    expect(root?.components['prefab']).toEqual(placedBar.components['prefab'])
+  })
+
+  it('answers fresh part objects each time, so nothing drawn can be written to', () => {
+    const first = partsOf(placedBar, fireBar)
+    const second = partsOf(placedBar, fireBar)
+    expect(first).toEqual(second)
+    expect(first[0]).not.toBe(second[0])
+    expect(first[0]?.transform).not.toBe(fireBar.children?.[0]?.transform)
+  })
+
+  it('brings nothing extra for a prefab that is one entity', () => {
+    expect(resolveEntities([placedSlime], { [SLIME_PREFAB_PATH]: slimePrefab })).toHaveLength(1)
+  })
+
+  it('says which placement a drawn part belongs to, and null for anything in the level itself', () => {
+    expect(partOf(partIdOf('abc', 'arm'))).toEqual({ placement: 'abc', part: 'arm' })
+    expect(partOf('abc')).toBeNull()
+    expect(partOf(':arm')).toBeNull()
+    expect(partOf('abc:')).toBeNull()
+  })
+})
+
+describe('a placement’s overrides in the scene format', () => {
+  it('round-trips a placement that gives a part its own component', () => {
+    const faster: Entity = {
+      ...placedBar,
+      components: {
+        prefab: { source: { id: fireBar.id, path: FIRE_BAR_PATH }, parts: { arm: { spin: { degreesPerSecond: 180 } } } },
+      },
+    }
+    const value: Scene = { ...scene, entities: [faster] }
+    expect(SceneSchema.parse(JSON.parse(serializeScene(value)))).toEqual(value)
+  })
+
+  it('writes no parts key for a placement that takes the prefab as it is', () => {
+    expect(serializeScene({ ...scene, entities: [placedBar] })).not.toContain('"parts"')
+  })
+
+  it('refuses an override that would make a part an instance of a prefab', () => {
+    const smuggled = {
+      ...placedBar,
+      components: {
+        prefab: {
+          source: { id: fireBar.id, path: FIRE_BAR_PATH },
+          parts: { arm: { prefab: { source: { id: 'a', path: 'prefabs/a.json' } } } },
+        },
+      },
+    }
+    expect(SceneSchema.safeParse({ ...scene, entities: [smuggled] }).success).toBe(false)
   })
 })
 

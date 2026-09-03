@@ -1117,6 +1117,15 @@ body {
  * of separating it from the next one. Nothing else in an inspector body has
  * needed this: every other button in here answers to a labelled row.
  */
+/* One part of a prefab, inside the Parts section: a bordered block so six of
+   them read as six things rather than as one long run of fields. */
+.inspector__part {
+  margin: 8px 0;
+  padding: 6px 8px;
+  border: 1px solid var(--shell-line);
+  border-radius: var(--shell-radius-sm);
+}
+
 .inspector__actions {
   display: flex;
   gap: 6px;
