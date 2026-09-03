@@ -1,5 +1,6 @@
 import { expect, test, type Locator, type Page } from '@playwright/test'
 
+import { carryRow, carrying, dragRow } from './carry-row.js'
 import { restoreProjectAfterEach } from './restore-project.js'
 import { outlinerRow, outlinerRows } from './scene-view.js'
 import { selectAsset } from './select-asset.js'
@@ -77,14 +78,40 @@ test('a hidden row is still selected, still in the level, and still where it was
   expect(await names(page)).toEqual(['Ground', 'Knight', 'Slime', 'Knight running', 'Health icon'])
 })
 
-test('a row cannot be dragged while a filter is on, and can again once it is cleared', async ({ page }) => {
-  await expect(outlinerRow(page, 'Knight')).toHaveAttribute('draggable', 'true')
+/*
+ * The filter is how two entities far apart in a long list are found in the
+ * first place, so the gesture that attaches one to the other has to survive it.
+ * What does not survive is reordering: "between these two rows" may mean
+ * "between these two and the nine you cannot see", so the outer thirds answer
+ * nothing while a filter is on.
+ */
 
+test('a row can still be picked up and dropped onto another to attach it while a filter is on', async ({ page }) => {
   await box(page).fill('knight')
-  await expect(outlinerRow(page, 'Knight')).toHaveAttribute('draggable', 'false')
+  expect(await names(page)).toEqual(['Knight', 'Knight running'])
 
+  await dragRow(page, 'Knight running', 'Knight', 'into')
+
+  await expect(outlinerRow(page, 'Knight running').locator('..')).toHaveAttribute('data-depth', '1')
+  // Still filtered, and the row is still on screen because its name still matches.
+  await expect(page.getByTestId('entity-filter-count')).toHaveText('2 of 5')
+})
+
+test('but a filtered list cannot be reordered: the outer thirds hold no line and change nothing', async ({ page }) => {
+  await box(page).fill('knight')
+  const held = await outlinerRow(page, 'Knight running').getAttribute('data-entity-id')
+
+  await carryRow(page, 'Knight running', 'Knight', 'before')
+
+  // Picked up — the refusal is about where it may land, not about the row.
+  expect(await carrying(page)).toBe(held)
+  await expect(page.locator('.entity-row[data-drop-line]')).toHaveCount(0)
+
+  await page.mouse.up()
+
+  expect(await names(page)).toEqual(['Knight', 'Knight running'])
   await box(page).fill('')
-  await expect(outlinerRow(page, 'Knight')).toHaveAttribute('draggable', 'true')
+  expect(await names(page)).toEqual(['Ground', 'Knight', 'Slime', 'Knight running', 'Health icon'])
 })
 
 test('the filter survives dragging the panel somewhere else', async ({ page }) => {

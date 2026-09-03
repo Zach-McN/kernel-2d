@@ -3,8 +3,8 @@ import {
   useRef,
   useState,
   type CSSProperties,
-  type DragEvent,
   type MouseEvent,
+  type PointerEvent,
   type ReactElement,
   type ReactNode,
 } from 'react'
@@ -81,10 +81,20 @@ import { EntityPopover } from './EntityPopover'
  *
  * Reordering has two doors — the arrows, and dragging a row — and one
  * implementation behind both, the same shape as Duplicate and `Shift-D`. The
- * drag is the browser's own, marked with a type of its own so an asset being
- * carried out of the Assets panel is not mistaken for a row (`editor-ui` U35);
- * the row's id rides in a ref rather than in state, because what is being
- * dragged never needs to be *drawn* — only where it would land does.
+ * drag itself is **the editor's own press-move-release, not the browser's
+ * drag-and-drop** (`editor-ui` U37, amended 2026-09-02). A native drag runs an
+ * input loop of its own: the wheel never reaches the page while one is in
+ * progress, and the level where the parent is off screen when the child is
+ * picked up is exactly the level this gesture exists for. Ours leaves the wheel
+ * alone — the list scrolls under a carried row the way it scrolls under nothing
+ * at all — and it asks `elementFromPoint` what is beneath the pointer rather
+ * than reading an event's target, which is also what lets a drop be honest
+ * while the filter is hiding rows.
+ *
+ * A press is not yet a carry. The drag begins at the first move past a few
+ * pixels, so a plain click stays a plain click; the id being carried rides in a
+ * ref, because what is being carried never needs to be *drawn* — only where it
+ * would land does, and which row is dimmed.
  *
  * **A row let go on the middle of another becomes its child**, and the list
  * shows it indented under it; let go between two rows it becomes a sibling of
@@ -105,16 +115,23 @@ export function OutlinerPanel(): ReactElement {
   // And the same delete the viewport's Delete key does, for the same reason.
   const removal = useDeleteEntities()
 
-  // The row being dragged. A ref, not state: setting state inside `dragstart`
-  // re-renders the row mid-gesture, which is the kind of DOM change Chromium
-  // answers by cancelling the drag it was about to start.
-  const draggingRow = useRef<string | null>(null)
+  // The row under the pointer since it went down, where it went down, and
+  // whether it has since moved far enough to be a carry rather than a click.
+  // A ref: none of it is drawn, and it has to be readable from handlers that
+  // are not re-created between renders.
+  const carrying = useRef<Carry | null>(null)
+  // Where the pointer was last seen, so the list scrolling out from under it
+  // can be asked the same question a move asks.
+  const pointerAt = useRef<{ x: number; y: number } | null>(null)
+  // The one thing about the carry that *is* drawn: which row is lifted. The
+  // browser's drag drew a ghost of the row; ours dims the row it left behind.
+  const [liftedRow, setLiftedRow] = useState<string | null>(null)
   // Where the carried row would land, for the line between rows — or null when
-  // there is no drag, or when letting go here would change nothing.
+  // there is no carry, or when letting go here would change nothing.
   const [dropAt, setDropAt] = useState<Slot | null>(null)
-  // Counted rather than compared against `relatedTarget`: `dragleave` fires
-  // when the pointer crosses onto a child row (`editor-ui` U35).
-  const dragDepth = useRef(0)
+  // A carry ends on the pointer going up, and the browser then sends a click
+  // for the press that started it. That click is not a selection.
+  const swallowClick = useRef(false)
 
   // The editor's one right-click window, drawn here only while this panel is
   // the one it was opened from (`../shell/entity-popover.tsx`).
@@ -217,6 +234,13 @@ export function OutlinerPanel(): ReactElement {
    * before it does anything else.
    */
   const clickRow = (id: string, event: MouseEvent<HTMLElement>): void => {
+    // The click the browser sends after a carry: the press meant "pick this
+    // up", and it has already been answered. Cleared here and again on the next
+    // press, so a swallow can never outlive the gesture that asked for it.
+    if (swallowClick.current) {
+      swallowClick.current = false
+      return
+    }
     if (event.shiftKey) {
       window.getSelection()?.removeAllRanges()
       selection.addToSelection(path, id)
@@ -286,46 +310,123 @@ export function OutlinerPanel(): ReactElement {
   }
 
   /**
-   * Which slot letting go here would fill, or null for "none, or nothing would
-   * change". Asked twice — on every `dragover` for the line, and again on the
-   * drop for the edit — so the two cannot disagree about where "here" is.
+   * Which slot letting go at this point would fill, or null for "none, or
+   * nothing would change". Asked on every move, again whenever the list scrolls
+   * under the pointer, and again on release — one rule, so the line and the
+   * edit cannot disagree about where "here" is.
    *
    * A row is divided in **thirds**: the top means before it, the bottom after
    * it (and its children), and the middle means *onto* it — attached, as its
    * last child. Thirds rather than quarters so that a pointer a quarter of the
    * way down a row is well inside a zone rather than on the line between two
-   * (`editor-ui` UG11). Below the last row means the end of the list.
+   * (`editor-ui` UG11). Below the last row means the end of the list, and
+   * outside the list means nothing at all.
+   *
+   * **While a filter is on, only the middle third counts.** "Attach it to that
+   * row" names a row that is on screen, so it means something; "put it between
+   * these two" does not, because the gap between two shown rows may hold any
+   * number of hidden ones. So the outer thirds and the end answer null while
+   * filtering — no line is drawn and no transaction is opened — and reordering
+   * stays with the arrows, which do not depend on what is on screen.
+   *
+   * What is under the pointer is asked of the document rather than taken from
+   * the event: a carried row holds the pointer capture, so every move's target
+   * is the list itself.
    */
-  const slotUnder = (event: DragEvent<HTMLElement>): Slot | null => {
-    const id = draggingRow.current
-    if (id === null) return null
-    const row = event.target instanceof HTMLElement ? event.target.closest('[data-row-index]') : null
+  const slotUnder = (at: { x: number; y: number } | null): Slot | null => {
+    const held = carrying.current
+    if (held === null || at === null || list.current === null) return null
+    const under = document.elementFromPoint(at.x, at.y)
+    const row = under === null ? null : under.closest('[data-row-index]')
     let slot: Slot
-    if (row instanceof HTMLElement) {
+    if (row instanceof HTMLElement && list.current.contains(row)) {
       const target = entities[Number(row.getAttribute('data-row-index'))]
       if (target === undefined) return null
       const box = row.getBoundingClientRect()
       const third = box.height / 3
       slot =
-        event.clientY < box.top + third
+        at.y < box.top + third
           ? { kind: 'before', id: target.id }
-          : event.clientY >= box.bottom - third
+          : at.y >= box.bottom - third
             ? { kind: 'after', id: target.id }
             : { kind: 'into', id: target.id }
     } else {
+      const box = list.current.getBoundingClientRect()
+      const inside = at.x >= box.left && at.x <= box.right && at.y >= box.top && at.y <= box.bottom
+      if (!inside) return null
       slot = { kind: 'end' }
     }
-    return outcomeOf(entities, id, slot) === null ? null : slot
+    if (filtering && slot.kind !== 'into') return null
+    return outcomeOf(entities, held.id, slot) === null ? null : slot
   }
 
-  /** The line moves only when the slot does, or every pixel of a drag would redraw the list. */
+  /** The line moves only when the slot does, or every pixel of a carry would redraw the list. */
   const showSlot = (slot: Slot | null): void => {
     setDropAt((shown) => (sameSlot(shown, slot) ? shown : slot))
   }
 
-  const dragDone = (): void => {
-    draggingRow.current = null
-    dragDepth.current = 0
+  /**
+   * A press on a row. Not yet a carry: what it records is where the pointer
+   * went down, so the first move can decide which of the two this is.
+   */
+  const pressRow = (id: string, event: PointerEvent<HTMLElement>): void => {
+    if (event.button !== 0) return
+    swallowClick.current = false
+    carrying.current = { id, from: { x: event.clientX, y: event.clientY }, moved: false }
+    pointerAt.current = { x: event.clientX, y: event.clientY }
+  }
+
+  /**
+   * The pointer moving with a row held. Past the slop it becomes a carry — the
+   * list takes the pointer, so one that leaves the panel is still ours to
+   * follow, and a stray text selection started on the way is dropped.
+   */
+  const movePointer = (event: PointerEvent<HTMLElement>): void => {
+    const held = carrying.current
+    if (held === null) return
+    // The button was let go somewhere this panel never heard about — off the
+    // list, in another window. Without this, the next move over the list would
+    // start carrying a row nobody is holding.
+    if ((event.buttons & 1) === 0) {
+      carryDone()
+      return
+    }
+    pointerAt.current = { x: event.clientX, y: event.clientY }
+    if (!held.moved) {
+      const far =
+        Math.abs(event.clientX - held.from.x) >= CARRY_SLOP || Math.abs(event.clientY - held.from.y) >= CARRY_SLOP
+      if (!far) return
+      held.moved = true
+      window.getSelection()?.removeAllRanges()
+      list.current?.setPointerCapture(event.pointerId)
+      setLiftedRow(held.id)
+    }
+    showSlot(slotUnder(pointerAt.current))
+  }
+
+  /** Let go: the slot under the pointer, if a carry ever began and it means something. */
+  const releasePointer = (event: PointerEvent<HTMLElement>): void => {
+    const held = carrying.current
+    if (held === null) return
+    if (held.moved) {
+      const slot = slotUnder({ x: event.clientX, y: event.clientY })
+      if (slot !== null) dropOn(held.id, slot)
+    }
+    carryDone()
+  }
+
+  /**
+   * However it ended — dropped, abandoned with `Esc`, or taken away by the
+   * browser. Idempotent, because letting go fires both `pointerup` and
+   * `lostpointercapture` and the second must not un-answer the first.
+   */
+  const carryDone = (): void => {
+    const held = carrying.current
+    if (held === null) return
+    swallowClick.current = held.moved
+    carrying.current = null
+    pointerAt.current = null
+    setLiftedRow(null)
     setDropAt(null)
   }
 
@@ -350,6 +451,7 @@ export function OutlinerPanel(): ReactElement {
       data-scene={path}
       data-popover-entity={popoverEntity?.id ?? ''}
       data-filter={filter.trim()}
+      data-carrying={liftedRow ?? ''}
       ref={panel}
     >
       <header className="outliner__bar">
@@ -413,7 +515,7 @@ export function OutlinerPanel(): ReactElement {
           className="control control--text outliner__filter-box"
           data-testid="entity-filter"
           aria-label="Show only entities whose name contains this"
-          title="Show only the rows whose name contains this. Esc clears. Rows cannot be dragged while a filter is on."
+          title="Show only the rows whose name contains this. Esc clears. While a filter is on a row can still be dropped onto another to attach it, but rows cannot be reordered."
           placeholder="Filter by name"
           autoComplete="off"
           spellCheck={false}
@@ -465,35 +567,31 @@ export function OutlinerPanel(): ReactElement {
           // The window hangs off a spot in the panel rather than off the row,
           // so a list that scrolls takes its anchor away — the viewport's
           // camera, one panel over.
-          onScroll={() => popovers.close()}
-          onDragEnter={(event) => {
-            if (!isRowDrag(event)) return
-            event.preventDefault()
-            dragDepth.current += 1
+          //
+          // And it is where the wheel arrives while a row is being carried:
+          // this list is the thing that scrolls, so the rows move under a
+          // pointer that has not, and the promise has to be asked again from
+          // where the pointer still is. Nothing here scrolls the list — the
+          // browser does that, because the gesture is ours rather than the
+          // browser's drag and the wheel was never taken away.
+          onScroll={() => {
+            popovers.close()
+            if (carrying.current?.moved === true) showSlot(slotUnder(pointerAt.current))
           }}
-          // Every move, not just the first: a drag that is not cancelled here
-          // is a drag the browser will not let go of (`editor-ui` U35).
-          onDragOver={(event) => {
-            if (!isRowDrag(event)) return
-            event.preventDefault()
-            event.dataTransfer.dropEffect = 'move'
-            showSlot(slotUnder(event))
+          onPointerMove={movePointer}
+          onPointerUp={releasePointer}
+          // The pointer being taken away — a system gesture, the window losing
+          // focus. The carry is over and nothing was dropped.
+          onPointerCancel={carryDone}
+          onLostPointerCapture={carryDone}
+          // Esc puts a carried row back down where it was. Only while one is
+          // up: the key means "close the little window" the rest of the time.
+          onKeyDown={(event) => {
+            if (event.key !== 'Escape' || carrying.current === null) return
+            event.stopPropagation()
+            carryDone()
           }}
-          onDragLeave={() => {
-            dragDepth.current -= 1
-            if (dragDepth.current <= 0) {
-              dragDepth.current = 0
-              setDropAt(null)
-            }
-          }}
-          onDrop={(event) => {
-            if (!isRowDrag(event)) return
-            event.preventDefault()
-            const id = draggingRow.current
-            const slot = slotUnder(event)
-            if (id !== null && slot !== null) dropOn(id, slot)
-            dragDone()
-          }}
+          data-dragging={liftedRow !== null}
         >
           {entities.map((entity, index) => {
             // Hidden by the filter: not drawn at all, and the index it keeps is
@@ -509,10 +607,6 @@ export function OutlinerPanel(): ReactElement {
                 key={entity.id}
                 index={index}
                 depth={depths.get(entity.id) ?? 0}
-                // A drag reorders by the slot under the pointer, and a slot
-                // between two shown rows may hold any number of hidden ones —
-                // so a row is not picked up at all while a filter is on.
-                draggable={!filtering}
                 entity={drawn}
                 fromPrefab={prefabRefOf(entity)?.path ?? null}
                 selected={selectedHere.has(entity.id)}
@@ -521,16 +615,8 @@ export function OutlinerPanel(): ReactElement {
                 dropLine={dropMark?.id === entity.id ? dropMark.line : null}
                 onSelect={(event) => clickRow(entity.id, event)}
                 onContext={(event) => openPopover(entity.id, event)}
-                onDragStart={(event) => {
-                  // The marker is all a `dragover` can see; the id itself rides
-                  // in the ref, readable while the drag is happening (U35).
-                  event.dataTransfer.setData(ROW_DRAG_TYPE, entity.id)
-                  event.dataTransfer.effectAllowed = 'move'
-                  draggingRow.current = entity.id
-                }}
-                // Fires whether it was dropped or abandoned, which is exactly
-                // the question: the drag is over either way.
-                onDragEnd={dragDone}
+                lifted={entity.id === liftedRow}
+                onPress={(event) => pressRow(entity.id, event)}
               />
             )
           })}
@@ -551,8 +637,9 @@ export function OutlinerPanel(): ReactElement {
           screen that could mention Shift, Ctrl or the delete keys. */}
       <p className="outliner__note">
         The last one in the list is drawn in front — drag a row to reorder, or drop it onto another
-        row to attach it to that one. Shift-click adds to the selection, Ctrl-click takes away,
-        right-click opens an entity's little window, Delete or Backspace removes what is selected.
+        row to attach it to that one; the wheel still scrolls the list while you are carrying a row,
+        and Esc puts it back. Shift-click adds to the selection, Ctrl-click takes away, right-click
+        opens an entity's little window, Delete or Backspace removes what is selected.
       </p>
     </div>
   )
@@ -637,15 +724,22 @@ function sameSlot(a: Slot | null, b: Slot | null): boolean {
   return a.kind === 'end' || b.kind === 'end' || a.id === b.id
 }
 
+/** A row held down: which one, where the press landed, and whether it has become a carry. */
+interface Carry {
+  id: string
+  from: { x: number; y: number }
+  moved: boolean
+}
+
 /**
- * The type on a row's drag, saying it is an Outliner row.
+ * How far the pointer has to travel before a press becomes a carry.
  *
- * A marker and nothing more, distinct from the Assets panel's
- * (`../shell/useAssetDrag.ts`) so neither surface mistakes the other's drag for
- * its own: a row let go over the picture places nothing, and a file let go over
- * this list changes no order.
+ * The whole of what the browser's drag used to decide for us. Small enough that
+ * a deliberate drag begins at once, large enough that a click with a shaking
+ * hand is still a click — and a row is a 24-pixel target, so a carry that began
+ * at one pixel would make selecting one a coin toss.
  */
-const ROW_DRAG_TYPE = 'application/x-kernel-2d-entity-row'
+const CARRY_SLOP = 4
 
 /** The row an event landed on, or null for the list's own background. */
 function rowUnder(target: EventTarget | null): HTMLElement | null {
@@ -654,10 +748,6 @@ function rowUnder(target: EventTarget | null): HTMLElement | null {
   return row instanceof HTMLElement ? row : null
 }
 
-/** Ours rather than an asset, a text selection, or a file from Explorer. */
-function isRowDrag(event: DragEvent<HTMLElement>): boolean {
-  return event.dataTransfer.types.includes(ROW_DRAG_TYPE)
-}
 
 interface RowProps {
   /** Where this row sits in the list, which is where it sits in the draw order. */
@@ -681,10 +771,10 @@ interface RowProps {
   onSelect: (event: MouseEvent<HTMLElement>) => void
   /** A right-click on the row: the editor's right-click window, on this entity. */
   onContext: (event: MouseEvent<HTMLElement>) => void
-  onDragStart: (event: DragEvent<HTMLElement>) => void
-  onDragEnd: () => void
-  /** Whether this row can be picked up to reorder it. Off while a filter hides rows. */
-  draggable: boolean
+  /** The press that may become a carry. Whether it does is decided by the first move. */
+  onPress: (event: PointerEvent<HTMLElement>) => void
+  /** This row is the one being carried: dimmed, where the browser's drag drew a ghost. */
+  lifted: boolean
 }
 
 function Row({
@@ -698,9 +788,8 @@ function Row({
   dropLine,
   onSelect,
   onContext,
-  onDragStart,
-  onDragEnd,
-  draggable,
+  onPress,
+  lifted,
 }: RowProps): ReactElement {
   const sprite = spriteOf(entity)
 
@@ -720,11 +809,10 @@ function Row({
         data-primary={primary}
         data-entity-problem={problem?.word ?? ''}
         data-entity-prefab={fromPrefab ?? ''}
-        draggable={draggable}
+        data-lifted={lifted}
         onClick={onSelect}
         onContextMenu={onContext}
-        onDragStart={onDragStart}
-        onDragEnd={onDragEnd}
+        onPointerDown={onPress}
       >
         <span className="entity-row__name">{entity.name}</span>
         {fromPrefab !== null && (

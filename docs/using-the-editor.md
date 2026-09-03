@@ -411,14 +411,20 @@ below); it is still drawn where its row sits.
   *New scene* / *New prefab*. Also **drag a file onto the level** — see below.
 - **Outliner** → add, duplicate, delete, and reorder — with the `↑` `↓` buttons,
   or by dragging a row to where it should sit. A line shows where it will land;
-  `Ctrl-Z` takes either kind of reorder back in one press. **Type in the filter
-  box** under the buttons and only the rows whose name contains it stay on
-  screen, with a count; `Esc` clears it. It hides rows and nothing else — what
-  is selected stays selected, and the draw order is untouched — and rows cannot
-  be dragged to reorder while a filter is on, since a gap between two shown
-  rows could hold any number of hidden ones. Right-click a row for
-  the same small window a right-click on the sprite opens — rename, position,
-  your game's own fields, Snap to grid, Frame, Duplicate, Delete.
+  `Ctrl-Z` takes either kind of reorder back in one press. **The wheel still
+  scrolls the list while you are holding a row**, so the row you are aiming at
+  does not have to be on screen when you pick one up — pick it up, scroll to
+  where it belongs, and let go. `Esc` while holding one puts it back where it
+  was. **Type in the filter box** under the buttons and only the rows whose name
+  contains it stay on screen, with a count; `Esc` clears it. It hides rows and
+  nothing else — what is selected stays selected, and the draw order is
+  untouched. **While a filter is on you can still drop a row onto another to
+  attach it**, but not reorder: dropping *between* two shown rows would mean
+  nothing, since the gap could hold any number of hidden ones, so the top and
+  bottom edges do nothing and draw no line while filtering. The `↑` `↓` buttons
+  reorder as usual. Right-click a row for the same small window a right-click on
+  the sprite opens — rename, position, your game's own fields, Snap to grid,
+  Frame, Duplicate, Delete.
 - **Viewport** → click to select, drag to move, `G` to move without holding
   anything, `R` to turn, `S` to resize, `Shift-D` for a copy, right-click for a
   small window with the entity's position and your game's own fields — an
@@ -490,6 +496,12 @@ change.
   row to land before it, the lower part to land after it, the middle to attach to
   it. A row's rows come with it: drag a parent and its children travel as one
   block, keeping their order among themselves.
+- **The list scrolls while you are carrying a row.** Turn the wheel with the
+  button still held and the rows move under it; the mark stays on whatever the
+  pointer is over. In a long level this is how you attach something near the
+  bottom to something near the top. Filter by name first if that is faster —
+  attaching works with a filter on, and the rows it leaves on screen are the
+  ones you were looking for.
 - **Where a row lands decides what it belongs to.** Let a child go between two
   top-level rows and it is back at the top level, where it appeared; let a
   top-level row go between two children and it becomes a child of the same
@@ -1349,7 +1361,7 @@ the editor takes the change.
   it, and that is all it offers.
 - **Drag a file into the Outliner, or onto an entity to give it that texture.**
   The level's picture is the only place a *file* drop means anything — the only
-  thing that drops into the Outliner is its own rows, to reorder them.
+  thing the Outliner takes is its own rows, to reorder them or attach them.
 - **Back and forward *buttons*, or a bigger and smaller icon size.** The mouse's
   side buttons go back and forward, the trail above the tiles is the other way
   back up, and the tiles are one size. With a mouse that has no side buttons, the

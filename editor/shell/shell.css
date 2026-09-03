@@ -2042,6 +2042,25 @@ body {
   box-shadow: inset 0 0 0 1px var(--shell-accent);
 }
 
+/*
+ * While a row is being carried. The gesture is the editor's own rather than the
+ * browser's drag (U37, amended), so there is no ghost of the row following the
+ * pointer — the row it was lifted from fades instead, which says the same thing
+ * without a second copy of it on screen. Nothing here changes a box: a list
+ * that reflowed under the pointer would be aiming at a moving target (UG13).
+ *
+ * Text stops being selectable for as long as the carry lasts: a press dragged
+ * across rows would otherwise paint a selection over the names on the way.
+ */
+.outliner__list[data-dragging='true'] {
+  user-select: none;
+  cursor: grabbing;
+}
+
+.entity-row__button[data-lifted='true'] {
+  opacity: 0.45;
+}
+
 /* A child's row is indented under its parent's — one step per level — and
    stays where it is in the list. The indent is the whole of the tree: nothing
    collapses, nothing is re-sorted, the order on screen is the draw order. */

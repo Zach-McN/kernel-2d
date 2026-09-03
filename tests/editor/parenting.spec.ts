@@ -3,6 +3,15 @@ import path from 'node:path'
 
 import { expect, test, type Page } from '@playwright/test'
 
+import {
+  carryRow,
+  carrying,
+  dragRow,
+  fillUntilItScrolls,
+  moveOverRow,
+  outlinerList,
+  scrollTop,
+} from './carry-row.js'
 import { parsedWhenWhole } from './parse-when-whole.js'
 import { restoreProjectAfterEach } from './restore-project.js'
 import { cameraScale, openScene, outlinerRow, outlinerRows, viewport } from './scene-view.js'
@@ -85,31 +94,6 @@ function savedLevel(): SavedEntity[] | undefined {
 }
 
 // --- driving the Outliner ----------------------------------------------------
-
-/**
- * Hold the pointer over a row: the top or bottom sixth (well inside the outer
- * thirds, which mean before and after) or the very middle (which means onto).
- */
-async function moveOverRow(page: Page, target: string, edge: 'before' | 'after' | 'into'): Promise<void> {
-  const box = await outlinerRow(page, target).boundingBox()
-  if (box === null) throw new Error(`no row for ${target}`)
-  const fraction = edge === 'before' ? 0.15 : edge === 'after' ? 0.85 : 0.5
-  const spot = { x: box.x + box.width / 2, y: box.y + box.height * fraction }
-  // Two moves: the first advances the drag, the second is the one that is read.
-  await page.mouse.move(spot.x, spot.y, { steps: 6 })
-  await page.mouse.move(spot.x, spot.y)
-}
-
-async function carryRow(page: Page, dragged: string, target: string, edge: 'before' | 'after' | 'into'): Promise<void> {
-  await outlinerRow(page, dragged).hover()
-  await page.mouse.down()
-  await moveOverRow(page, target, edge)
-}
-
-async function dragRow(page: Page, dragged: string, target: string, edge: 'before' | 'after' | 'into'): Promise<void> {
-  await carryRow(page, dragged, target, edge)
-  await page.mouse.up()
-}
 
 /** Slime attached to Knight — the starting point of most of what follows. */
 async function attachSlimeToKnight(page: Page): Promise<void> {
@@ -236,6 +220,81 @@ test.describe('dragging a child back out', () => {
     expect(await depthOf(page, 'Slime')).toBe(0)
     await outlinerRow(page, 'Slime').click()
     expect(await position(page)).toEqual({ x: 200, y: 16 })
+  })
+})
+
+// --- reaching a row that is off screen -------------------------------------------
+
+/*
+ * The reason the gesture is the editor's own rather than the browser's drag
+ * (`editor-ui` U37, amended): in a level with more rows than fit, the entity
+ * you mean to attach to is usually not on screen when you pick the child up,
+ * and a native drag never lets the wheel reach the page. So the test builds
+ * that level, picks up the last row, and scrolls with the wheel while holding
+ * it.
+ */
+
+test.describe('carrying a row while the list scrolls', () => {
+  test('the wheel scrolls the list mid-carry, and the row lands on what it brought into view', async ({
+    page,
+  }, testInfo) => {
+    await openScene(page, LEVEL_ONE)
+    await fillUntilItScrolls(page)
+    const rows = await names(page)
+    const last = rows[rows.length - 1] ?? ''
+
+    // To the bottom of the list, where Ground is out of sight.
+    await outlinerList(page).hover()
+    await page.mouse.wheel(0, 2000)
+    await expect.poll(() => scrollTop(page)).toBeGreaterThan(0)
+
+    // Pick the last row up, then wheel back to the top while still holding it.
+    const held = await outlinerRow(page, last).getAttribute('data-entity-id')
+    await outlinerRow(page, last).hover()
+    await page.mouse.down()
+    const from = await outlinerRow(page, last).boundingBox()
+    await page.mouse.move((from?.x ?? 0) + 40, (from?.y ?? 0) + 10, { steps: 4 })
+    expect(await carrying(page)).toBe(held)
+
+    await page.mouse.wheel(0, -2000)
+    await expect.poll(() => scrollTop(page)).toBe(0)
+    expect(await carrying(page)).toBe(held)
+
+    await moveOverRow(page, 'Ground', 'into')
+    await expect(page.locator('.entity-row[data-drop-line="into"]')).toHaveCount(1)
+    await page.getByTestId('outliner-panel').screenshot({ path: testInfo.outputPath('carry-scrolled.png') })
+    await page.mouse.up()
+
+    expect(await depthOf(page, last)).toBe(1)
+    const ground = await outlinerRow(page, 'Ground').getAttribute('data-entity-id')
+    await expect.poll(() => savedLevel()?.find((one) => one.name === last)?.parent).toBe(ground)
+  })
+
+  test('Esc while carrying puts the row back, and one drop is still one Ctrl-Z', async ({ page }) => {
+    await openScene(page, LEVEL_ONE)
+    const before = await names(page)
+
+    await carryRow(page, 'Slime', 'Knight', 'into')
+    await page.keyboard.press('Escape')
+    await page.mouse.up()
+
+    expect(await names(page)).toEqual(before)
+    expect(await depthOf(page, 'Slime')).toBe(0)
+
+    await dragRow(page, 'Slime', 'Knight', 'into')
+    expect(await depthOf(page, 'Slime')).toBe(1)
+    await page.keyboard.press('ControlOrMeta+z')
+    expect(await depthOf(page, 'Slime')).toBe(0)
+  })
+
+  test('a press that does not move is still a plain click that selects', async ({ page }) => {
+    await openScene(page, LEVEL_ONE)
+
+    await outlinerRow(page, 'Slime').click()
+
+    await expect(page.getByTestId('inspector-name')).toHaveText('Slime')
+    expect(await carrying(page)).toBe('')
+    expect(await names(page)).toEqual(['Ground', 'Knight', 'Slime', 'Knight running', 'Health icon'])
   })
 })
 
